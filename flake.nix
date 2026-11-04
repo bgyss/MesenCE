@@ -108,6 +108,8 @@
               pkgs.llvmPackages.clang-tools # clang-format, clangd
               pkgs.ccache
               pkgs.tlaplus # tlc / tlasany for docs/research/tla
+              pkgs.nlohmann_json # tools/nes-cpu-singlestep
+              pkgs.cc65 # ca65/ld65 for test ROMs under docs/research/tla/rom
             ]
             ++ runtimeLibs;
 

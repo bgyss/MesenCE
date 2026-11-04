@@ -27,6 +27,9 @@ This fork's addition, not upstream.
   - `mise run run`: launches the build, pointing the loader at Nix's SDL2.
   - `mise run test -- script.lua rom`.
   - `mise run test:ci`: the MesenTests regression suite.
+  - `mise run test:cpu`: NES CPU vs the SingleStepTests `nes6502` suite (2.56M tests incl. per-cycle bus traces). Downloads 1.2 GB into `bin/`. Known divergences are whitelisted in `tools/nes-cpu-singlestep/singlestep.cpp`.
+  - `mise run test:savestate -- <roms|dir>`: save state → fresh console → per-frame state comparison. It finds emulation state missing from `Serialize`.
+  - Findings from these tools are logged in `docs/research/nes-verification-findings.md`.
   - `mise run tla`: model-checks `docs/research/tla/NesDmaScheduler.tla`, which mirrors `NesCpu::ProcessPendingDma`. If you change NES DMA code, update the spec and re-run.
   - `mise run format`, `mise run clean`.
 - **`nix build .#core`:** hermetic build of only `MesenCore.{dylib,so}`, written to `result/lib`.

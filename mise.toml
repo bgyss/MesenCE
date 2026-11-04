@@ -66,6 +66,42 @@ libs="$PWD/$objdir:${MESEN_RUNTIME_LIBRARY_PATH:-}"
 DYLD_FALLBACK_LIBRARY_PATH="$libs" LD_LIBRARY_PATH="$libs" exec "$helper" "$tests" citests
 '''
 
+[tasks."test:cpu"]
+description = "NES CPU vs SingleStepTests nes6502 (mise run test:cpu -- [--details N] [opcode files...])"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+data="$PWD/bin/SingleStepTests-65x02"
+if [ ! -d "$data/nes6502" ]; then
+  git clone --depth 1 --filter=blob:none --sparse https://github.com/SingleStepTests/65x02.git "$data"
+  git -C "$data" sparse-checkout set nes6502
+fi
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+mkdir -p bin
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/nes-cpu-singlestep/singlestep.cpp "$lib" -pthread -o bin/nes-cpu-singlestep
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+havePath=0
+for a in "$@"; do [ -e "$a" ] && havePath=1; done
+if [ $havePath -eq 0 ]; then set -- "$@" "$data/nes6502/v1"; fi
+exec bin/nes-cpu-singlestep "$@"
+'''
+
+[tasks."test:savestate"]
+description = "NES save-state round-trip check (mise run test:savestate -- [--warmup W] [--frames K] <roms|dir>)"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+mkdir -p bin
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/nes-savestate-roundtrip/roundtrip.cpp "$lib" -pthread -o bin/nes-savestate-roundtrip
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+exec bin/nes-savestate-roundtrip "$@"
+'''
+
 [tasks.tla]
 description = "Model-check the TLA+ specs in docs/research/tla (all MC_*.cfg)"
 dir = "docs/research/tla"
