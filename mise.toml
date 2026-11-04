@@ -1,0 +1,93 @@
+# Toolchain comes from the Nix dev shell (flake.nix, loaded by direnv via .envrc).
+# mise only holds project env vars and task shortcuts.
+
+[env]
+DOTNET_CLI_TELEMETRY_OPTOUT = "1"
+DOTNET_NOLOGO = "1"
+DOTNET_SKIP_FIRST_TIME_EXPERIENCE = "1"
+
+[tasks.build]
+description = "Build native core + UI (Release)"
+run = "make -j$(getconf _NPROCESSORS_ONLN)"
+
+[tasks."build:debug"]
+description = "Build native core + UI (Debug, -O0 -g)"
+run = "make -j$(getconf _NPROCESSORS_ONLN) DEBUG=1"
+
+[tasks."build:asan"]
+description = "Debug build with AddressSanitizer"
+run = "make -j$(getconf _NPROCESSORS_ONLN) DEBUG=1 SANITIZER=address"
+
+[tasks.core]
+description = "Build only the native core (MesenCore shared library)"
+run = "make -j$(getconf _NPROCESSORS_ONLN) core"
+
+[tasks."nix:core"]
+description = "Hermetic Nix build of the native core (./result/lib)"
+run = "nix build .#core -L"
+
+[tasks.run]
+description = "Run the built emulator (pass extra args after --)"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+os=$(uname -s); arch=$(uname -m)
+case "$os" in Darwin) plat=osx ;; *) plat=linux ;; esac
+case "$arch" in x86_64) plat="$plat-x64" ;; *) plat="$plat-arm64" ;; esac
+cfg=${MESEN_CONFIG:-Release}
+pub="bin/$plat/$cfg/$plat/publish"
+if [ -x "$pub/Mesen.app/Contents/MacOS/Mesen" ]; then exe="$pub/Mesen.app/Contents/MacOS/Mesen"; else exe="$pub/Mesen"; fi
+[ -x "$exe" ] || { echo "Not built: $exe (run 'mise run build')" >&2; exit 1; }
+# SDL2 (audio) is dlopen'd; point the loader at the Nix copy from the dev shell.
+export DYLD_FALLBACK_LIBRARY_PATH="${MESEN_RUNTIME_LIBRARY_PATH:-}${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="${MESEN_RUNTIME_LIBRARY_PATH:-}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$exe" "$@"
+'''
+
+[tasks.test]
+description = "Headless Lua test: mise run test -- <script.lua> <rom> [--timeout=N]"
+run = '''
+#!/usr/bin/env bash
+exec mise run run -- --testRunner "$@"
+'''
+
+[tasks."test:ci"]
+description = "Run the MesenTests regression suite headlessly, like CI (clones into bin/Tests)"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+tests="$PWD/bin/Tests"
+if [ -d "$tests/.git" ]; then git -C "$tests" pull --ff-only -q; else git clone --depth 1 https://github.com/nesdev-org/MesenTests.git "$tests"; fi
+make pgohelper
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+helper="PGOHelper/${objdir#InteropDLL/}/pgohelper"
+libs="$PWD/$objdir:${MESEN_RUNTIME_LIBRARY_PATH:-}"
+DYLD_FALLBACK_LIBRARY_PATH="$libs" LD_LIBRARY_PATH="$libs" exec "$helper" "$tests" citests
+'''
+
+[tasks.tla]
+description = "Model-check the TLA+ specs in docs/research/tla (all MC_*.cfg)"
+dir = "docs/research/tla"
+run = '''
+#!/usr/bin/env bash
+set -uo pipefail
+meta=$(mktemp -d)
+trap 'rm -rf "$meta"' EXIT
+for cfg in MC_*.cfg; do
+  echo "=== $cfg"
+  tlc -config "$cfg" -workers auto -metadir "$meta/${cfg%.cfg}" NesDmaScheduler.tla \
+    | grep -E "^Error|No error has been found|distinct states found" || true
+done
+'''
+
+[tasks.format]
+description = "Format C++ (clang-format) and C# (dotnet format)"
+run = [
+  "find . \\( -iname '*.h' -o -iname '*.cpp' \\) -not -path './bin/*' | xargs clang-format -i",
+  "dotnet format",
+]
+
+[tasks.clean]
+description = "Remove build outputs"
+run = "make clean"
