@@ -190,3 +190,7 @@ packages/*
 
 TestHelper/*
 UI/Dependencies.zip
+# Nix / direnv
+.direnv/
+result
+result-*
