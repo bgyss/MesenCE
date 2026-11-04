@@ -445,6 +445,12 @@ The effort figures are rough single-engineer estimates **[judgment]**.
 
 ## 6. NES CPU (2A03): Lean for the ISA, TLA+ for DMA and interrupts
 
+> **Update:** the differential-testing step in §6.1 has been done. MesenCE's `NesCpu` was run
+> against all 2.56M SingleStepTests `nes6502` tests, with bus traces. There is also a save-state
+> round-trip checker. Results and reproduction steps are in
+> [nes-verification-findings.md](nes-verification-findings.md). That suite is now the oracle a
+> future Lean ISA spec should be validated against.
+
 *Added 2026-11-04.* This section revisits the NES CPU as a target. The ISA is a reasonable Lean
 pilot. The higher-value formal target is the per-cycle **DMA scheduler** around it, which is a
 small state machine driven by external events and suits TLA+ model checking. A first TLA+ model
