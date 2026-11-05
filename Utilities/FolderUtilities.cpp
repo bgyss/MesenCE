@@ -228,7 +228,10 @@ string FolderUtilities::GetFolderName(string filepath)
 string FolderUtilities::CombinePath(string folder, string filename)
 {
 	//Windows supports forward slashes for paths, too.  And fs::u8path is abnormally slow.
-	if(folder[folder.length() - 1] != '/') {
+	if(folder.empty()) {
+		//A file with no folder (e.g. an in-memory VirtualFile) - folder.back() would be out of bounds
+		return filename;
+	} else if(folder[folder.length() - 1] != '/') {
 		return folder + "/" + filename;
 	} else {
 		return folder + filename;
