@@ -90,6 +90,7 @@ private:
 	void LD_Indirect(uint16_t dst, uint8_t value);
 	void LDA_Address(uint16_t addr);
 	void LD_Indirect_A(uint16_t dst);
+	template<uint8_t prefix>
 	void LD_IndirectImm(uint16_t dst);
 	void LD_Indirect16(uint16_t dst, uint16_t value);
 	void LDReg_Indirect16(uint16_t& dst, uint16_t addr);
@@ -241,6 +242,7 @@ private:
 	void INI();
 	void INIR();
 
+	void UpdateInOutFlags(uint8_t value, uint16_t k);
 	void UpdateInOutRepeatFlags();
 
 	void IncrementR();
