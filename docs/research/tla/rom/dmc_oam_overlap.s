@@ -1,4 +1,5 @@
-; dmc_oam_overlap.s - probe for finding 1 in docs/research/formal-verification-tla-lean.md §6.3
+; dmc_oam_overlap.s - self-checking regression ROM for the OAM DMA restart bug
+; (docs/research/nes-verification-findings.md, finding 1).
 ;
 ; Repeatedly:  disable DMC, wait a pseudo-random number of cycles,
 ;              STA $4015 (enable DMC)  ->  DMC DMA requested 2-3 cycles later
@@ -10,11 +11,19 @@
 ; makes the DMC fetch end exactly on a reload: with the sample-duplication
 ; glitch enabled that requests another DMC DMA in the middle of the OAM DMA.
 ;
-; The ROM checks nothing itself; it is meant to be run against a build that
-; logs per-OAM-DMA $2004 write counts.
+; Page $02 holds 0,1,2,...,255.  After every OAM DMA the ROM reads OAM[0] back
+; through $2003/$2004 (rendering is off, so this is reliable).  A correct DMA
+; leaves OAM[0] = 0; the bug (257 writes, OAM shifted by one) leaves 255.
+;
+; Results in CPU RAM (read by tools/nes-dma-regression):
+;   $10-$11  iterations (16-bit, little endian)
+;   $12-$13  failures   (16-bit, little endian)
 ;
 ; Build:  ca65 dmc_oam_overlap.s -o dmc_oam_overlap.o
 ;         ld65 -C nrom.cfg dmc_oam_overlap.o -o dmc_oam_overlap.nes
+
+ITER = $10
+FAIL = $12
 
 .segment "HEADER"
     .byte "NES", $1A
@@ -24,7 +33,11 @@
     .res 8, 0
 
 .segment "ZEROPAGE"
-seed: .res 1
+.res $10                ; $00-$0F unused
+iter:  .res 2           ; $10
+fail:  .res 2           ; $12
+seed:  .res 1           ; $14
+seed2: .res 1           ; $15
 
 .segment "CODE"
 reset:
@@ -39,6 +52,18 @@ reset:
     lda #$40
     sta $4017           ; frame IRQ off
 
+    ldx #$00            ; page $02 = 0,1,2,...,255
+:   txa
+    sta $0200,x
+    inx
+    bne :-
+
+    lda #$00
+    sta iter
+    sta iter+1
+    sta fail
+    sta fail+1
+
     lda #$0F            ; DMC: rate 15 (fastest), no IRQ, no loop
     sta $4010
     lda #$00            ; sample address $C000
@@ -52,6 +77,7 @@ reset:
 loop:
     lda #$00
     sta $4015           ; disable DMC (bytesRemaining -> 0 after a short delay)
+    sta $2003           ; OAMADDR = 0 for the next DMA
 
     ; 8-bit Galois LFSR, period 255
     lda seed
@@ -71,11 +97,33 @@ dly:
     dey
     bne dly
 
+    ; second delay: a plain counter (period 256, coprime with the LFSR's 255),
+    ; so the two together sweep ~65k timing combinations, not 255
+    inc seed2
+    ldy seed2
+    beq :++
+:   dey
+    bne :-
+:
+
     ldx #$02            ; OAM DMA source page $0200
     lda #$10
     sta $4015           ; enable DMC -> DMA request after 2-3 cycles
     stx $4014           ; start OAM DMA
-    jmp loop
+
+    ; check: OAM[0] must be 0
+    lda #$00
+    sta $2003
+    lda $2004
+    beq ok
+    inc fail
+    bne ok
+    inc fail+1
+ok:
+    inc iter
+    bne :+
+    inc iter+1
+:   jmp loop
 
 nmi:
 irq:

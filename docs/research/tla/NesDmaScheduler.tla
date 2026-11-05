@@ -41,11 +41,11 @@ CONSTANTS
                           \* their dummy write to $4014 is followed by a
                           \* final write to $4014, which calls RunDMATransfer
                           \* again, and then an opcode fetch.
-    OamProgressPersists   \* FALSE: the code as of 4b8a196e, where the OAM DMA
-                          \* counter is a local of ProcessPendingDma and a
-                          \* nested call restarts it.  TRUE: the proposed
-                          \* hardening, where it is CPU state reset only by
-                          \* RunDMATransfer.
+    OamProgressPersists   \* TRUE: current code, where the OAM DMA counter is
+                          \* CPU state reset only by RunDMATransfer.  FALSE:
+                          \* the code before the fix (upstream 4b8a196e), where
+                          \* it was a local of ProcessPendingDma and a nested
+                          \* call restarted it.
 
 VARIABLE s
 

@@ -290,8 +290,7 @@ int main(int argc, char* argv[])
 				 return ss.str();
 			 }
 			 return "";
-		 },
-			true },
+		 } }, // fixed in this fork (gb-verification-findings.md #6); now a regression test
 		{ "reti-ime", "RETI enables IME (Interrupts: 'same as EI immediately followed by RET'; timing not specified)", [](Machine& m) -> string {
 			 // Informational: report whether an interrupt pending at RETI is taken before the next instruction.
 			 m.Reset(Serial, 0, false);

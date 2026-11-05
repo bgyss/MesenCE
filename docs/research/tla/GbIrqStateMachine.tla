@@ -21,10 +21,10 @@ EXTENDS Naturals
 
 CONSTANTS
     MaxRaises,        \* bound on interrupts raised by the environment
-    ReturnToHaltFix   \* FALSE: code as of 6d4e3ec4.  TRUE: proposed fix, where HALT
-                      \* executed with IME=1 and an interrupt pending does not halt
-                      \* and rewinds PC to the HALT (as SameBoy does), so the
-                      \* dispatch returns to the HALT.
+    ReturnToHaltFix   \* TRUE: current code, where HALT executed with IME=1 and an
+                      \* interrupt pending does not halt and rewinds PC to the HALT
+                      \* (as SameBoy does), so the dispatch returns to the HALT.
+                      \* FALSE: the code before the fix (6d4e3ec4).
 
 Ops == {"EI", "DI", "RETI", "HALT", "NOP"}
 Raise == {"none", "before", "after"}
