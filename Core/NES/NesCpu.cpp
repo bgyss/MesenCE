@@ -359,8 +359,6 @@ void NesCpu::ProcessPendingDma(uint16_t readAddress, MemoryOperationType opType)
 		}
 	}
 
-	uint16_t spriteDmaCounter = 0;
-	uint8_t spriteReadAddr = 0;
 	uint8_t readValue = 0;
 
 	auto processCycle = [this] {
@@ -401,10 +399,10 @@ void NesCpu::ProcessPendingDma(uint16_t readAddress, MemoryOperationType opType)
 			} else if(_spriteDmaTransfer) {
 				//DMC DMA is not running, or not ready, run sprite DMA
 				processCycle();
-				readValue = ProcessDmaRead(_spriteDmaOffset * 0x100 + spriteReadAddr, prevReadAddress, enableInternalRegReads);
+				readValue = ProcessDmaRead(_spriteDmaOffset * 0x100 + _spriteReadAddr, prevReadAddress, enableInternalRegReads);
 				EndCpuCycle(true);
-				spriteReadAddr++;
-				spriteDmaCounter++;
+				_spriteReadAddr++;
+				_spriteDmaCounter++;
 			} else {
 				//DMC DMA is running, but not ready (need halt/dummy read) and sprite DMA isn't runnnig, perform a dummy read
 				assert(_needHalt || _needDummyRead);
@@ -413,13 +411,13 @@ void NesCpu::ProcessPendingDma(uint16_t readAddress, MemoryOperationType opType)
 				EndCpuCycle(true);
 			}
 		} else {
-			if(_spriteDmaTransfer && (spriteDmaCounter & 0x01)) {
+			if(_spriteDmaTransfer && (_spriteDmaCounter & 0x01)) {
 				//Sprite DMA write cycle (only do this if a sprite dma read was performed last cycle)
 				processCycle();
 				_memoryManager->Write(0x2004, readValue, MemoryOperationType::DmaWrite);
 				EndCpuCycle(true);
-				spriteDmaCounter++;
-				if(spriteDmaCounter == 0x200) {
+				_spriteDmaCounter++;
+				if(_spriteDmaCounter == 0x200) {
 					_spriteDmaTransfer = false;
 				}
 			} else {
@@ -512,6 +510,11 @@ void NesCpu::RunDMATransfer(uint8_t offsetValue)
 {
 	_spriteDmaTransfer = true;
 	_spriteDmaOffset = offsetValue;
+	//OAM DMA progress is CPU state rather than locals of ProcessPendingDma: a nested
+	//ProcessPendingDma call (DMC DMA re-requested during an OAM DMA) must continue the
+	//transfer, not restart it from byte 0 (docs/research/nes-verification-findings.md #1)
+	_spriteDmaCounter = 0;
+	_spriteReadAddr = 0;
 	_needHalt = true;
 }
 
