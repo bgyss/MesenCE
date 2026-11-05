@@ -14,7 +14,10 @@ Snapshot: `master` @ `9a05146d`, 2026-11-04, aarch64-darwin.
 | 2 | CPU: `STOP` (`$10`) | MesenCE treats STOP as 2 bytes (reads and skips the next byte) | **Divergence.** Matches Pan Docs' normal case |
 | 3 | CPU: `HALT` (`$76`) | Final state matches; M-cycle count differs (1 vs 3) | **Bookkeeping difference**, not a bug |
 | 4 | Save states | 261 MesenTests GB/GBC ROMs × 300 frames (ROM-only, MBC1, MBC2, MBC3 incl. RTC, MBC5) reproduce exactly in a fresh console | **Clean** |
-| 5 | Undefined behaviour | UBSan over MesenTests (earlier NES run), the CPU suite and the save-state round-trip | see §5 |
+| 5 | Undefined behaviour | UBSan over MesenTests (earlier NES run), the CPU suite and the save-state round-trip | **Clean** |
+| 6 | Interrupts: `EI` then `HALT` with an interrupt pending | The handler returns to the instruction *after* the HALT; it should return to the HALT, which then runs again | **Probable bug** (Pan Docs + SameBoy agree). Fix validated, not applied |
+| 7 | Interrupts / HALT / EI | 10 other documented behaviours checked on the real `GbCpu`: dispatch, 5-M-cycle timing, priority, EI delay, EI;DI, the HALT variants, HALT bug, HALT bug + RST | **Clean** |
+| 8 | TLA+ model of `GbCpu::Exec` (IME / EI-pending / HALT / halt bug) | Every documented property holds over all reachable states, except finding 6 | **Clean** apart from #6 |
 
 ## How to reproduce
 
@@ -105,13 +108,118 @@ hadn't registered one. The harness now does what `Emulator::InitConsole` does
   results: 498,000 / 500,000 with 0 unexpected failures, and 261 / 261 consistent.
 - AddressSanitizer still can't run on this machine (see the NES log, §10).
 
+## 6–8. Interrupts, HALT and EI
+
+The per-instruction suite never takes an interrupt. These checks do, in two complementary ways,
+the same split as the NES DMA work: concrete scenarios on the emulator, and an exhaustive model of
+the code.
+
+### 7. Scenario harness on the real CPU (`mise run test:gb-irq`)
+
+**Method.** `tools/gb-irq-scenarios/scenarios.cpp` drives the **real** `GbCpu` of a `Gameboy`
+console, mapped to flat RAM as in §1. It runs short programs (at `$0200`) with real IE/IF state
+(`GbMemoryManager` `IrqEnabled`/`IrqRequests`). Only the Serial (`$58`) and Joypad (`$60`)
+interrupts are used, because neither the PPU nor the timer can raise them by themselves. Every
+handler is `INC D; RETI`, so D counts handler entries. Each scenario checks one rule from Pan Docs
+([Interrupts](https://gbdev.io/pandocs/Interrupts.html), [HALT](https://gbdev.io/pandocs/halt.html)).
+
+| Scenario | Documented rule | Result |
+|---|---|---|
+| `dispatch` | IME=1 and IE&IF≠0: handler runs, IF bit and IME cleared, return address pushed | PASS |
+| `dispatch-cycles` | Dispatch takes 5 M-cycles | PASS (exactly 5) |
+| `priority` | Lowest bit first: Serial before Joypad | PASS |
+| `ei-delay` | EI's effect is delayed by one instruction | PASS |
+| `ei-di` | `EI; DI`: no interrupt between them, IME ends at 0 | PASS |
+| `halt-ime1` | HALT with IME=1: wakes, handler runs, returns after HALT | PASS |
+| `halt-ime0-wake` | HALT with IME=0, nothing pending: wakes, interrupt *not* handled | PASS |
+| `halt-bug` | HALT with IME=0 and IE&IF≠0: the byte after HALT is read twice | PASS |
+| `halt-bug-rst` | Halt bug followed by RST: pushed address points at the RST | PASS |
+| `ei-halt` | `EI; HALT` with an interrupt pending: serviced, handler **returns to the HALT** | **FAIL**, finding 6 |
+| `reti-ime` | RETI enables IME (Pan Docs gives no timing) | Informational: MesenCE enables it immediately |
+
+### 6. `EI; HALT` with an interrupt pending returns past the HALT
+
+- **Documented** ([halt.html](https://gbdev.io/pandocs/halt.html)): if HALT directly follows EI with
+  an interrupt pending, "the interrupt is serviced and the handler called, but the interrupt
+  returns to the halt". The HALT then runs again and waits for the next interrupt.
+- **MesenCE** (from the scenario harness): the handler returns to `$0202`, the byte *after* the
+  HALT at `$0201`. The following instruction runs, and the CPU does not halt again.
+- **Cause.**
+  - `GbCpu::Exec` applies EI's pending IME at the *start* of the next instruction
+    (`GbCpu.cpp:119-123`), so `HALT()` runs with IME=1.
+  - `HALT()` (`GbCpu.cpp:903-916`) only distinguishes "IME=1 or nothing pending → halt" from
+    "IME=0 and pending → halt bug". With IME=1 and an interrupt already pending, it halts with PC
+    already past the HALT, wakes at the next cycle, and dispatches with that PC.
+- **Second source.** SameBoy (`Core/sm83_cpu.c`, `halt()`) also has IME=1 by the time HALT
+  executes after EI, but it handles *pending && ime* explicitly: `gb->halted = false; gb->pc--;`.
+  The dispatch then pushes the HALT's own address.
+- **Impact.** Code using `ei; halt` to wait for an interrupt that is already pending gets one wait
+  fewer than on hardware. Execution continues after the HALT instead of halting again until the
+  next interrupt. No MesenTests ROM covers this case: mooneye's `halt_ime0_ei`, `ei_sequence`,
+  `ei_timing`, `halt_ime1_timing*` and `rapid_di_ei`, and blargg's `halt_bug`, all pass.
+- **Not done:** a hardware test. The bug is established from documentation and a reference
+  emulator, not from a real Game Boy.
+- **The fix.** Validated in a throwaway worktree; **not applied to this repo**:
+
+  ```cpp
+  void GbCpu::HALT()
+  {
+  	if(_state.IME && _memoryManager->ProcessIrqRequests() != 0) {
+  		//An interrupt is already pending and IME is set (e.g. "EI; HALT"): don't halt, and point
+  		//PC back at the HALT so the dispatch returns to it (Pan Docs halt.html, matches SameBoy)
+  		_state.PC--;
+  		return;
+  	} else if(_state.IME || _memoryManager->ProcessIrqRequests() == 0) {
+  		_state.HaltCounter = 1;
+  	} else {
+  		...  // unchanged halt-bug branch
+  ```
+
+  With it: the scenarios pass 11/11; the SM83 suite is unchanged (498,000 / 500,000, 0 unexpected);
+  MesenTests passes 612 / 0 / 218 with no regressions, including every mooneye HALT/EI/interrupt
+  timing ROM; and the TLA+ model passes every property (`GbIrq_MC_fixed.cfg`).
+
+### 8. TLA+ model: `docs/research/tla/GbIrqStateMachine.tla`
+
+- **Scope.** An instruction-level model of the *code*: `GbCpu::Exec`, `ProcessNextCycleStart`
+  (which samples the IRQ line at the end of each `Exec`), `ProcessHaltBug`, and
+  `HALT`/`EI`/`DI`/`RETI`.
+- **One step** is one `GbCpu::Exec()` call.
+- **The environment** chooses the instruction stream (EI, DI, RETI, HALT, or "other"). It may raise
+  an interrupt *before* the instruction (so HALT sees it) or *after* it (so only the end-of-`Exec`
+  sample sees it), up to `MaxRaises` times.
+- **Constant `ReturnToHaltFix`** switches between the current code and the fix above.
+
+**Properties** (Pan Docs):
+
+| Property | Meaning |
+|---|---|
+| `EiDelay` | When EI enables interrupts, none is taken before the following instruction |
+| `EiDiImeOff` | After `EI; DI`, IME is 0 |
+| `DispatchClearsIme` | Dispatch clears IME |
+| `EiHaltReturnsToHalt` | A dispatch right after `EI; HALT`, with the interrupt pending at HALT, pushes the HALT's address |
+| `HaltWakes` | Liveness: a halted CPU always wakes once an interrupt is pending. A halt-bug loop (`HALT; HALT` with IME=0 and an interrupt pending) is excluded, since Pan Docs documents that it repeats |
+
+**Results** (TLC 1.7.4, `MaxRaises = 2`, `mise run tla`):
+
+| Config | Result |
+|---|---|
+| `GbIrq_MC.cfg` (current code) | `EiHaltReturnsToHalt` violated. Minimal trace: `EI`, then `HALT` with the interrupt pending, then dispatch with `retToHalt = FALSE` |
+| Same, without `EiHaltReturnsToHalt` | **All other properties hold** (685 distinct states) |
+| `GbIrq_MC_fixed.cfg` (with the fix) | **All properties hold** (787 distinct states) |
+
+**What writing the model taught us.** Three first-draft properties were wrong, and TLC's
+counterexamples showed why. None were emulator bugs:
+- EI executed with IME already 1 *can* be followed directly by an interrupt.
+- `HALT; HALT` with IME=0 and an interrupt pending loops forever by design.
+- One `Exec` can wake, dispatch, and run a handler that halts again.
+
 ## Ideas for further Game Boy verification
 
-- **Interrupts and timing.** The per-instruction suite never takes an interrupt (IE=IF=0). Halt
-  exit, the HALT bug, and IRQ dispatch timing are covered only by the mooneye/blargg ROMs in
-  MesenTests. A TLA+ or exhaustive model of `GbCpu::Exec`'s IRQ/HALT/EI state machine
-  (`_prevIrqVector`, `HaltCounter`, `HaltBug`, `EiPending`) would cover them, like the NES DMA
-  model.
+- **Cycle-level interrupt timing.** The model is instruction-level. Where exactly the IRQ line is
+  sampled within an instruction (`ProcessNextCycleStart`'s DMG vs CGB differences while halted),
+  and the `ie_push` quirk (an IE write by the PC push redirects the dispatch to `$0000`), are
+  covered only by MesenTests' mooneye ROMs.
 - **The full STOP behaviour** from the Pan Docs flowchart, as a test ROM plus implementation.
 - **AddressSanitizer on Linux**, and a ThreadSanitizer run, since the Game Boy shares the
   audio/emulation-thread code with the NES.
