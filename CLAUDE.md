@@ -29,10 +29,11 @@ This fork's addition, not upstream.
   - `mise run test:ci`: the MesenTests regression suite.
   - `mise run test:cpu`: NES CPU vs the SingleStepTests `nes6502` suite (2.56M tests incl. per-cycle bus traces). Downloads 1.2 GB into `bin/`. Known divergences are whitelisted in `tools/nes-cpu-singlestep/singlestep.cpp`.
   - `mise run test:gb-cpu`: Game Boy SM83 CPU vs the SingleStepTests `sm83` suite (500k tests: bus trace, registers, RAM and M-cycle count). Downloads about 150 MB into `bin/`.
+  - `mise run test:gb-irq`: Game Boy interrupt/HALT/EI scenarios on the real `GbCpu`, checked against Pan Docs rules. Known bugs are reported but don't fail the run.
   - `mise run test:savestate -- <roms|dir>`: save state → fresh console → per-frame state comparison, for `.nes`, `.gb` and `.gbc`. It finds emulation state missing from `Serialize`.
   - Findings from these tools are logged in `docs/research/nes-verification-findings.md` and `docs/research/gb-verification-findings.md`.
   - The harnesses drive consoles without the emulation thread. They set `Emulator::_isRunAheadFrame` (so frames aren't sent to the video decoder) and register the console as `Emulator::_console` (some hardware, e.g. the MBC3 RTC, reads `Emulator::GetMasterClock()`).
-  - `mise run tla`: model-checks `docs/research/tla/NesDmaScheduler.tla`, which mirrors `NesCpu::ProcessPendingDma`. If you change NES DMA code, update the spec and re-run.
+  - `mise run tla`: model-checks `docs/research/tla/NesDmaScheduler.tla` (mirrors `NesCpu::ProcessPendingDma`) and `GbIrqStateMachine.tla` (mirrors `GbCpu::Exec`'s IME/EI/HALT handling). If you change that code, update the matching spec and re-run.
   - `mise run format`, `mise run clean`.
 - **`nix build .#core`:** hermetic build of only `MesenCore.{dylib,so}`, written to `result/lib`.
   - It uses `STATICLINK=false LTO=false` and drops upstream's `-Werror`.

@@ -109,6 +109,20 @@ if [ $havePath -eq 0 ]; then set -- "$@" "$data/v1"; fi
 exec bin/gb-cpu-singlestep "$@"
 '''
 
+[tasks."test:gb-irq"]
+description = "Game Boy interrupt/HALT/EI conformance scenarios vs Pan Docs (mise run test:gb-irq -- [--verbose])"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+mkdir -p bin
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/gb-irq-scenarios/scenarios.cpp "$lib" -pthread -o bin/gb-irq-scenarios
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+exec bin/gb-irq-scenarios "$@"
+'''
+
 [tasks."test:savestate"]
 description = "Save-state round-trip check, NES + Game Boy (mise run test:savestate -- [--warmup W] [--frames K] <roms|dir>)"
 depends = ["core"]
@@ -124,18 +138,23 @@ exec bin/savestate-roundtrip "$@"
 '''
 
 [tasks.tla]
-description = "Model-check the TLA+ specs in docs/research/tla (all MC_*.cfg)"
+description = "Model-check the TLA+ specs in docs/research/tla (NES DMA: MC_*.cfg, GB IRQ: GbIrq_*.cfg)"
 dir = "docs/research/tla"
 run = '''
 #!/usr/bin/env bash
 set -uo pipefail
 meta=$(mktemp -d)
 trap 'rm -rf "$meta"' EXIT
-for cfg in MC_*.cfg; do
-  echo "=== $cfg"
-  tlc -config "$cfg" -workers auto -metadir "$meta/${cfg%.cfg}" NesDmaScheduler.tla \
-    | grep -E "^Error|No error has been found|distinct states found" || true
-done
+check() { # <spec.tla> <configs...>
+  local spec=$1; shift
+  for cfg in "$@"; do
+    echo "=== $spec / $cfg"
+    tlc -config "$cfg" -workers auto -metadir "$meta/${cfg%.cfg}" "$spec" \
+      | grep -E "^Error|No error has been found|distinct states found" || true
+  done
+}
+check NesDmaScheduler.tla MC_*.cfg
+check GbIrqStateMachine.tla GbIrq_*.cfg
 '''
 
 [tasks.format]
