@@ -109,6 +109,49 @@ if [ $havePath -eq 0 ]; then set -- "$@" "$data/v1"; fi
 exec bin/gb-cpu-singlestep "$@"
 '''
 
+[tasks."test:spc-cpu"]
+description = "SNES SPC700 vs SingleStepTests spc700 (mise run test:spc-cpu -- [--details N] [opcode files...])"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+data="$PWD/bin/SingleStepTests-spc700"
+if [ ! -d "$data/v1" ]; then
+  git clone --depth 1 https://github.com/SingleStepTests/spc700.git "$data"
+fi
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+mkdir -p bin
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/spc-cpu-singlestep/singlestep.cpp "$lib" -pthread -o bin/spc-cpu-singlestep
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+havePath=0
+for a in "$@"; do [ -e "$a" ] && havePath=1; done
+if [ $havePath -eq 0 ]; then set -- "$@" "$data/v1"; fi
+exec bin/spc-cpu-singlestep "$@"
+'''
+
+[tasks."test:z80-cpu"]
+description = "SMS/GG/Coleco Z80 vs SingleStepTests z80 (mise run test:z80-cpu -- [--details N] [opcode files...])"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+data="$PWD/bin/SingleStepTests-z80"
+if [ ! -d "$data/v1" ]; then
+  git clone --depth 1 https://github.com/SingleStepTests/z80.git "$data"
+fi
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+mkdir -p bin
+# The harness compiles Core/SMS/SmsCpu.cpp itself (against a flat test bus).
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/z80-cpu-singlestep/singlestep.cpp "$lib" -pthread -o bin/z80-cpu-singlestep
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+havePath=0
+for a in "$@"; do [ -e "$a" ] && havePath=1; done
+if [ $havePath -eq 0 ]; then set -- "$@" "$data/v1"; fi
+exec bin/z80-cpu-singlestep "$@"
+'''
+
 [tasks."test:gb-irq"]
 description = "Game Boy interrupt/HALT/EI conformance scenarios vs Pan Docs (mise run test:gb-irq -- [--verbose])"
 depends = ["core"]
