@@ -1,11 +1,11 @@
-// roundtrip.cpp - find NES state that save states do not capture.
+// roundtrip.cpp - find emulation state that save states do not capture (NES, Game Boy).
 //
 // For each ROM:
 //   1. console A: load the ROM, run W frames, take a save state S (the same
 //      Serializer stream Emulator::Serialize uses).
 //   2. A runs K more frames; its full state (Text serializer format) is recorded
 //      after every frame.
-//   3. console B: a *fresh* NesConsole loads the same ROM, loads S, and runs the
+//   3. console B: a *fresh* console loads the same ROM, loads S, and runs the
 //      same K frames.  Its state is compared with A's after every frame.
 // Anything that affects emulation but is not in the save state makes B diverge
 // from A.  Such a bug also breaks rewind, netplay, movies and the history viewer.
@@ -13,7 +13,9 @@
 //
 // No input is applied, so the ROMs must run on their own (test ROMs do).
 //
-// Usage: roundtrip [--warmup W] [--frames K] [--lines N] <rom.nes | dir> ...
+// The console type is chosen by extension: .nes -> NesConsole, .gb/.gbc -> Gameboy.
+//
+// Usage: roundtrip [--warmup W] [--frames K] [--lines N] <rom.nes|.gb|.gbc | dir> ...
 
 #include "pch.h"
 #include <filesystem>
@@ -28,13 +30,14 @@
 #undef private
 #include "Shared/SaveStateManager.h"
 #include "NES/NesConsole.h"
+#include "Gameboy/Gameboy.h"
 #include "Utilities/Serializer.h"
 #include "Utilities/VirtualFile.h"
 #include "Utilities/FolderUtilities.h"
 
 namespace fs = std::filesystem;
 
-static string SaveState(NesConsole& c, SerializeFormat format)
+static string SaveState(IConsole& c, SerializeFormat format)
 {
 	Serializer s(SaveStateManager::FileFormatVersion, true, format);
 	s.Stream(c, "", -1);
@@ -43,7 +46,7 @@ static string SaveState(NesConsole& c, SerializeFormat format)
 	return out.str();
 }
 
-static bool LoadState(NesConsole& c, const string& data)
+static bool LoadState(IConsole& c, const string& data)
 {
 	Serializer s(SaveStateManager::FileFormatVersion, false);
 	std::stringstream in(data);
@@ -52,6 +55,23 @@ static bool LoadState(NesConsole& c, const string& data)
 	}
 	s.Stream(c, "", -1);
 	return true;
+}
+
+static bool IsRom(const fs::path& p)
+{
+	string ext = p.extension().string();
+	std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+	return ext == ".nes" || ext == ".gb" || ext == ".gbc";
+}
+
+static shared_ptr<IConsole> MakeConsole(Emulator& emu, const fs::path& rom)
+{
+	string ext = rom.extension().string();
+	std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+	if(ext == ".nes") {
+		return std::make_shared<NesConsole>(&emu);
+	}
+	return std::make_shared<Gameboy>(&emu);
 }
 
 static vector<uint8_t> ReadFile(const fs::path& path)
@@ -170,7 +190,7 @@ int main(int argc, char* argv[])
 			maxLines = std::stoi(argv[++i]);
 		} else if(fs::is_directory(a)) {
 			for(const auto& e : fs::directory_iterator(a)) {
-				if(e.path().extension() == ".nes") {
+				if(IsRom(e.path())) {
 					roms.push_back(e.path());
 				}
 			}
@@ -180,7 +200,7 @@ int main(int argc, char* argv[])
 	}
 	std::sort(roms.begin(), roms.end());
 	if(roms.empty()) {
-		std::cerr << "usage: roundtrip [--warmup W] [--frames K] [--lines N] <rom.nes | dir> ...\n";
+		std::cerr << "usage: roundtrip [--warmup W] [--frames K] [--lines N] <rom.nes|.gb|.gbc | dir> ...\n";
 		return 2;
 	}
 
@@ -200,7 +220,12 @@ int main(int argc, char* argv[])
 		string name = rom.filename().string();
 		vector<uint8_t> romData = ReadFile(rom);
 		VirtualFile fileA(romData.data(), romData.size(), name);
-		NesConsole a(&emu);
+		shared_ptr<IConsole> consoleA = MakeConsole(emu, rom);
+		IConsole& a = *consoleA;
+		// Register the console being driven as the emulator's current console, as
+		// Emulator::InitConsole does: some hardware (e.g. the MBC3 RTC) reads time via
+		// Emulator::GetMasterClock(), which forwards to it.
+		emu._console.reset(consoleA);
 		if(a.LoadRom(fileA) != LoadRomResult::Success) {
 			std::cout << "SKIP  " << name << " (load failed)\n";
 			skipped++;
@@ -218,7 +243,9 @@ int main(int argc, char* argv[])
 		}
 
 		VirtualFile fileB(romData.data(), romData.size(), name);
-		NesConsole b(&emu);
+		shared_ptr<IConsole> consoleB = MakeConsole(emu, rom);
+		IConsole& b = *consoleB;
+		emu._console.reset(consoleB);
 		if(b.LoadRom(fileB) != LoadRomResult::Success || !LoadState(b, snapshot)) {
 			std::cout << "SKIP  " << name << " (state load failed)\n";
 			skipped++;
