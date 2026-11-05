@@ -1,8 +1,32 @@
-# Mesen Community Edition
+# Mesen Community Edition: LLM + formal verification fork
+
+> **This is an independent fork** of [MesenCE](https://github.com/nesdev-org/MesenCE), run as
+> its own project. It's an example of developing an emulator with LLM assistance, backed by
+> automated differential testing, sanitizers and formal verification (TLA+). Fixes are applied
+> here directly; nothing is submitted upstream. The release and build links below still point
+> at upstream MesenCE.
+>
+> What this fork has found and fixed so far:
+>
+> | System | Area | Result |
+> |---|---|---|
+> | NES | OAM DMA scheduler (TLA+ model + test ROM) | **Fixed:** OAM DMA restarted when a duplicated DMC DMA landed inside it |
+> | NES | PPU (UndefinedBehaviorSanitizer) | **Fixed:** sprite index −1 led to out-of-bounds reads in the HD Pack Builder |
+> | NES | CPU vs 2.56M SingleStepTests | Clean (divergences documented) |
+> | Game Boy | Interrupts (TLA+ model + scenarios) | **Fixed:** `EI; HALT` with an interrupt pending returned past the HALT |
+> | Game Boy | SM83 CPU vs 500k SingleStepTests | Clean (divergences documented) |
+> | NES + GB | Save states (509 test ROMs) | Clean |
+>
+> Details: [docs/research/](docs/research/). Start with
+> [formal-verification-tla-lean.md](docs/research/formal-verification-tla-lean.md),
+> [nes-verification-findings.md](docs/research/nes-verification-findings.md) and
+> [gb-verification-findings.md](docs/research/gb-verification-findings.md).
+> To build and test, see [CLAUDE.md](CLAUDE.md) (Nix dev shell + `mise` tasks); to contribute, see
+> [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Mesen is a multi-system emulator for Windows, Linux, and macOS. It supports NES, SNES, Game Boy (GB/SGB/GBC), Game Boy Advance, PC Engine, SMS/Game Gear, and WonderSwan (WS/WSC).
 
-This is a community-managed fork, created to maintain and expand this emulator into the future.
+MesenCE is a community-managed fork, created to maintain and expand this emulator into the future.
 
 ## Releases
 

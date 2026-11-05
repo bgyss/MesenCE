@@ -4,10 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MesenCE is a community fork of Mesen2: a multi-system emulator (NES, SNES, GB/SGB/GBC, GBA, PC Engine, SMS/Game Gear, WonderSwan) with a C++17 emulation core and a C#/.NET 10 Avalonia UI.
 
-## Contribution policy (from CONTRIBUTING.md)
+**This repository is an independent fork of MesenCE.** It's run as its own project, as an example of LLM-assisted development backed by testing and formal verification. Fixes are applied here directly, and nothing is prepared for or submitted upstream.
 
-- **Upstream prohibits AI-generated code in submitted PRs.** Contributors must write and understand the code they submit. Keep this in mind when anything here is intended for upstream.
-- Contributions are licensed MIT, so do not base code on GPL sources or pull in GPL libraries.
+## Contribution policy (see CONTRIBUTING.md)
+
+- **LLM-assisted code is welcome. Evidence is required:**
+  - a reproduction (failing test, ROM, sanitizer report or model counterexample);
+  - a source for the intended behaviour;
+  - a regression test wired into a `mise` task;
+  - the existing checks still passing;
+  - an entry in `docs/research/*-findings.md`.
+- Label judgment calls as such, and record retracted or "not a bug" results too.
+- The license is GPL v3, the same as upstream. Keep upstream copyright notices.
 - Performance is a review criterion: avoid adding branches or work to emulation hot paths. Max FPS is checked with F9 (unlocked framerate) and F10 (FPS display).
 - MSVC builds treat warnings as errors. Linux clang builds use `-Werror`.
 - Naming: `ExampleFunction`, `exampleVariable`, `_exampleMemberVariable`.
@@ -30,6 +38,7 @@ This fork's addition, not upstream.
   - `mise run test:cpu`: NES CPU vs the SingleStepTests `nes6502` suite (2.56M tests incl. per-cycle bus traces). Downloads 1.2 GB into `bin/`. Known divergences are whitelisted in `tools/nes-cpu-singlestep/singlestep.cpp`.
   - `mise run test:gb-cpu`: Game Boy SM83 CPU vs the SingleStepTests `sm83` suite (500k tests: bus trace, registers, RAM and M-cycle count). Downloads about 150 MB into `bin/`.
   - `mise run test:gb-irq`: Game Boy interrupt/HALT/EI scenarios on the real `GbCpu`, checked against Pan Docs rules. Known bugs are reported but don't fail the run.
+  - `mise run test:nes-dma`: NES OAM-DMA regression test. It builds the self-checking ROM `docs/research/tla/rom/dmc_oam_overlap.s` with cc65 and runs it with the DMC duplication glitch on.
   - `mise run test:savestate -- <roms|dir>`: save state → fresh console → per-frame state comparison, for `.nes`, `.gb` and `.gbc`. It finds emulation state missing from `Serialize`.
   - Findings from these tools are logged in `docs/research/nes-verification-findings.md` and `docs/research/gb-verification-findings.md`.
   - The harnesses drive consoles without the emulation thread. They set `Emulator::_isRunAheadFrame` (so frames aren't sent to the video decoder) and register the console as `Emulator::_console` (some hardware, e.g. the MBC3 RTC, reads `Emulator::GetMasterClock()`).
