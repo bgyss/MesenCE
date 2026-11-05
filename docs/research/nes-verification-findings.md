@@ -29,7 +29,7 @@ All of this runs from the Nix dev shell (`direnv allow`, or `nix develop`).
 | Task | What it runs |
 |---|---|
 | `mise run test:cpu` | `tools/nes-cpu-singlestep`. Clones [SingleStepTests/65x02](https://github.com/SingleStepTests/65x02) `nes6502` (1.2 GB) into `bin/` and runs all 256 × 10,000 tests. Exits non-zero only on *unexpected* failures |
-| `mise run test:savestate -- <roms or dir>` | `tools/nes-savestate-roundtrip`. Save state → fresh console → compare per frame |
+| `mise run test:savestate -- <roms or dir>` | `tools/savestate-roundtrip`. Save state → fresh console → compare per frame |
 | `mise run test:ci` | The MesenTests regression suite, as upstream CI runs it |
 | `mise run tla` | TLA+ model of the DMA scheduler (findings 1 and 2) |
 
