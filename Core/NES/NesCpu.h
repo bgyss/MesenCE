@@ -42,6 +42,8 @@ private:
 	bool _abortDmcDma = false;
 	bool _needDummyRead = false;
 	uint8_t _spriteDmaOffset;
+	uint16_t _spriteDmaCounter = 0;
+	uint8_t _spriteReadAddr = 0;
 
 	bool _cpuWrite = false;
 

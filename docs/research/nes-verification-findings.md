@@ -11,7 +11,7 @@ Snapshot: `master` @ `e59476fa` (upstream `4b8a196e` + fork tooling), 2026-11-04
 
 | # | Area | Finding | Status |
 |---|---|---|---|
-| 1 | DMA (`NesCpu::ProcessPendingDma`) | With *DMC sample duplication glitch* on, a nested DMA restarts OAM DMA: 257 `$2004` writes, OAM shifted by one | **Bug, confirmed** (opt-in setting). Fix validated, not applied |
+| 1 | DMA (`NesCpu::ProcessPendingDma`) | With *DMC sample duplication glitch* on, a nested DMA restarts OAM DMA: 257 `$2004` writes, OAM shifted by one | **Fixed in this fork** (opt-in setting). Regression test: `mise run test:nes-dma` |
 | 2 | DMA (`StopDmcTransfer`) | Pending OAM DMA losing its halt request | **Retracted.** Model artifact |
 | 3 | CPU instruction set | 241/256 opcodes match SingleStepTests exactly (2.44M tests: registers, RAM and per-cycle bus trace) | **Clean** |
 | 4 | CPU: PLP/RTI | P bits 4/5 differ from the suite | **Not a bug.** Internal representation, never observable |
@@ -19,7 +19,7 @@ Snapshot: `master` @ `e59476fa` (upstream `4b8a196e` + fork tooling), 2026-11-04
 | 6 | CPU: STP/JAM (12 opcodes) | PC and bus pattern differ while jammed | **Deliberate simplification** |
 | 7 | Save states | 248 test ROMs × 300 frames: loading into a fresh console reproduces emulation exactly | **Clean** |
 | 8 | Save states | Unmapped (`NoAccess`) pages change encoding across load, so states are not byte-stable (22 ROMs: MMC3, VRC6) | **Minor**, behaviour-neutral |
-| 9 | PPU (`NesPpu::GetPixelColor`) | `GetHighestBitIndex(0)` (`__builtin_clz(0)`, UB) gives sprite index −1. In the HD Pack Builder that becomes an out-of-bounds read of `_exSpriteInfo[255]` and OAM | **Bug, confirmed by UBSan.** Fix validated, not applied |
+| 9 | PPU (`NesPpu::GetPixelColor`) | `GetHighestBitIndex(0)` (`__builtin_clz(0)`, UB) gives sprite index −1. In the HD Pack Builder that becomes an out-of-bounds read of `_exSpriteInfo[255]` and OAM | **Fixed in this fork.** Found by UBSan |
 | 10 | Undefined behaviour, everything else | UBSan over MesenTests, the CPU suite and the save-state round-trip | **Clean for NES** apart from #9. WonderSwan has two out-of-range palette indexes (not NES; logged) |
 
 ## How to reproduce
@@ -48,11 +48,20 @@ See [formal-verification-tla-lean.md §6.3](formal-verification-tla-lean.md#63-t
   `ProcessPendingDma` handles that by recursing, and the recursive call restarts the *local* OAM
   counter at 0.
 - **Evidence.**
-  - TLC counterexample: `MC_NTSC_glitch.cfg`.
+  - TLC counterexample: `MC_NTSC_glitch_prefix_4b8a196e.cfg` (models the pre-fix code).
   - The probe ROM `docs/research/tla/rom/dmc_oam_overlap.s` gave 29 bad transfers in 299 frames,
     each one 257 writes.
-- **The fix.** Keep the OAM DMA position in `NesCpu` members. It passes TLC
-  (`MC_NTSC_glitch_fixed.cfg`), the probe ROM, and MesenTests with the glitch on and off.
+- **The fix, applied in this fork.** The OAM DMA position (`_spriteDmaCounter`,
+  `_spriteReadAddr`) is now `NesCpu` member state, reset by `RunDMATransfer`
+  (`Core/NES/NesCpu.cpp`, `NesCpu.h`). It passes TLC (`MC_NTSC_glitch.cfg`), the probe ROM, and
+  MesenTests with the glitch on and off.
+- **Regression test** (`mise run test:nes-dma`). The probe ROM is now self-checking:
+  - Page `$02` holds 0..255. After every OAM DMA the ROM reads OAM[0] back through `$2003`/`$2004`
+    and counts mismatches in RAM.
+  - A second timing sweep (a period-256 counter, coprime with the LFSR's 255) was added, because
+    the extra check code shifted the loop length off the critical phase.
+  - `tools/nes-dma-regression` runs the ROM headlessly with the glitch on for 600 frames.
+  - Result: **19 failures on the pre-fix build, 0 with the fix.**
 
 ## 2. Retracted: `StopDmcTransfer` clearing a pending OAM halt
 
@@ -194,7 +203,8 @@ if(_processSprites && _prevRenderingEnabled) {
     93-94`). `_lastSprite->PaletteOffset` reads `_spriteTiles[-1]`, which is the end of
     `_spriteRam` (OAM, `BaseNesPpu.h:84-88`). If the out-of-bounds `AbsoluteTileAddr` happens to
     be ≥ 0, the builder records a bogus sprite tile with a garbage palette into the HD pack.
-- **The fix.** Validated in a throwaway UBSan build and **not applied to this repo**. Only take
+- **The fix, applied in this fork** (`NesPpu.cpp`, `GetPixelColor`). It was first validated in a
+  throwaway UBSan build. Only take
   the highest active shifter when one exists:
 
   ```cpp

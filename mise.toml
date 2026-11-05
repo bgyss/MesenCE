@@ -123,6 +123,22 @@ export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
 exec bin/gb-irq-scenarios "$@"
 '''
 
+[tasks."test:nes-dma"]
+description = "NES OAM-DMA restart regression test (self-checking ROM, duplication glitch on)"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+mkdir -p bin/rom
+ca65 docs/research/tla/rom/dmc_oam_overlap.s -o bin/rom/dmc_oam_overlap.o
+ld65 -C docs/research/tla/rom/nrom.cfg bin/rom/dmc_oam_overlap.o -o bin/rom/dmc_oam_overlap.nes
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/nes-dma-regression/dma_regression.cpp "$lib" -pthread -o bin/nes-dma-regression
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+exec bin/nes-dma-regression bin/rom/dmc_oam_overlap.nes "$@"
+'''
+
 [tasks."test:savestate"]
 description = "Save-state round-trip check, NES + Game Boy (mise run test:savestate -- [--warmup W] [--frames K] <roms|dir>)"
 depends = ["core"]
@@ -148,7 +164,10 @@ trap 'rm -rf "$meta"' EXIT
 check() { # <spec.tla> <configs...>
   local spec=$1; shift
   for cfg in "$@"; do
-    echo "=== $spec / $cfg"
+    case "$cfg" in
+      *_prefix_*) echo "=== $spec / $cfg  (pre-fix code: a violation is EXPECTED)" ;;
+      *) echo "=== $spec / $cfg" ;;
+    esac
     tlc -config "$cfg" -workers auto -metadir "$meta/${cfg%.cfg}" "$spec" \
       | grep -E "^Error|No error has been found|distinct states found" || true
   done

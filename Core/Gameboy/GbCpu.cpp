@@ -902,7 +902,14 @@ void GbCpu::STOP()
 
 void GbCpu::HALT()
 {
-	if(_state.IME || _memoryManager->ProcessIrqRequests() == 0) {
+	if(_state.IME && _memoryManager->ProcessIrqRequests() != 0) {
+		//An interrupt is already pending and IME is set (e.g. "EI; HALT", since EI's effect has been
+		//applied by now): don't halt, and point PC back at the HALT so the dispatch returns to it.
+		//The HALT then runs again once the handler returns (Pan Docs halt.html, matches SameBoy)
+		//(docs/research/gb-verification-findings.md #6)
+		_state.PC--;
+		return;
+	} else if(_state.IME || _memoryManager->ProcessIrqRequests() == 0) {
 		_state.HaltCounter = 1;
 	} else {
 		//HALT bug, execution continues, but PC isn't incremented for the first byte

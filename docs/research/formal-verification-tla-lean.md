@@ -28,8 +28,8 @@ effort figures here were measured.
      NTSC, PAL and RMW-on-`$4014` configurations; all pass every check. TLC's one counterexample
      is a **confirmed emulator bug** in the opt-in DMC sample-duplication mode: a nested DMA call
      restarts OAM DMA, writing 257 bytes. A 60-line test ROM reproduced it 29 times in 299
-     frames. A small fix was validated in a throwaway worktree (TLC, probe ROM, full suite) but
-     not applied.
+     frames. **It is fixed in this fork**, and a self-checking version of that ROM is now a
+     regression test (`mise run test:nes-dma`).
 - **A proof that the C++ refines the Lean model** (a refinement proof) is a research project
   [judgment]. No production-grade tool takes optimized C++17 like this into Lean. The
   established route used elsewhere is co-simulation against an executable formal model (ACL2
@@ -545,8 +545,11 @@ distinct states per configuration:
 |---|---|
 | `MC_NTSC.cfg` (default settings) | **All properties hold** |
 | `MC_PAL.cfg` | **All properties hold** |
-| `MC_NTSC_glitch.cfg` (`EnableDmcSampleDuplicationGlitch` on) | **`OamWritesExact` violated** — see finding 1 |
-| `MC_NTSC_glitch_fixed.cfg` (glitch on, `OamProgressPersists = TRUE`, the proposed fix) | **All properties hold** |
+| `MC_NTSC_glitch_prefix_4b8a196e.cfg` (glitch on, code *before* the fix) | **`OamWritesExact` violated** — see finding 1 |
+| `MC_NTSC_glitch.cfg` (glitch on, current code with the fix: `OamProgressPersists = TRUE`) | **All properties hold** |
+
+*(Configs were renamed when the fix was applied: the current-code configs model the fixed code,
+and the `_prefix_<commit>` config keeps the historical counterexample reproducible.)*
 | `MC_NTSC_rmw4014.cfg` (`$4014` also written by RMW instructions) | **All properties hold** — see the retracted finding 2 |
 
 **Finding 1: the nested DMA call restarts OAM DMA from byte 0.**
@@ -640,13 +643,13 @@ cd docs/research/tla
 tlc -config MC_NTSC.cfg -workers auto NesDmaScheduler.tla
 ```
 
-`tlc` comes from `pkgs.tlaplus` in the dev shell. `mise run tla` runs all four configs.
+`tlc` comes from `pkgs.tlaplus` in the dev shell. `mise run tla` runs every config of both
+specs, and labels the `_prefix_` configs as expected violations.
 
 ### 6.4 Next steps
 
-1. **Upstream finding 1.** File an issue with the probe ROM and the 257-write evidence, and
-   propose the fix below. Under `CONTRIBUTING.md`, the patch itself has to be written by a
-   human contributor.
+1. **Done: finding 1 is fixed in this fork** (see item 4). This fork does not send patches
+   upstream.
 2. **Trace validation (§4.2).** Have a debug build log, each cycle, the
    `{kind, needHalt, needDummyRead, dmcRunning, abortDmc, spriteDma, parity}` tuple, then check
    recorded runs of the MesenTests DMA ROMs against the spec with TLC. This turns "the model
@@ -658,7 +661,7 @@ tlc -config MC_NTSC.cfg -workers auto NesDmaScheduler.tla
    - Add a hardware-level spec from the NESdev wiki DMA page and check that the code-level model
      refines it. That would separate "the code does what we think" from "what we think matches
      the hardware".
-4. **Fix for finding 1. Validated in a throwaway worktree; not applied to this repo.**
+4. **Fix for finding 1: applied in this fork.** It was first validated in a throwaway worktree.
    - **The change.** Move `spriteDmaCounter`/`spriteReadAddr` from locals of
      `ProcessPendingDma` into `NesCpu` members (`_spriteDmaCounter`, `_spriteReadAddr`), and
      reset them in `RunDMATransfer`. A nested call then continues the transfer instead of
@@ -666,7 +669,10 @@ tlc -config MC_NTSC.cfg -workers auto NesDmaScheduler.tla
    - **Evidence, 2026-11-04:**
      - The probe ROM shows 0 bad OAM DMAs, from 56 nested calls.
      - MesenTests: 612 pass / 0 fail, both with the glitch forced on and with default settings.
-     - TLC: `MC_NTSC_glitch_fixed.cfg` passes every property.
+     - TLC: `MC_NTSC_glitch.cfg` (current code) passes every property.
+     - Regression test: `mise run test:nes-dma` runs a self-checking version of the probe ROM,
+       which reads OAM back after every DMA. It reports 19 bad DMAs in 600 frames on the old
+       code and 0 on the fixed code.
    - **Not needed:** a save-state change. `ProcessPendingDma` always runs a whole DMA within one
      CPU read, so the members never hold live state at a frame boundary **[judgment]**.
 

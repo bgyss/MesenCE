@@ -15,7 +15,7 @@ Snapshot: `master` @ `9a05146d`, 2026-11-04, aarch64-darwin.
 | 3 | CPU: `HALT` (`$76`) | Final state matches; M-cycle count differs (1 vs 3) | **Bookkeeping difference**, not a bug |
 | 4 | Save states | 261 MesenTests GB/GBC ROMs × 300 frames (ROM-only, MBC1, MBC2, MBC3 incl. RTC, MBC5) reproduce exactly in a fresh console | **Clean** |
 | 5 | Undefined behaviour | UBSan over MesenTests (earlier NES run), the CPU suite and the save-state round-trip | **Clean** |
-| 6 | Interrupts: `EI` then `HALT` with an interrupt pending | The handler returns to the instruction *after* the HALT; it should return to the HALT, which then runs again | **Probable bug** (Pan Docs + SameBoy agree). Fix validated, not applied |
+| 6 | Interrupts: `EI` then `HALT` with an interrupt pending | The handler returns to the instruction *after* the HALT; it should return to the HALT, which then runs again | **Fixed in this fork** (Pan Docs + SameBoy agree). Regression test: `ei-halt` in `mise run test:gb-irq` |
 | 7 | Interrupts / HALT / EI | 10 other documented behaviours checked on the real `GbCpu`: dispatch, 5-M-cycle timing, priority, EI delay, EI;DI, the HALT variants, HALT bug, HALT bug + RST | **Clean** |
 | 8 | TLA+ model of `GbCpu::Exec` (IME / EI-pending / HALT / halt bug) | Every documented property holds over all reachable states, except finding 6 | **Clean** apart from #6 |
 
@@ -159,7 +159,8 @@ handler is `INC D; RETI`, so D counts handler entries. Each scenario checks one 
   `ei_timing`, `halt_ime1_timing*` and `rapid_di_ei`, and blargg's `halt_bug`, all pass.
 - **Not done:** a hardware test. The bug is established from documentation and a reference
   emulator, not from a real Game Boy.
-- **The fix.** Validated in a throwaway worktree; **not applied to this repo**:
+- **The fix, applied in this fork** (`GbCpu::HALT`). It was first validated in a throwaway
+  worktree:
 
   ```cpp
   void GbCpu::HALT()
@@ -177,7 +178,7 @@ handler is `INC D; RETI`, so D counts handler entries. Each scenario checks one 
 
   With it: the scenarios pass 11/11; the SM83 suite is unchanged (498,000 / 500,000, 0 unexpected);
   MesenTests passes 612 / 0 / 218 with no regressions, including every mooneye HALT/EI/interrupt
-  timing ROM; and the TLA+ model passes every property (`GbIrq_MC_fixed.cfg`).
+  timing ROM; and the TLA+ model passes every property (`GbIrq_MC.cfg`).
 
 ### 8. TLA+ model: `docs/research/tla/GbIrqStateMachine.tla`
 
@@ -204,9 +205,9 @@ handler is `INC D; RETI`, so D counts handler entries. Each scenario checks one 
 
 | Config | Result |
 |---|---|
-| `GbIrq_MC.cfg` (current code) | `EiHaltReturnsToHalt` violated. Minimal trace: `EI`, then `HALT` with the interrupt pending, then dispatch with `retToHalt = FALSE` |
+| `GbIrq_MC_prefix_6d4e3ec4.cfg` (code before the fix) | `EiHaltReturnsToHalt` violated. Minimal trace: `EI`, then `HALT` with the interrupt pending, then dispatch with `retToHalt = FALSE` |
 | Same, without `EiHaltReturnsToHalt` | **All other properties hold** (685 distinct states) |
-| `GbIrq_MC_fixed.cfg` (with the fix) | **All properties hold** (787 distinct states) |
+| `GbIrq_MC.cfg` (current code, fix applied) | **All properties hold** (787 distinct states) |
 
 **What writing the model taught us.** Three first-draft properties were wrong, and TLC's
 counterexamples showed why. None were emulator bugs:

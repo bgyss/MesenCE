@@ -1,33 +1,61 @@
-# Licensing
+# Contributing to this fork
 
-Although MesenCE is currently GPL, we are interested in removing GPL code over time and potentially relicensing the emulator under a more permissive license, such as MIT, at some point in the future. Thus, if you submit code to MesenCE, you agree that:
-- **Your code is licensed under the MIT License.** You may explicitly provide it under additional optional licenses if you wish.
-- Your submission does not contain code that is incompatible with the MIT License. (For example, your submission may not be based on GPL code or include a GPL library.)
+This repository is an independent fork of [MesenCE](https://github.com/nesdev-org/MesenCE). It's
+run as its own project and an open experiment: what happens when an emulator is developed with LLM
+assistance, backed by automated testing and formal verification. Changes are made and merged here
+directly. Nothing here is prepared for, or obliged to go, upstream.
 
-# AI / LLM code
+## Licensing
 
-**AI-generated code is prohibited.** While you may consult with LLMs, all submitted code must be written and understood by you, the contributor, to ensure accuracy and copyright integrity.
+The emulator is licensed under the **GNU GPL v3** (see [LICENSE](LICENSE)). Contributions to this
+fork are made under the same license. Upstream copyright notices are kept.
 
-# Style
+## LLM-assisted code
 
-MesenCE requires a consistent style across the codebase. Most of this style is currently enforced with clang-format (for C++) and dotnet format (for C#), and these must be run on any code submitted to MesenCE. In Visual Studio, these can be configured to run automatically when saving. On other platforms, you can use these commands:
+LLM-assisted and LLM-generated code is welcome. What matters is **evidence**, not who or what
+typed the code. A change to emulation behaviour should come with whichever of these apply:
 
-- clang-format: `find ./ -iname '*.h' -o -iname '*.cpp' | xargs clang-format -i`
+- **A reproduction** of the problem: a failing test, scenario, test ROM, sanitizer report or model
+  counterexample.
+- **A source for the intended behaviour:** hardware documentation (NESdev wiki, Pan Docs, …),
+  hardware test ROMs, or a reference emulator. Say which, and how strong it is.
+- **A regression test** that fails before the change and passes after it, wired into a `mise`
+  task.
+- **The existing checks still passing:**
+  - `mise run test:ci` (MesenTests regression suite);
+  - `mise run test:cpu`, `test:gb-cpu`, `test:gb-irq`, `test:nes-dma`;
+  - `mise run test:savestate` for state-related changes;
+  - `mise run tla` when the modelled code (DMA scheduler, GB interrupt logic) changes. Update the
+    matching spec too.
+- **An entry in the findings log**: [docs/research/nes-verification-findings.md](docs/research/nes-verification-findings.md),
+  [docs/research/gb-verification-findings.md](docs/research/gb-verification-findings.md), or a new
+  log for another system. Record it even when the result is "not a bug" or "retracted".
+
+Claims should be checked, not asserted: run the tool, cite the source, and label judgment calls
+as judgment calls.
+
+## Development environment
+
+Use the Nix dev shell (`direnv allow`, or `nix develop`) and the `mise` tasks. See
+[CLAUDE.md](CLAUDE.md) for the full list of commands and an architecture overview.
+
+## Style
+
+Keep the existing style. It's enforced with clang-format (C++) and dotnet format (C#):
+
+- clang-format: `find ./ -iname '*.h' -o -iname '*.cpp' | xargs clang-format -i`, or `mise run format`
 - dotnet format: `dotnet format`
 
-In addition, we require the following naming conventions:
+Naming conventions:
 
 - ExampleFunction
 - exampleVariable
 - _exampleMemberVariable
 
-When in doubt, follow the formatting you see elsewhere in the project.
+## Guidance
 
-# Guidance
-
-- Performance: Changes may be rejected if they cause a drop in maximum FPS (press F9 to run at an unlocked framerate and F10 to view the FPS). Where possible, ensure that your changes avoid doing things like adding if statements to hot paths.
-- Warnings: The MesenCE MSVC builds treat warnings as errors. These must be resolved before code can be accepted.
-- Commit messages: Including context and test ROMs with your pull requests allows us to more easily and quickly evaluate the code. If we don't understand a change, it is less likely to be accepted.
-- Usefulness: Changes and features may not be accepted if we determine they're not useful enough or they are out of scope. MesenCE is not intended to cover every niche use case.
-
-**Pull requests may be rejected for a variety of reasons, even if they are functional. Please consult with the team before making any significant changes.**
+- **Performance.** Avoid adding work or branches to emulation hot paths. Check maximum FPS with
+  F9 (unlocked framerate) and F10 (FPS display).
+- **Warnings.** MSVC builds treat warnings as errors.
+- **Commit messages.** Explain the context and the evidence, and point at the test, ROM or
+  finding that covers the change.
