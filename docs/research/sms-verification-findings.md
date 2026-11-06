@@ -22,7 +22,8 @@ After the fixes, all of them pass.
 | 6 | `LD A,I` / `LD A,R` | Flag X (bit 3) not set from the result | 2 | **Fixed in this fork** |
 | 7 | Q after a `DD`/`FD` prefix | `SCF`/`CCF` X/Y used the Q of the instruction before the prefix | 4 | **Fixed in this fork** |
 | 8 | `EX (SP),HL/IX/IY` | Wrote the low byte first; hardware writes `(SP+1)` first | 3 | **Fixed in this fork** (bus order only) |
-| 9 | System level | MesenTests has **no** SMS/GG/Coleco tests, so fixes 2–8 are checked only at CPU level | – | **Gap** |
+| 9 | System level | MesenTests has **no** SMS/GG/Coleco tests. The fork's `tests/SMS/z80_timing.mtp` now checks fixes 2–3 through the whole system; fixes 4–8 are still CPU-level only | – | **Partly closed** |
+| 10 | Recorded tests | The VDP started on a random scanline, so no SMS recording could replay exactly (always "passed with warnings") | – | **Fixed in this fork** (test mode only) |
 
 ## How to reproduce
 
@@ -137,6 +138,43 @@ MesenTests (what `mise run test:ci` runs) has GB, GBA, NES, PCE, SNES and WS tes
 SMS/GG/Coleco. The fixes above were checked at instruction level, plus a full `test:ci` run for
 the other systems, but not against any game or test ROM.
 
+**Update: partly closed.** `tests/SMS/z80_timing.mtp` (source `tests/SMS/src/z80_timing.s`, run by
+`test:ci`) is a self-checking ROM written for the fork. It times 14 instructions with the VDP V
+counter: it syncs to the start of line 0, runs 456 unrolled copies (2 × 228 T-states per line),
+and reads the V counter, so the line count is exactly 2T. It covers every instruction from fix 2,
+the DDCB BIT alias from fix 3, and unchanged controls (NOP, `LD A,(HL)`, `RRD`, `BIT 0,(IX+d)`,
+`EX (SP),HL/IX`).
+
+- On the current core: all 14 match Zilog UM0080 ("ALL PASS").
+- On a core with commit `7d48f58e` (fixes 2–8) reverted: "8 FAILED", and the measured values are
+  exactly the "MesenCE before" column of fix 2's table, plus 19 for the DDCB alias. So the
+  measurement through the whole system (CPU + VDP counters) agrees with the instruction-level
+  result.
+
+Still not covered at system level: WZ (4), block I/O flags (5), `LD A,I/R` (6), Q (7), the
+`EX (SP),HL` write order (8), and anything involving interrupts. **Not yet run on hardware.**
+
+## 10. Recorded SMS tests weren't reproducible (fixed, test mode only)
+
+**Reproduction.** Recording `z80_timing` and replaying it with the CI runner's own function
+(`RunRecordedTest`) gave "passed with warnings" with 1–3 mismatched frames, and two recordings
+of the same ROM had different frame-hash sequences.
+
+**Cause.** `SmsVdp::Init` starts the VDP on `RandomHelper::GetValue(0, 200)`, a random scanline
+from `std::random_device`. Upstream did this on purpose so that Impossible Mission gets a random
+stage ("TODOSMS"). It isn't gated by any setting (unlike the PCE's `EnableRandomPowerOnState`), so
+every power-on, including the CI runner's replay, starts at a different point in the frame.
+
+**Effect.** No SMS/GG test could ever replay exactly, so a timing change could only be caught
+through the last frame. Movies recorded from power-on probably desync the same way. That hasn't
+been checked, so it's not claimed here.
+
+**Fix.** When `EmulationFlags::TestMode` is set (the CI runner and `tools/mtp-record` set it),
+the VDP starts on scanline 0. Normal play keeps upstream's random start. **Judgment call:** this
+follows the same idea as the recorder forcing all-zero RAM (`RecordedRomTest::UpdateSettings`).
+After the fix, three recordings in a row gave identical frame hashes and every replay passed
+exactly.
+
 ## Ideas for further SMS verification
 
 - **Interrupts:** IM 1, IM 2, NMI, the EI delay, and `LD A,I` P/V when an interrupt is accepted
@@ -145,4 +183,7 @@ the other systems, but not against any game or test ROM.
 - The save-state round trip for `.sms`/`.gg`, which also needs SMS ROMs that can be distributed
   (e.g. homebrew test ROMs).
 - Game Gear CMOS behaviour (`OUT (C),0`).
-- A recorded `.mtp` regression test for a timing-sensitive SMS test ROM.
+- More system-level tests in `tests/SMS`: interrupt timing (IM 1/NMI against the VDP), and
+  hardware runs of `z80_timing.sms` (an SMS and a Game Gear).
+- Whether SMS movies recorded from power-on desync because of the random VDP scanline (finding
+  10), and whether movies/netplay should also start deterministically.

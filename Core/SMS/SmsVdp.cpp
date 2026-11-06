@@ -34,7 +34,8 @@ void SmsVdp::Init(Emulator* emu, SmsConsole* console, SmsCpu* cpu, SmsControlMan
 	//Without this, the bios runs in the exact same amount of time each time, causing
 	//the game to use the same value for R, which generates the same stage each time
 	//Unsure what the proper fix for this is (R is supposed to be 0 at reset based on the Z80 datasheet)
-	_state.Scanline = RandomHelper::GetValue(0, 200);
+	//Recorded tests (TestMode) must be reproducible, so they always start on scanline 0
+	_state.Scanline = _emu->GetSettings()->CheckFlag(EmulationFlags::TestMode) ? 0 : RandomHelper::GetValue(0, 200);
 	_state.VCounter = _state.Scanline;
 
 	//Offset VDP from CPU clock - passes VDPTest "HCounter correct"

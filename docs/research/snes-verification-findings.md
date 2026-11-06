@@ -27,7 +27,7 @@ Snapshot: `apply-verified-fixes` @ `c8ce0381`, 2026-11-05, aarch64-darwin.
 | 12 | SA-1: vector fetch (`BRK`, `COP`, and NMI/IRQ entry) | The two vector reads took no CPU cycles: `BRK`/`COP` were 2 cycles short | **Fixed in this fork** (NMI/IRQ part: judgment call) |
 | 13 | SA-1: read-modify-write in emulation mode | NMI edge detection ran twice for the dummy-write cycle | **Fixed in this fork** |
 | 14 | SA-1: read-modify-write in native mode, with the debugger | The modify cycle was reported to the SNES CPU's debugger instead of the SA-1's | **Fixed in this fork** (code reading only) |
-| 15 | System level | MesenTests has **no** SA-1 tests, so fixes 12–14 are checked only at CPU level | **Gap** |
+| 15 | System level | MesenTests has **no** SA-1 tests. The fork's `tests/SNES/sa1_timing.mtp` now checks fix 12 (BRK/COP) and the SA-1 memory speeds through the whole system | **Partly closed** |
 
 ## How to reproduce
 
@@ -291,6 +291,30 @@ instruction level, and `test:ci` shows they don't affect anything else, but no S
 ROM has been run. The SA-1's wait-state model (BW-RAM, conflicts with the SNES CPU, ROM timing)
 is also untested.
 
+**Update: partly closed.** `tests/SNES/sa1_timing.mtp` (source `tests/SNES/src/sa1_timing.s`, run
+by `test:ci`) is a self-checking ROM written for the fork.
+
+- **How it times.** The SNES CPU is the clock. It runs its timing loop from WRAM, so there are no
+  SNES/SA-1 bus conflicts. It syncs to line 0 with a V-IRQ and WAI, and starts the SA-1 through
+  the CCNT/CFR message registers. The SA-1 runs 1,364 unrolled copies from ROM and answers
+  through SCNT/SFR. The SNES CPU then latches the V counter, giving SA-1 cycles = lines / 2,
+  exactly.
+- **What it covers:** NOP 2, `LDA abs` from ROM 4 and from I-RAM 4, `LDA long` from BW-RAM 6
+  (one extra cycle, since BW-RAM runs at half speed), and BRK+RTI and COP+RTI 16.
+- **Where the expected values come from.** BRK/COP 8 + RTI 7 come from the WDC datasheet. The
+  extra 1 is MesenCE's existing penalty for returning into PRG ROM (upstream `fe470dd8`); that
+  penalty is itself unconfirmed and should be checked on hardware.
+
+**Results:**
+- On the current core: "ALL PASS".
+- On a core with `7aa572af` (fixes 12–14) reverted: BRK+RTI and COP+RTI measure 14, "2 FAILED".
+
+**Still not covered:** NMI/IRQ entry (the judgment-call part of fix 12), conflicts with the
+SNES CPU, the PRG-ROM jump and odd-branch penalties on their own, and fix 13, which isn't
+observable as timing. Note that MesenCE doesn't implement the SA-1's own H/V counter reads
+(`$2302-$2305`) or its timer, so SA-1 code can't time itself in MesenCE. **Not yet run on
+hardware.**
+
 ## Notes for maintainers
 
 - The makefile has no header dependency tracking. `Core/SNES/Debugger/DummySpc.cpp` `#include`s
@@ -306,6 +330,7 @@ is also untested.
 - 65816 interrupts: NMI/IRQ timing, the `IdleOrRead` dummy read before an interrupt, WAI wake-up
   latency, and the DMA/HDMA interaction (`IrqLock`). These need a scenario harness like
   `tools/gb-irq-scenarios`.
-- SA-1 system level: a recorded `.mtp` test of an SA-1 test ROM or homebrew, and a scenario test
-  of the SA-1 wait states and SNES-CPU ↔ SA-1 interrupts (finding 15).
+- SA-1 system level: extend `tests/SNES/sa1_timing.s` with SNES → SA-1 IRQ/NMI entry latency and
+  SNES-CPU/SA-1 ROM conflicts, and run it on hardware (finding 15).
+- The SA-1 H/V counter reads (`$2302-$2305`) and timer are unimplemented (`Sa1.cpp`).
 - A hardware test ROM for findings 8 and 9.
