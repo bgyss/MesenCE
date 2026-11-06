@@ -28,6 +28,7 @@ Snapshot: `apply-verified-fixes` @ `c8ce0381`, 2026-11-05, aarch64-darwin.
 | 13 | SA-1: read-modify-write in emulation mode | NMI edge detection ran twice for the dummy-write cycle | **Fixed in this fork** |
 | 14 | SA-1: read-modify-write in native mode, with the debugger | The modify cycle was reported to the SNES CPU's debugger instead of the SA-1's | **Fixed in this fork** (code reading only) |
 | 15 | System level | MesenTests has **no** SA-1 tests. The fork's `tests/SNES/sa1_timing.mtp` now checks fix 12 (BRK/COP) and the SA-1 memory speeds through the whole system | **Partly closed** |
+| 16 | Save states | Save state → fresh console → 120 frames compared, on all 83 SNES ROMs in MesenTests plus the fork's SA-1 ROM | **Clean** (the check catches a removed `SV()`; see below) |
 
 ## How to reproduce
 
@@ -315,6 +316,40 @@ observable as timing. Note that MesenCE doesn't implement the SA-1's own H/V cou
 (`$2302-$2305`) or its timer, so SA-1 code can't time itself in MesenCE. **Not yet run on
 hardware.**
 
+## 16. Save-state round trip (clean)
+
+**Method.** `tools/savestate-roundtrip` now handles `.sfc`/`.smc`, plus SMS, PCE and WS. For
+each ROM:
+1. Console A runs 60 frames and takes a save state (the same `Serializer` stream as
+   `Emulator::Serialize`).
+2. A runs 120 more frames.
+3. A fresh console B loads the ROM and the state, then runs the same 120 frames.
+4. The full serialized state of A and B is compared after every frame.
+
+Anything that affects emulation but isn't serialized makes B diverge. `mise run
+test:savestate-all` extracts the ROM embedded in every MesenTests `.mtp` and in the fork's
+`tests/` (`tools/savestate-roundtrip/extract-mtp-roms.py`) and runs them all.
+
+**Result.** 83/83 consistent. The set is 36 `.sfc` and 44 `.smc` test ROMs, plus the three SGB
+test ROMs, which run as plain `.gb`, and it includes the fork's `sa1_timing` ROM, so SA-1 state
+is covered. One `.swc` ROM isn't picked up.
+
+**Is the check sensitive? (mutation test).** The tool can only see a missing field through its
+effect on fields that are saved. So, in a throwaway worktree, `SV(_oddFrame)` was removed from
+`SnesPpu::Serialize`. That flag picks the 4-clock-short scanline 240 on alternate frames. 59 of
+the 83 ROMs then diverged on the first frame after loading the state, with exactly that
+difference (`memoryManager.masterClock: expected 21748860, actual 21748864`). A first attempt
+removed `SV(_frameCount)` instead, and nothing diverged. That's correct, not a blind spot:
+`_frameCount` only decides which interlaced frames to skip rendering at high emulation speed,
+and is reported to the UI. Neither affects emulated state.
+
+**Limits.**
+- No input is applied, so the ROMs are test ROMs that mostly settle on a result screen after the
+  60-frame warmup.
+- Coprocessors other than the SA-1 and Cx4 (`cx4test`) aren't exercised.
+- The comparison is of the serialized state, so state that only affects video or audio output
+  isn't covered.
+
 ## Notes for maintainers
 
 - The makefile has no header dependency tracking. `Core/SNES/Debugger/DummySpc.cpp` `#include`s
@@ -323,8 +358,8 @@ hardware.**
 
 ## Ideas for further SNES verification
 
-- The save-state round trip (`tools/savestate-roundtrip`) for `.sfc`/`.smc`, using the 91
-  MesenTests SNES ROMs.
+- The save-state round trip with input applied (e.g. replaying each `.mtp` movie on both
+  consoles), and on ROMs that use the other coprocessors (finding 16).
 - A test for the SPC I/O page: timers (`$FA-$FF`), the `$F0` speed and write-enable bits, and
   `$F1` port clearing, against fullsnes / anomie's docs.
 - 65816 interrupts: NMI/IRQ timing, the `IdleOrRead` dummy read before an interrupt, WAI wake-up

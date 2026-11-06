@@ -24,6 +24,7 @@ After the fixes, all of them pass.
 | 8 | `EX (SP),HL/IX/IY` | Wrote the low byte first; hardware writes `(SP+1)` first | 3 | **Fixed in this fork** (bus order only) |
 | 9 | System level | MesenTests has **no** SMS/GG/Coleco tests. The fork's `tests/SMS/z80_timing.mtp` now checks fixes 2–3 through the whole system; fixes 4–8 are still CPU-level only | – | **Partly closed** |
 | 10 | Recorded tests | The VDP started on a random scanline, so no SMS recording could replay exactly (always "passed with warnings") | – | **Fixed in this fork** (test mode only) |
+| 11 | Save states | The save-state round trip now supports `.sms`/`.gg`/`.sg`; the only SMS ROM available (the fork's `z80_timing`) is consistent | – | **Clean, thin coverage** |
 
 ## How to reproduce
 
@@ -175,13 +176,32 @@ follows the same idea as the recorder forcing all-zero RAM (`RecordedRomTest::Up
 After the fix, three recordings in a row gave identical frame hashes and every replay passed
 exactly.
 
+## 11. Save-state round trip (clean, thin coverage)
+
+`tools/savestate-roundtrip` (method: snes-verification-findings #16) now runs `.sms`, `.gg` and
+`.sg` ROMs on `SmsConsole`, with `EmulationFlags::TestMode` set, so finding 10's random start
+scanline is fixed. `mise run test:savestate-all` includes every SMS ROM in MesenTests and
+`tests/`. Today that's one ROM, the fork's `z80_timing`, and it's consistent.
+
+**Sensitivity.** In a throwaway worktree, `SV(_state.Cycle)` was removed from
+`SmsVdp::Serialize`. The ROM diverged on the first frame after loading the state
+(`vdp.evalCounter`, `vdp.memAccess`), so the check does see missing SMS state.
+
+**Limit.** One ROM that runs for about 30 frames and then halts covers the CPU, VDP and memory
+state, but not the PSG, the FM unit, controllers, mappers beyond the plain 32 KiB ROM, or the
+Game Gear. More SMS ROMs (plan §4.1) would widen this directly.
+
+**Teardown note (harness only).** Destroying an `Emulator` while an `SmsConsole` is still its
+`_console` crashed in `SmsFmAudio::~SmsFmAudio`, because the sound mixer is destroyed first. The
+app calls `Emulator::Release()` before destroying it, so this only affected the harness, which
+now drops the console first.
+
 ## Ideas for further SMS verification
 
 - **Interrupts:** IM 1, IM 2, NMI, the EI delay, and `LD A,I` P/V when an interrupt is accepted
   (the suite's `p`/`ei`). These need a scenario harness like `tools/gb-irq-scenarios`. IM 0 is
   unimplemented (`TODOSMS`).
-- The save-state round trip for `.sms`/`.gg`, which also needs SMS ROMs that can be distributed
-  (e.g. homebrew test ROMs).
+- More SMS/GG ROMs for the save-state round trip (finding 11): PSG/FM, mappers, Game Gear.
 - Game Gear CMOS behaviour (`OUT (C),0`).
 - More system-level tests in `tests/SMS`: interrupt timing (IM 1/NMI against the VDP), and
   hardware runs of `z80_timing.sms` (an SMS and a Game Gear).

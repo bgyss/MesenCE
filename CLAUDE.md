@@ -45,7 +45,7 @@ This fork's addition, not upstream.
   - `mise run test:z80-cpu`: SMS/GG/Coleco Z80 vs the SingleStepTests `z80` suite (1.6M tests incl. WZ/Q, bus trace and T-states). The harness compiles `Core/SMS/SmsCpu.cpp` itself against a flat test bus. Downloads about 1.6 GB into `bin/`.
   - `mise run test:gb-irq`: Game Boy interrupt/HALT/EI scenarios on the real `GbCpu`, checked against Pan Docs rules. Known bugs are reported but don't fail the run.
   - `mise run test:nes-dma`: NES OAM-DMA regression test. It builds the self-checking ROM `docs/research/tla/rom/dmc_oam_overlap.s` with cc65 and runs it with the DMC duplication glitch on.
-  - `mise run test:savestate -- <roms|dir>`: save state → fresh console → per-frame state comparison, for `.nes`, `.gb` and `.gbc`. It finds emulation state missing from `Serialize`.
+  - `mise run test:savestate -- <roms|dir>`: save state → fresh console → per-frame state comparison, for NES, GB/GBC, SNES, SMS/GG/SG, PCE and WS ROMs. It finds emulation state missing from `Serialize`. `mise run test:savestate-all` runs it on every ROM embedded in MesenTests and `tests/` (about 5 minutes).
   - Findings from these tools are logged in `docs/research/{nes,gb,snes,sms}-verification-findings.md`.
   - The makefile doesn't track `#include` dependencies. The dummy CPUs (`Debugger/Dummy*.cpp`) `#include` the real CPU `.cpp` files, so `touch` them after editing a CPU, or the debugger keeps stale code.
   - The harnesses drive consoles without the emulation thread. They set `Emulator::_isRunAheadFrame` (so frames aren't sent to the video decoder) and register the console as `Emulator::_console` (some hardware, e.g. the MBC3 RTC, reads `Emulator::GetMasterClock()`).
