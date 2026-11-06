@@ -1,4 +1,5 @@
-// roundtrip.cpp - find emulation state that save states do not capture (NES, Game Boy).
+// roundtrip.cpp - find emulation state that save states do not capture (NES, Game Boy,
+// SNES, SMS/Game Gear/SG-1000, PC Engine, WonderSwan).
 //
 // For each ROM:
 //   1. console A: load the ROM, run W frames, take a save state S (the same
@@ -13,9 +14,13 @@
 //
 // No input is applied, so the ROMs must run on their own (test ROMs do).
 //
-// The console type is chosen by extension: .nes -> NesConsole, .gb/.gbc -> Gameboy.
+// The console type is chosen by extension: .nes -> NesConsole, .gb/.gbc -> Gameboy,
+// .sfc/.smc -> SnesConsole, .sms/.gg/.sg -> SmsConsole, .pce -> PceConsole,
+// .ws/.wsc -> WsConsole. Directories are searched recursively.
+// EmulationFlags::TestMode is set (as the CI test runner does), so power-on state that
+// is otherwise random (e.g. the SMS VDP's start scanline) is fixed.
 //
-// Usage: roundtrip [--warmup W] [--frames K] [--lines N] <rom.nes|.gb|.gbc | dir> ...
+// Usage: roundtrip [--warmup W] [--frames K] [--lines N] <rom | dir> ...
 
 #include "pch.h"
 #include <filesystem>
@@ -31,6 +36,11 @@
 #include "Shared/SaveStateManager.h"
 #include "NES/NesConsole.h"
 #include "Gameboy/Gameboy.h"
+#include "SNES/SnesConsole.h"
+#include "SMS/SmsConsole.h"
+#include "PCE/PceConsole.h"
+#include "WS/WsConsole.h"
+#include "Shared/EmuSettings.h"
 #include "Utilities/Serializer.h"
 #include "Utilities/VirtualFile.h"
 #include "Utilities/FolderUtilities.h"
@@ -57,21 +67,36 @@ static bool LoadState(IConsole& c, const string& data)
 	return true;
 }
 
-static bool IsRom(const fs::path& p)
+static string Ext(const fs::path& p)
 {
 	string ext = p.extension().string();
 	std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-	return ext == ".nes" || ext == ".gb" || ext == ".gbc";
+	return ext;
 }
 
 static shared_ptr<IConsole> MakeConsole(Emulator& emu, const fs::path& rom)
 {
-	string ext = rom.extension().string();
-	std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+	string ext = Ext(rom);
 	if(ext == ".nes") {
 		return std::make_shared<NesConsole>(&emu);
+	} else if(ext == ".gb" || ext == ".gbc") {
+		return std::make_shared<Gameboy>(&emu);
+	} else if(ext == ".sfc" || ext == ".smc") {
+		return std::make_shared<SnesConsole>(&emu);
+	} else if(ext == ".sms" || ext == ".gg" || ext == ".sg") {
+		return std::make_shared<SmsConsole>(&emu);
+	} else if(ext == ".pce") {
+		return std::make_shared<PceConsole>(&emu);
+	} else if(ext == ".ws" || ext == ".wsc") {
+		return std::make_shared<WsConsole>(&emu);
 	}
-	return std::make_shared<Gameboy>(&emu);
+	return nullptr;
+}
+
+static bool IsRom(const fs::path& p)
+{
+	static const vector<string> exts = { ".nes", ".gb", ".gbc", ".sfc", ".smc", ".sms", ".gg", ".sg", ".pce", ".ws", ".wsc" };
+	return std::find(exts.begin(), exts.end(), Ext(p)) != exts.end();
 }
 
 static vector<uint8_t> ReadFile(const fs::path& path)
@@ -189,7 +214,7 @@ int main(int argc, char* argv[])
 		} else if(a == "--lines" && i + 1 < argc) {
 			maxLines = std::stoi(argv[++i]);
 		} else if(fs::is_directory(a)) {
-			for(const auto& e : fs::directory_iterator(a)) {
+			for(const auto& e : fs::recursive_directory_iterator(a)) {
 				if(IsRom(e.path())) {
 					roms.push_back(e.path());
 				}
@@ -200,7 +225,7 @@ int main(int argc, char* argv[])
 	}
 	std::sort(roms.begin(), roms.end());
 	if(roms.empty()) {
-		std::cerr << "usage: roundtrip [--warmup W] [--frames K] [--lines N] <rom.nes|.gb|.gbc | dir> ...\n";
+		std::cerr << "usage: roundtrip [--warmup W] [--frames K] [--lines N] <rom | dir> ...\n";
 		return 2;
 	}
 
@@ -209,6 +234,7 @@ int main(int argc, char* argv[])
 	FolderUtilities::SetHomeFolder(home.string());
 	Emulator emu;
 	emu.Initialize(false);
+	emu.GetSettings()->SetFlag(EmulationFlags::TestMode);
 	// Consoles here are driven directly (no emulation thread, no video decoder thread).
 	// Run-ahead mode emulates frames fully but skips frame/audio output, which is what
 	// a headless frame loop needs: otherwise VideoDecoder::UpdateFrame waits forever
@@ -217,9 +243,9 @@ int main(int argc, char* argv[])
 
 	int ok = 0, diverged = 0, skipped = 0;
 	for(const fs::path& rom : roms) {
-		string name = rom.filename().string();
+		string name = rom.parent_path().filename().string() + "/" + rom.filename().string();
 		vector<uint8_t> romData = ReadFile(rom);
-		VirtualFile fileA(romData.data(), romData.size(), name);
+		VirtualFile fileA(romData.data(), romData.size(), rom.filename().string());
 		shared_ptr<IConsole> consoleA = MakeConsole(emu, rom);
 		IConsole& a = *consoleA;
 		// Register the console being driven as the emulator's current console, as
@@ -242,7 +268,7 @@ int main(int argc, char* argv[])
 			expected.push_back(SaveState(a, SerializeFormat::Binary));
 		}
 
-		VirtualFile fileB(romData.data(), romData.size(), name);
+		VirtualFile fileB(romData.data(), romData.size(), rom.filename().string());
 		shared_ptr<IConsole> consoleB = MakeConsole(emu, rom);
 		IConsole& b = *consoleB;
 		emu._console.reset(consoleB);
@@ -288,6 +314,10 @@ int main(int argc, char* argv[])
 			}
 		}
 	}
+	// Drop the last console while the emulator's sound mixer still exists: some
+	// consoles (e.g. SmsFmAudio) unregister from it in their destructor. The app does
+	// the same through Emulator::Release() before destroying the Emulator.
+	emu._console.reset();
 	std::cout << "TOTAL: " << ok << " consistent, " << diverged << " diverged, " << skipped << " skipped (of " << roms.size()
 				 << ")\n";
 	return diverged ? 1 : 0;
