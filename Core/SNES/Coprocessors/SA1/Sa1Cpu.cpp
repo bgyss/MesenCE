@@ -88,13 +88,13 @@ void Sa1Cpu::Idle()
 void Sa1Cpu::IdleOrDummyWrite(uint32_t addr, uint8_t value)
 {
 	if(_state.EmulationMode) {
+		//Write() runs the CPU cycle itself (ProcessCpuCycle calls DetectNmiSignalEdge)
 		Write(addr, value, MemoryOperationType::DummyWrite);
 	} else {
 		_state.CycleCount++;
-		_emu->ProcessIdleCycle<CpuType::Snes>();
+		DetectNmiSignalEdge();
+		_emu->ProcessIdleCycle<CpuType::Sa1>();
 	}
-
-	DetectNmiSignalEdge();
 }
 
 void Sa1Cpu::IdleEndJump()
@@ -171,7 +171,20 @@ void Sa1Cpu::Write(uint32_t addr, uint8_t value, MemoryOperationType type)
 
 uint16_t Sa1Cpu::ReadVector(uint16_t vector)
 {
-	return _sa1->ReadVector(vector);
+	switch(vector) {
+		case Sa1Cpu::NmiVector:
+		case Sa1Cpu::ResetVector:
+		case Sa1Cpu::IrqVector:
+			//The SA-1 supplies these vectors from its registers, but the CPU still spends 2 cycles fetching them
+			ProcessCpuCycle(vector);
+			ProcessCpuCycle(vector + 1);
+			return _sa1->ReadVector(vector);
+	}
+
+	//BRK/COP vectors are read from memory
+	uint8_t low = Read(vector, MemoryOperationType::Read);
+	uint8_t high = Read(vector + 1, MemoryOperationType::Read);
+	return (high << 8) | low;
 }
 
 uint16_t Sa1Cpu::GetResetVector()

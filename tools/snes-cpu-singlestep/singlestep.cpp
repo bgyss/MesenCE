@@ -1,5 +1,6 @@
-// singlestep.cpp - differential test of MesenCE's SNES main CPU (SnesCpu, 65816)
-// against the SingleStepTests 65816 suite (https://github.com/SingleStepTests/65816).
+// singlestep.cpp - differential test of MesenCE's 65816 cores, the SNES main CPU
+// (SnesCpu) and the SA-1 (Sa1Cpu), against the SingleStepTests 65816 suite
+// (https://github.com/SingleStepTests/65816).
 //
 // Each test gives the initial CPU + RAM state, the expected final state, and one
 // entry per CPU cycle: [address, value, pins], pins = "dpvremxl" (VDA, VPA, VPB,
@@ -8,22 +9,29 @@
 // Native and emulation mode each have 10,000 tests per opcode ("xx.n.json",
 // "xx.e.json").
 //
-// The harness compiles the real SnesCpu source (Core/SNES/SnesCpu.cpp, plus
-// SnesCpu.Instructions.h and SnesCpu.Shared.h, which the SA-1 CPU shares) as
-// "TestSnesCpu", with SnesMemoryManager replaced by TestBus (flat 16 MiB RAM) and
-// SnesDmaController by TestDma (no transfers). So the code under test is the
-// shipping instruction code. Checked:
+// The harness compiles the real CPU sources into itself:
+//   - SnesCpu (Core/SNES/SnesCpu.cpp) as "TestSnesCpu", with SnesMemoryManager
+//     replaced by TestBus (flat 16 MiB RAM) and SnesDmaController by TestDma (no
+//     transfers);
+//   - Sa1Cpu (Core/SNES/Coprocessors/SA1/Sa1Cpu.cpp) as "TestSa1Cpu", with Sa1
+//     replaced by TestSa1 over the same TestBus. Every access looks like an SA-1
+//     IRAM access with no SNES-CPU conflict, so no SA-1 wait states apply.
+// Both include SnesCpu.Instructions.h and SnesCpu.Shared.h, so the code under test
+// is the shipping instruction code, plus each CPU's own cycle/bus layer. Checked:
 //   - bus trace: the valid-address cycles (VDA/VPA/VPB) against TestBus's reads
 //     and writes in order (address, value, direction); internal cycles must not
 //     access the bus. Read values the suite leaves null are wildcards;
 //   - cycle count (SnesCpuState::CycleCount, +1 per Read/Write/Idle);
+//   - NMI/IRQ polling: DetectNmiSignalEdge() must run exactly once per cycle. The
+//     harness starts NmiFlagCounter at 200 and checks it went down by the cycle
+//     count (skipped for MVN/MVP);
 //   - final registers (A, X, Y, S, D, DBR, PBR, P, E) and RAM.
 //
 // MVN/MVP: the suite runs the move to completion (the instruction re-executes
 // until A wraps to $FFFF), so for those the harness calls Exec() until PC leaves
 // the instruction.
 //
-// Usage: singlestep [--details N] <file.json | dir> ...
+// Usage: singlestep [--cpu snes|sa1] [--details N] <file.json | dir> ...
 
 #include "pch.h"
 #include <filesystem>
@@ -43,6 +51,8 @@
 #include "SNES/SnesMemoryManager.h"
 #include "SNES/SnesDmaController.h"
 #include "SNES/SnesCpu.h"
+#include "SNES/MemoryMappings.h"
+#include "SNES/Coprocessors/SA1/Sa1.h"
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
@@ -133,6 +143,65 @@ public:
 #undef SnesMemoryManager
 #undef SnesCpu
 
+// Stands in for the SA-1's memory mappings (only used to look for PRG ROM).
+class TestMappings
+{
+public:
+	IMemoryHandler* GetHandler(uint32_t) { return nullptr; }
+};
+
+// Stands in for Sa1: the members Sa1Cpu.cpp calls.
+class TestSa1
+{
+public:
+	TestBus* Bus = nullptr;
+	TestMappings Mappings;
+
+	uint8_t ReadSa1(uint32_t addr, MemoryOperationType type = MemoryOperationType::Read) { return Bus->Read(addr, type); }
+	void WriteSa1(uint32_t addr, uint8_t value, MemoryOperationType type) { Bus->Write(addr, value, type); }
+	MemoryType GetSa1MemoryType() { return MemoryType::Sa1InternalRam; }
+	MemoryType GetSnesCpuMemoryType() { return MemoryType::SnesWorkRam; }
+	bool IsSnesCpuFastRomSpeed() { return false; }
+	TestMappings* GetMemoryMappings() { return &Mappings; }
+
+	// Same as Sa1::ReadVector: NMI/IRQ/reset vectors come from SA-1 registers
+	// (not exercised here), BRK/COP vectors are read with ReadSa1.
+	uint16_t ReadVector(uint16_t vector)
+	{
+		switch(vector) {
+			case 0xFFEA:
+			case 0xFFFC:
+			case 0xFFEE:
+				return 0;
+		}
+		uint8_t low = ReadSa1(vector);
+		uint8_t high = ReadSa1(vector + 1);
+		return (high << 8) | low;
+	}
+};
+
+// Sa1Cpu.cpp names CpuType::Sa1, which the Sa1 -> TestSa1 rename below turns into
+// CpuType::TestSa1; map it (and CpuType::Snes) back to the real values.
+struct TestCpuType
+{
+	static constexpr CpuType TestSa1 = CpuType::Sa1;
+	static constexpr CpuType Snes = CpuType::Snes;
+};
+
+// Compile the real Sa1Cpu against TestSa1. Sa1.h was included above (#pragma once),
+// and Sa1Cpu.h is included here for the first time, so the renames only affect
+// Sa1Cpu.
+#define Sa1Cpu TestSa1Cpu
+#define Sa1 TestSa1
+#define CpuType TestCpuType
+#define private public
+#include "SNES/Coprocessors/SA1/Sa1Cpu.h"
+#undef private
+#include "SNES/Coprocessors/SA1/Sa1Cpu.cpp"
+#undef CpuType
+#undef Sa1
+#undef Sa1Cpu
+
 static string Hex(uint32_t v, int width)
 {
 	std::ostringstream ss;
@@ -151,13 +220,22 @@ enum FailKind
 	FailRam = 2,
 	FailCycleCount = 4,
 	FailBus = 8,
+	FailNmiPoll = 16,
 };
 
-struct Harness
+struct HarnessBase
 {
-	TestBus Bus;
-	TestDma Dma;
-	TestSnesCpu* Cpu = nullptr;
+	virtual ~HarnessBase() {}
+	virtual int Run(const json& t, bool isBlockMove, string& detail) = 0;
+};
+
+template<typename CpuT>
+struct Harness : HarnessBase
+{
+	TestBus& Bus;
+	CpuT* Cpu;
+
+	Harness(TestBus& bus, CpuT* cpu) : Bus(bus), Cpu(cpu) {}
 
 	static void LoadRegs(SnesCpuState& st, const json& in)
 	{
@@ -181,7 +259,7 @@ struct Harness
 		st.StopState = SnesCpuStopState::Running;
 	}
 
-	int Run(const json& t, bool isBlockMove, string& detail)
+	int Run(const json& t, bool isBlockMove, string& detail) override
 	{
 		int kinds = 0;
 		std::ostringstream d;
@@ -196,6 +274,10 @@ struct Harness
 		SnesCpuState& st = Cpu->_state;
 		LoadRegs(st, in);
 		Cpu->_waiOver = true;
+		bool checkPoll = !isBlockMove && cycles.size() < 200;
+		if(checkPoll) {
+			st.NmiFlagCounter = 200;
+		}
 
 		uint16_t startPc = st.PC;
 		uint8_t startK = st.K;
@@ -243,6 +325,10 @@ struct Harness
 		if(st.CycleCount != cycles.size()) {
 			kinds |= FailCycleCount;
 			d << " cycles=" << st.CycleCount << "(exp " << cycles.size() << ")";
+		}
+		if(checkPoll && st.NmiFlagCounter != 200 - cycles.size()) {
+			kinds |= FailNmiPoll;
+			d << " nmiPolls=" << (200 - st.NmiFlagCounter) << "(exp " << cycles.size() << ")";
 		}
 
 		auto chk = [&](const char* name, uint32_t actual, uint32_t expected, int width) {
@@ -317,10 +403,13 @@ static bool IsDirIdxIndXWrapCase(const string& opcode, const json& t)
 int main(int argc, char* argv[])
 {
 	int maxDetails = 3;
+	string cpuName = "snes";
 	vector<fs::path> files;
 	for(int i = 1; i < argc; i++) {
 		string a = argv[i];
-		if(a == "--details" && i + 1 < argc) {
+		if(a == "--cpu" && i + 1 < argc) {
+			cpuName = argv[++i];
+		} else if(a == "--details" && i + 1 < argc) {
 			maxDetails = std::stoi(argv[++i]);
 		} else if(fs::is_directory(a)) {
 			for(const auto& e : fs::directory_iterator(a)) {
@@ -334,7 +423,7 @@ int main(int argc, char* argv[])
 	}
 	std::sort(files.begin(), files.end());
 	if(files.empty()) {
-		std::cerr << "usage: singlestep [--details N] <file.json | dir> ...\n";
+		std::cerr << "usage: singlestep [--cpu snes|sa1] [--details N] <file.json | dir> ...\n";
 		return 2;
 	}
 
@@ -344,9 +433,20 @@ int main(int argc, char* argv[])
 	Emulator emu;
 	emu.Initialize(false);
 
-	Harness* h = new Harness();
-	TestConsole console = { &emu, &h->Bus, &h->Dma };
-	h->Cpu = new TestSnesCpu(&console);
+	TestBus* bus = new TestBus();
+	TestDma dma;
+	TestConsole console = { &emu, bus, &dma };
+	TestSa1 sa1;
+	sa1.Bus = bus;
+	HarnessBase* h;
+	if(cpuName == "snes") {
+		h = new Harness<TestSnesCpu>(*bus, new TestSnesCpu(&console));
+	} else if(cpuName == "sa1") {
+		h = new Harness<TestSa1Cpu>(*bus, new TestSa1Cpu(&sa1, &emu));
+	} else {
+		std::cerr << "unknown --cpu " << cpuName << "\n";
+		return 2;
+	}
 
 	uint64_t total = 0, failed = 0, known = 0;
 	int failedFiles = 0;
@@ -409,6 +509,9 @@ int main(int argc, char* argv[])
 			if(k & FailBus) {
 				std::cout << " bus";
 			}
+			if(k & FailNmiPoll) {
+				std::cout << " nmi-polls";
+			}
 			first = false;
 		}
 		std::cout << ")\n";
@@ -418,6 +521,7 @@ int main(int argc, char* argv[])
 			}
 		}
 	}
+	std::cout << "CPU: " << cpuName << "\n";
 	std::cout << "TOTAL: " << (total - failed - known) << "/" << total << " pass, " << failed << " unexpected fail ("
 				 << failedFiles << " of " << files.size() << " files), " << known << " known divergence\n";
 	return failed ? 1 : 0;
