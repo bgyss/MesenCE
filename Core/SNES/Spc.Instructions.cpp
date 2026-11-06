@@ -1243,7 +1243,7 @@ void Spc::DIV()
 void Spc::DAA()
 {
 	switch(_opSubStep++) {
-		case 0: Idle(); break;
+		case 0: DummyRead(); break;
 		case 1:
 			Idle();
 			if(CheckFlag(SpcFlags::Carry) || _state.A > 0x99) {
@@ -1264,7 +1264,7 @@ void Spc::DAA()
 void Spc::DAS()
 {
 	switch(_opSubStep++) {
-		case 0: Idle(); break;
+		case 0: DummyRead(); break;
 		case 1:
 			Idle();
 
@@ -2089,7 +2089,7 @@ void Spc::RTI()
 void Spc::BRK()
 {
 	switch(_opSubStep++) {
-		case 0: Idle(); break;
+		case 0: DummyRead(); break;
 		case 1: Push(_state.PC >> 8); break;
 		case 2: Push((uint8_t)_state.PC); break;
 		case 3: Push(_state.PS); break;
@@ -2179,10 +2179,13 @@ void Spc::NOP()
 void Spc::STOP()
 {
 	//STOP / SLEEP
+#ifndef DUMMYSPC
+	//DummySpc has no emulator (_emu is null)
 	if(_state.StopState == SnesCpuStopState::Running) {
 		//Prevent looping audio when SPC is stopped
 		_emu->GetSoundMixer()->StopAudio();
 	}
+#endif
 
 	_state.StopState = SnesCpuStopState::Stopped;
 	EndOp();
