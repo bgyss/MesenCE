@@ -36,6 +36,8 @@ void SmsCpu::Exec()
 	_state.FlagsChanged <<= 1;
 	if(_state.Halted) {
 		_emu->ProcessHaltedCpu<CpuType::Sms>();
+		//HALT keeps executing NOP M1 cycles (for memory refresh), which increment R
+		IncrementR();
 		ExecCycles(4);
 	} else {
 #ifndef DUMMYCPU
@@ -53,6 +55,7 @@ void SmsCpu::Exec()
 #endif
 		}
 		_state.NmiPending = false;
+		ClearParityAfterLdIr();
 		_state.IFF1 = false;
 		ExecCycles(4);
 		IncrementR();
@@ -72,6 +75,7 @@ void SmsCpu::Exec()
 			_emu->ProcessEvent(EventType::HaltEnded, CpuType::Sms);
 #endif
 		}
+		ClearParityAfterLdIr();
 		_state.IFF1 = false;
 		_state.IFF2 = false;
 		ExecCycles(6);
@@ -1058,6 +1062,17 @@ void SmsCpu::LD_IR(uint8_t& dst, uint8_t value)
 	ClearFlag(SmsCpuFlags::HalfCarry);
 	ClearFlag(SmsCpuFlags::AddSub);
 	ExecCycles(1);
+	_ldIrEndCycle = _state.CycleCount;
+}
+
+void SmsCpu::ClearParityAfterLdIr()
+{
+	//NMOS Z80 quirk: when an interrupt is accepted right after LD A,I or LD A,R, P/V reads 0
+	//instead of IFF2. The Game Gear's CMOS Z80 doesn't have it. Only called when an interrupt
+	//is accepted, so normal instructions pay nothing.
+	if(_state.CycleCount == _ldIrEndCycle && _console->GetModel() != SmsModel::GameGear) {
+		ClearFlag(SmsCpuFlags::Parity);
+	}
 }
 
 void SmsCpu::LD(uint16_t& dst, uint16_t value)
