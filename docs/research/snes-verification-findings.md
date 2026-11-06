@@ -4,7 +4,8 @@ This is a running log of what the fork's verification tooling has found in Mesen
 (`Core/SNES`): bugs, deliberate divergences, and checks that came back clean. The method mirrors
 the NES and Game Boy work in [nes-verification-findings.md](nes-verification-findings.md) and
 [gb-verification-findings.md](gb-verification-findings.md). So far it covers the two CPUs: the
-SPC700 sound CPU (findings 1–5) and the 65816 main CPU (findings 6–10).
+SPC700 sound CPU (findings 1–5), the 65816 main CPU (findings 6–10) and the SA-1's 65816
+(findings 11–15).
 
 Snapshot: `apply-verified-fixes` @ `c8ce0381`, 2026-11-05, aarch64-darwin.
 
@@ -18,10 +19,15 @@ Snapshot: `apply-verified-fixes` @ `c8ce0381`, 2026-11-05, aarch64-darwin.
 | 4 | CPU: `SLEEP`/`STOP` (`$EF`/`$FF`) | Endless-loop modelling differs from the suite | **Divergence**, not observable |
 | 5 | `FolderUtilities::CombinePath("", ...)` | Reads `folder[-1]`. Loading a SNES cartridge from an in-memory file crashes in `Msu1::Init` | **Fixed in this fork** |
 | 6 | 65816 CPU | 506/512 opcode files (native + emulation mode) match SingleStepTests on **bus trace, cycle count, registers and RAM** across 5,020,136 tests (after fix 7) | **Clean** |
-| 7 | 65816: read-modify-write in emulation mode (16 opcodes) | The dummy write of the unmodified value ran the CPU cycle twice: `CycleCount`, NMI edge detection and DMA polling advanced by 2 | **Fixed in this fork** |
+| 7 | 65816: read-modify-write in emulation mode (28 opcodes) | The dummy write of the unmodified value ran the CPU cycle twice: `CycleCount`, NMI edge detection and DMA polling advanced by 2 | **Fixed in this fork** |
 | 8 | 65816: `(dp,X)` in emulation mode, DL ≠ 0, pointer high byte at a page start | MesenCE wraps the high-byte fetch within the page (upstream `c0ea1245`), as ares does; the suite doesn't | **Divergence**, not changed (264 tests) |
 | 9 | 65816: `WDM` (`$42`) | MesenCE fetches the signature byte; the suite has an internal cycle | **Divergence**, not changed |
 | 10 | 65816: `WAI`/`STP` (`$CB`/`$DB`) | The 2 internal cycles happen in the halted state instead of in the instruction | **Divergence**, bookkeeping |
+| 11 | SA-1 CPU (`Sa1Cpu`) | Same result as the main CPU: 5,020,136 tests pass, with the same divergences 8–10 (after fixes 12–13) | **Clean** |
+| 12 | SA-1: vector fetch (`BRK`, `COP`, and NMI/IRQ entry) | The two vector reads took no CPU cycles: `BRK`/`COP` were 2 cycles short | **Fixed in this fork** (NMI/IRQ part: judgment call) |
+| 13 | SA-1: read-modify-write in emulation mode | NMI edge detection ran twice for the dummy-write cycle | **Fixed in this fork** |
+| 14 | SA-1: read-modify-write in native mode, with the debugger | The modify cycle was reported to the SNES CPU's debugger instead of the SA-1's | **Fixed in this fork** (code reading only) |
+| 15 | System level | MesenTests has **no** SA-1 tests, so fixes 12–14 are checked only at CPU level | **Gap** |
 
 ## How to reproduce
 
@@ -29,7 +35,8 @@ Snapshot: `apply-verified-fixes` @ `c8ce0381`, 2026-11-05, aarch64-darwin.
 |---|---|
 | `mise run test:spc-cpu` | `tools/spc-cpu-singlestep`. Clones [SingleStepTests/spc700](https://github.com/SingleStepTests/spc700) (about 100 MB) into `bin/` and runs all 256 × 1,000 tests. Exits non-zero only on *unexpected* failures. It also loads an in-memory SNES cartridge first, which is the regression test for finding 5 |
 | `mise run test:snes-cpu` | `tools/snes-cpu-singlestep`. Clones [SingleStepTests/65816](https://github.com/SingleStepTests/65816) (about 3.1 GB checked out) into `bin/` and runs all 512 × 10,000 tests (MVN/MVP: 200 each). Exits non-zero only on *unexpected* failures. Before fix 7, it fails |
-| `mise run test:ci` | MesenTests. Its 91 SNES tests pass with fixes 2, 3, 5 and 7 applied |
+| `mise run test:sa1-cpu` | The same harness with `--cpu sa1`. Before fixes 12 and 13, it fails |
+| `mise run test:ci` | MesenTests. Its 91 SNES tests pass with fixes 2, 3, 5, 7 and 12–14 applied |
 
 ---
 
@@ -137,6 +144,10 @@ its cartridge from memory, so it doubles as the regression test.
 - **Timing:** the `SnesCpuState::CycleCount` delta (one per `Read`/`Write`/`Idle`) must equal the
   number of cycle entries. Memory speed (6/8/12 master clocks) isn't checked; the suite has no
   notion of it.
+- **NMI/IRQ polling:** `DetectNmiSignalEdge()` must run exactly once per cycle. The harness
+  starts `NmiFlagCounter` at 200 and checks that it went down by the cycle count; the counter
+  is how the CPU times NMIs. This was added for the SA-1 (finding 13) and also passes on the
+  main CPU. It's skipped for MVN/MVP.
 - **Final state:** A (16-bit), X, Y, S, D, DBR, PBR, P, E, and RAM.
 - **MVN/MVP:** the suite runs the whole move, so the harness calls `Exec()` until PC leaves the
   instruction.
@@ -151,8 +162,9 @@ divergences are findings 8–10.
 
 ### 7. Emulation-mode RMW counted its dummy-write cycle twice (fixed)
 
-**Reproduction.** Before the fix, all 16 emulation-mode RMW files (`ASL LSR ROL ROR INC DEC TSB
-TRB` on `dp`, `dp,X`, `abs`, `abs,X`) failed 10000/10000 on cycle count, e.g.:
+**Reproduction.** Before the fix, all 28 emulation-mode RMW files (`ASL LSR ROL ROR INC DEC` on
+`dp`, `dp,X`, `abs` and `abs,X`, and `TSB TRB` on `dp` and `abs`) failed 10000/10000 on cycle
+count, e.g. (an earlier version of this log said 16 files; it is 28):
 
 ```
 06 e 1: cycles=7(exp 6)
@@ -180,10 +192,7 @@ emulation mode") makes it a real write, as the 6502 does. The harness counts an 
 a write, so it checks that MesenCE drives the same value. Whether the 5A22 turns that cycle into
 a /WR strobe isn't something the suite can answer, and the fork keeps upstream's behaviour.
 
-**Not covered.** `Sa1Cpu::IdleOrDummyWrite` has its own version. In emulation mode it calls
-`Write()` (which runs `DetectNmiSignalEdge()` through `ProcessCpuCycle`) and then
-`DetectNmiSignalEdge()` again. That looks like the same double step, but the harness doesn't
-cover `Sa1Cpu` and it hasn't been reproduced, so it's not changed.
+**The SA-1.** `Sa1Cpu::IdleOrDummyWrite` has its own version, with a related bug. See finding 13.
 
 ### 8. `(dp,X)` emulation-mode page wrap (divergence)
 
@@ -215,6 +224,73 @@ MesenCE executes the opcode fetch, sets the stop state, and spends its internal 
 `ProcessHaltedState`. Nothing observable depends on where those cycles are counted, apart from
 the wake-up latency, which an interrupt scenario test would have to cover (see below).
 
+## 11–15. SA-1 (`Sa1Cpu`) vs SingleStepTests `65816`
+
+**Method.** The same harness, run with `--cpu sa1` (`mise run test:sa1-cpu`). It compiles
+`Core/SNES/Coprocessors/SA1/Sa1Cpu.cpp` as `TestSa1Cpu`, with `Sa1` replaced by a `TestSa1` over
+the same flat `TestBus`. `Sa1Cpu.h` uses `#pragma once`, so it's included for the first time
+under the renames, and `CpuType::Sa1` (which the `Sa1` rename touches) is mapped back to the
+real value. Every access reports SA-1 IRAM with no SNES-CPU conflict, so the SA-1's own wait
+states (BW-RAM, bus conflicts, ROM jumps/odd branches) don't apply. They aren't covered here.
+`TestSa1::ReadVector` mirrors `Sa1::ReadVector`.
+
+**Result.** 5,020,136 of 5,080,400 pass, with 0 unexpected failures. The known divergences are
+the same as the main CPU's (findings 8–10), since the instruction code is shared. Before
+fixes 12 and 13, 32 files failed.
+
+### 12. SA-1 vector fetches took no time (fixed)
+
+**Reproduction.** `BRK` and `COP` failed 10000/10000 in both modes, with a correct bus trace:
+
+```
+00 n 1: cycles=6(exp 8) nmiPolls=6(exp 8)
+02 e 1: cycles=5(exp 7) nmiPolls=5(exp 7)
+```
+
+`Sa1Cpu::ReadVector` called `Sa1::ReadVector`. That returns the NMI, IRQ and reset vectors from
+the SA-1's registers and reads the others with `ReadSa1()`, without `Sa1Cpu::Read()`'s
+`ProcessCpuCycle()`. So the two vector-fetch cycles didn't count.
+
+**Source.** The suite, and the WDC W65C816S datasheet, where `BRK`/`COP` take 7 cycles
+(emulation) or 8 (native), the last two being the vector fetch. `SnesCpu` already does this
+(`ReadVector` → `ReadDataWord`).
+
+**Fix.** `Sa1Cpu::ReadVector` reads the `BRK`/`COP` vectors with `Read()`, so each read gets its
+cycle (and SA-1 wait states) in order. For the NMI, IRQ and reset vectors it runs
+`ProcessCpuCycle()` twice and then takes the value from the SA-1 registers as before.
+
+**Judgment call.** The suite doesn't test interrupt entry, so the NMI/IRQ part rests on the
+datasheet's interrupt sequence (which ends with the same two vector-fetch cycles) and on
+consistency with `SnesCpu`. The SA-1 substitutes the vector data, but nothing suggests it skips
+the cycles. Effect: each SA-1 NMI/IRQ now takes 2 SA-1 cycles longer.
+
+### 13. SA-1 emulation-mode RMW: NMI edge detection twice (fixed)
+
+**Reproduction.** The 28 emulation-mode RMW files failed the NMI-polling check, with the right
+cycle count (`06 e 1: nmiPolls=7(exp 6)`). `Sa1Cpu::IdleOrDummyWrite` ended with
+`DetectNmiSignalEdge()` on both paths, but in emulation mode `Write()` already runs it through
+`ProcessCpuCycle()`. That's the same mistake as finding 7, in a different place: here the cycle
+count was right and only the NMI/IRQ poll ran twice, so an NMI pending on the SA-1 could be
+taken one cycle early.
+
+**Fix.** `DetectNmiSignalEdge()` is called on the native-mode (idle) path only.
+
+### 14. SA-1 native-mode RMW reported to the wrong debugger (fixed, code reading)
+
+On the native-mode path, `Sa1Cpu::IdleOrDummyWrite` called `_emu->ProcessIdleCycle<CpuType::Snes>()`.
+`Sa1Cpu::Idle()` and every other SA-1 cycle use `CpuType::Sa1`. With the debugger attached, that
+cycle advanced the **SNES CPU's** step-by-cycle counter and set its last memory operation, and
+the SA-1 debugger missed it. There is no effect without a debugger. **Judgment call:** found by
+code reading while fixing finding 13 (it's the same line), not reproduced in the UI. It's now
+`CpuType::Sa1`.
+
+### 15. Coverage gap: no SA-1 tests in MesenTests
+
+None of the 24 SNES test groups in MesenTests uses the SA-1. Fixes 12–14 are checked at
+instruction level, and `test:ci` shows they don't affect anything else, but no SA-1 game or test
+ROM has been run. The SA-1's wait-state model (BW-RAM, conflicts with the SNES CPU, ROM timing)
+is also untested.
+
 ## Notes for maintainers
 
 - The makefile has no header dependency tracking. `Core/SNES/Debugger/DummySpc.cpp` `#include`s
@@ -230,5 +306,6 @@ the wake-up latency, which an interrupt scenario test would have to cover (see b
 - 65816 interrupts: NMI/IRQ timing, the `IdleOrRead` dummy read before an interrupt, WAI wake-up
   latency, and the DMA/HDMA interaction (`IrqLock`). These need a scenario harness like
   `tools/gb-irq-scenarios`.
-- `Sa1Cpu`: the same harness with `Sa1Cpu.cpp` and a test `Sa1` (see finding 7's "Not covered").
+- SA-1 system level: a recorded `.mtp` test of an SA-1 test ROM or homebrew, and a scenario test
+  of the SA-1 wait states and SNES-CPU ↔ SA-1 interrupts (finding 15).
 - A hardware test ROM for findings 8 and 9.
