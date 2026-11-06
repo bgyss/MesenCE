@@ -105,14 +105,21 @@ void PceCpu::SUB(uint8_t value)
 			DummyRead();
 		}
 
-		result = (A() & 0x0F) + (value & 0x0F) + (_state.PS & PceCpuFlags::Carry);
-		if(result <= 0x0F) {
-			result -= 0x06;
+		//Subtract each BCD digit with borrow, then correct each digit that borrowed (as the 65C02
+		//does, and Mednafen's HuC6280). This also gives the right result for invalid BCD digits.
+		uint8_t operand = ~value; //SBC passes the inverted operand
+		uint8_t borrowIn = (_state.PS & PceCpuFlags::Carry) ^ 1;
+		uint8_t lo = (A() & 0x0F) - (operand & 0x0F) - borrowIn;
+		uint8_t hi = (A() >> 4) - (operand >> 4) - ((lo >> 4) & 0x01);
+		uint8_t res = (hi << 4) | (lo & 0x0F);
+		if(lo & 0x10) {
+			res -= 0x06;
 		}
-		result = (A() & 0xF0) + (value & 0xF0) + (result > 0x0F ? 0x10 : 0) + (result & 0x0F);
-		if(result <= 0xFF) {
-			result -= 0x60;
+		if(hi & 0x10) {
+			res -= 0x60;
 		}
+		//Carry = no borrow out of the high digit (result > 0xFF sets it below)
+		result = res + ((hi & 0x10) ? 0 : 0x100);
 	} else {
 		result = (uint16_t)A() + (uint16_t)value + (_state.PS & PceCpuFlags::Carry);
 
