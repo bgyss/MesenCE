@@ -236,6 +236,28 @@ if [ $havePath -eq 0 ]; then set -- "$@" "$data/v1"; fi
 exec bin/z80-cpu-singlestep "$@"
 '''
 
+[tasks."test:gba-cpu"]
+description = "GBA ARM7TDMI vs SingleStepTests ARM7TDMI (mise run test:gba-cpu -- [--details N] [--dump OPCODE] [files...])"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+data="$PWD/bin/SingleStepTests-arm7tdmi"
+if [ ! -d "$data/v1" ]; then
+  git clone --depth 1 https://github.com/SingleStepTests/ARM7TDMI.git "$data"
+fi
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+mkdir -p bin
+# The harness compiles Core/GBA/GbaCpu*.cpp itself (against a transaction-driven test bus).
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/gba-cpu-singlestep/singlestep.cpp "$lib" -pthread -o bin/gba-cpu-singlestep
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+havePath=0
+for a in "$@"; do [ -e "$a" ] && havePath=1; done
+if [ $havePath -eq 0 ]; then set -- "$@" "$data/v1"; fi
+exec bin/gba-cpu-singlestep "$@"
+'''
+
 [tasks."test:gb-irq"]
 description = "Game Boy interrupt/HALT/EI conformance scenarios vs Pan Docs (mise run test:gb-irq -- [--verbose])"
 depends = ["core"]
