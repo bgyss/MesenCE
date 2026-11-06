@@ -267,7 +267,7 @@ exec bin/nes-dma-regression bin/rom/dmc_oam_overlap.nes "$@"
 '''
 
 [tasks."test:savestate"]
-description = "Save-state round-trip check, NES + Game Boy (mise run test:savestate -- [--warmup W] [--frames K] <roms|dir>)"
+description = "Save-state round-trip check: NES, GB, SNES, SMS/GG, PCE, WS (mise run test:savestate -- [--warmup W] [--frames K] <roms|dir>)"
 depends = ["core"]
 run = '''
 #!/usr/bin/env bash
@@ -278,6 +278,27 @@ mkdir -p bin
 clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/savestate-roundtrip/roundtrip.cpp "$lib" -pthread -o bin/savestate-roundtrip
 export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
 exec bin/savestate-roundtrip "$@"
+'''
+
+[tasks."test:savestate-all"]
+description = "Save-state round trip on every ROM in MesenTests (bin/Tests) and tests/, except GBA (needs the BIOS)"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+[ -d bin/Tests ] || { echo "bin/Tests missing: run mise run test:ci once to clone MesenTests"; exit 1; }
+python3 -I tools/savestate-roundtrip/extract-mtp-roms.py bin/savestate-roms bin/Tests tests
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/savestate-roundtrip/roundtrip.cpp "$lib" -pthread -o bin/savestate-roundtrip
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+status=0
+for sys in NES GB SNES SMS PCE WS; do
+  [ -d "bin/savestate-roms/$sys" ] || continue
+  echo "== $sys"
+  bin/savestate-roundtrip "bin/savestate-roms/$sys" || status=1
+done
+exit $status
 '''
 
 [tasks.tla]
