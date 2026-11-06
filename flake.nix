@@ -109,7 +109,8 @@
               pkgs.ccache
               pkgs.tlaplus # tlc / tlasany for docs/research/tla
               pkgs.nlohmann_json # tools/nes-cpu-singlestep
-              pkgs.cc65 # ca65/ld65 for test ROMs under docs/research/tla/rom
+              pkgs.cc65 # ca65/ld65 for test ROMs under docs/research/tla/rom and tests/
+              pkgs.wla-dx # wla-z80/wlalink for the SMS test ROMs under tests/SMS
             ]
             ++ runtimeLibs;
 

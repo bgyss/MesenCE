@@ -52,18 +52,58 @@ exec mise run run -- --testRunner "$@"
 '''
 
 [tasks."test:ci"]
-description = "Run the MesenTests regression suite headlessly, like CI (clones into bin/Tests)"
+description = "Run the MesenTests regression suite headlessly, like CI (clones into bin/Tests), then the fork's own tests/"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -uo pipefail
+tests="$PWD/bin/Tests"
+if [ -d "$tests/.git" ]; then git -C "$tests" pull --ff-only -q; else git clone --depth 1 https://github.com/nesdev-org/MesenTests.git "$tests"; fi
+make pgohelper || exit 1
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+helper="PGOHelper/${objdir#InteropDLL/}/pgohelper"
+libs="$PWD/$objdir:${MESEN_RUNTIME_LIBRARY_PATH:-}"
+export DYLD_FALLBACK_LIBRARY_PATH="$libs" LD_LIBRARY_PATH="$libs"
+echo "== MesenTests (upstream, bin/Tests) =="
+"$helper" "$tests" citests; upstream=$?
+echo "== Fork tests (tests/) =="
+"$helper" "$PWD/tests" citests; fork=$?
+echo "upstream: $([ $upstream -eq 0 ] && echo pass || echo FAIL), fork: $([ $fork -eq 0 ] && echo pass || echo FAIL)"
+[ $upstream -eq 0 ] && [ $fork -eq 0 ]
+'''
+
+[tasks."build:test-roms"]
+description = "Build the fork's test ROMs (tests/<system>/src) into bin/test-roms"
+run = "tests/tools/build-roms.sh"
+
+[tasks."test:record"]
+description = "Record a .mtp test headlessly and check that it replays (mise run test:record -- <rom> <out.mtp> [--frames N])"
 depends = ["core"]
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-tests="$PWD/bin/Tests"
-if [ -d "$tests/.git" ]; then git -C "$tests" pull --ff-only -q; else git clone --depth 1 https://github.com/nesdev-org/MesenTests.git "$tests"; fi
-make pgohelper
 objdir=$(ls -d InteropDLL/obj.* | head -1)
-helper="PGOHelper/${objdir#InteropDLL/}/pgohelper"
-libs="$PWD/$objdir:${MESEN_RUNTIME_LIBRARY_PATH:-}"
-DYLD_FALLBACK_LIBRARY_PATH="$libs" LD_LIBRARY_PATH="$libs" exec "$helper" "$tests" citests
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+mkdir -p bin
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/mtp-record/record.cpp "$lib" -pthread -o bin/mtp-record
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir:${MESEN_RUNTIME_LIBRARY_PATH:-}" LD_LIBRARY_PATH="$PWD/$objdir:${MESEN_RUNTIME_LIBRARY_PATH:-}"
+exec bin/mtp-record "$@"
+'''
+
+[tasks."test:record-fork"]
+description = "Rebuild the fork's test ROMs and re-record every test in tests/manifest.txt"
+depends = ["core", "build:test-roms"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/mtp-record/record.cpp "$lib" -pthread -o bin/mtp-record
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir:${MESEN_RUNTIME_LIBRARY_PATH:-}" LD_LIBRARY_PATH="$PWD/$objdir:${MESEN_RUNTIME_LIBRARY_PATH:-}"
+grep -v '^#' tests/manifest.txt | while read -r mtp rom frames; do
+  [ -n "$mtp" ] || continue
+  bin/mtp-record "bin/test-roms/$rom" "tests/$mtp" --frames "$frames"
+done
 '''
 
 [tasks."test:cpu"]
