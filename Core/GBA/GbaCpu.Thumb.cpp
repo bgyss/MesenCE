@@ -272,6 +272,9 @@ void GbaCpu::ThumbPushPopReg()
 	bool load = _opCode & (1 << 11);
 
 	uint32_t sp = _state.R[13];
+	//Empty register list: like Thumb STMIA/LDMIA, only R15 is stored/loaded, but SP moves as if
+	//all 16 registers were transferred (0x40 bytes)
+	bool emptyPushGlitch = !regMask && !load && !storeLrLoadPc;
 	if(!load) {
 		uint8_t regCount = 0;
 		for(int i = 0; i < 8; i++) {
@@ -279,8 +282,11 @@ void GbaCpu::ThumbPushPopReg()
 				regCount++;
 			}
 		}
-		sp -= regCount * 4 + (storeLrLoadPc ? 4 : 0);
+		sp -= regCount * 4 + (storeLrLoadPc ? 4 : 0) + (emptyPushGlitch ? 0x40 : 0);
 		_state.R[13] = sp;
+		if(emptyPushGlitch) {
+			Write(GbaAccessMode::Word, sp, _state.R[15] + 2);
+		}
 	}
 
 	for(int i = 0; i < 8; i++) {
