@@ -130,6 +130,28 @@ if [ $havePath -eq 0 ]; then set -- "$@" "$data/v1"; fi
 exec bin/spc-cpu-singlestep "$@"
 '''
 
+[tasks."test:snes-cpu"]
+description = "SNES 65816 vs SingleStepTests 65816 (mise run test:snes-cpu -- [--details N] [opcode files...])"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+data="$PWD/bin/SingleStepTests-65816"
+if [ ! -d "$data/v1" ]; then
+  git clone --depth 1 https://github.com/SingleStepTests/65816.git "$data"
+fi
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+mkdir -p bin
+# The harness compiles Core/SNES/SnesCpu.cpp itself (against a flat test bus).
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/snes-cpu-singlestep/singlestep.cpp "$lib" -pthread -o bin/snes-cpu-singlestep
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+havePath=0
+for a in "$@"; do [ -e "$a" ] && havePath=1; done
+if [ $havePath -eq 0 ]; then set -- "$@" "$data/v1"; fi
+exec bin/snes-cpu-singlestep "$@"
+'''
+
 [tasks."test:z80-cpu"]
 description = "SMS/GG/Coleco Z80 vs SingleStepTests z80 (mise run test:z80-cpu -- [--details N] [opcode files...])"
 depends = ["core"]

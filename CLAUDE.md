@@ -38,6 +38,7 @@ This fork's addition, not upstream.
   - `mise run test:cpu`: NES CPU vs the SingleStepTests `nes6502` suite (2.56M tests incl. per-cycle bus traces). Downloads 1.2 GB into `bin/`. Known divergences are whitelisted in `tools/nes-cpu-singlestep/singlestep.cpp`.
   - `mise run test:gb-cpu`: Game Boy SM83 CPU vs the SingleStepTests `sm83` suite (500k tests: bus trace, registers, RAM and M-cycle count). Downloads about 150 MB into `bin/`.
   - `mise run test:spc-cpu`: SNES SPC700 vs the SingleStepTests `spc700` suite (256k tests: bus trace, registers, RAM and cycle count), run on `DummySpc`. Downloads about 100 MB into `bin/`. Tests touching the `$F0-$FF` I/O page are skipped.
+  - `mise run test:snes-cpu`: SNES 65816 vs the SingleStepTests `65816` suite (5.08M tests, native and emulation mode: bus trace, registers, RAM and cycle count). The harness compiles `Core/SNES/SnesCpu.cpp` itself against a flat 16 MiB test bus. Downloads about 3.1 GB into `bin/`.
   - `mise run test:z80-cpu`: SMS/GG/Coleco Z80 vs the SingleStepTests `z80` suite (1.6M tests incl. WZ/Q, bus trace and T-states). The harness compiles `Core/SMS/SmsCpu.cpp` itself against a flat test bus. Downloads about 1.6 GB into `bin/`.
   - `mise run test:gb-irq`: Game Boy interrupt/HALT/EI scenarios on the real `GbCpu`, checked against Pan Docs rules. Known bugs are reported but don't fail the run.
   - `mise run test:nes-dma`: NES OAM-DMA regression test. It builds the self-checking ROM `docs/research/tla/rom/dmc_oam_overlap.s` with cc65 and runs it with the DMC duplication glitch on.
