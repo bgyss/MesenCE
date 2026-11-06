@@ -258,6 +258,31 @@ if [ $havePath -eq 0 ]; then set -- "$@" "$data/v1"; fi
 exec bin/gba-cpu-singlestep "$@"
 '''
 
+[tasks."test:pce-cpu"]
+description = "PC Engine HuC6280 vs SingleStepTests huc6280 (Mesen-generated baseline) and rockwell65c02 (independent)"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+huc="$PWD/bin/SingleStepTests-huc6280"
+r65="$PWD/bin/SingleStepTests-65x02-sparse"
+[ -d "$huc/v1" ] || git clone --depth 1 https://github.com/SingleStepTests/huc6280.git "$huc"
+if [ ! -d "$r65/rockwell65c02/v1" ]; then
+  git clone --depth 1 --filter=blob:none --sparse https://github.com/SingleStepTests/65x02.git "$r65"
+  git -C "$r65" sparse-checkout set rockwell65c02
+fi
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+mkdir -p bin
+# The harness compiles Core/PCE/PceCpu*.cpp itself (against a flat MPR-mapped test bus).
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/pce-cpu-singlestep/singlestep.cpp "$lib" -pthread -o bin/pce-cpu-singlestep
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+status=0
+bin/pce-cpu-singlestep --suite huc6280 "$@" "$huc/v1" || status=1
+bin/pce-cpu-singlestep --suite r65c02 "$@" "$r65/rockwell65c02/v1" || status=1
+exit $status
+'''
+
 [tasks."test:gb-irq"]
 description = "Game Boy interrupt/HALT/EI conformance scenarios vs Pan Docs (mise run test:gb-irq -- [--verbose])"
 depends = ["core"]
