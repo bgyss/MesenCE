@@ -34,7 +34,9 @@ This fork's addition, not upstream.
   - `mise run core`: native library only.
   - `mise run run`: launches the build, pointing the loader at Nix's SDL2.
   - `mise run test -- script.lua rom`.
-  - `mise run test:ci`: the MesenTests regression suite.
+  - `mise run test:ci`: the MesenTests regression suite, then the fork's own recorded tests in `tests/` (see `tests/README.md`).
+  - `mise run build:test-roms`: assembles the fork's test ROMs (`tests/*/src`, WLA-DX for SMS, ca65 for SNES) into `bin/test-roms`.
+  - `mise run test:record -- <rom> <out.mtp> [--frames N]`: records a `.mtp` headlessly (`tools/mtp-record`) and checks that it replays exactly. `mise run test:record-fork` re-records everything in `tests/manifest.txt`.
   - `mise run test:cpu`: NES CPU vs the SingleStepTests `nes6502` suite (2.56M tests incl. per-cycle bus traces). Downloads 1.2 GB into `bin/`. Known divergences are whitelisted in `tools/nes-cpu-singlestep/singlestep.cpp`.
   - `mise run test:gb-cpu`: Game Boy SM83 CPU vs the SingleStepTests `sm83` suite (500k tests: bus trace, registers, RAM and M-cycle count). Downloads about 150 MB into `bin/`.
   - `mise run test:spc-cpu`: SNES SPC700 vs the SingleStepTests `spc700` suite (256k tests: bus trace, registers, RAM and cycle count), run on `DummySpc`. Downloads about 100 MB into `bin/`. Tests touching the `$F0-$FF` I/O page are skipped.

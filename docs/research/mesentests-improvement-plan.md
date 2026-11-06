@@ -8,6 +8,20 @@ one instruction at a time against flat RAM. MesenTests is the only place where w
 
 Snapshot: `master` @ `dad7a4bf` (after PRs #6–#8), 2026-11-05.
 
+## Status
+
+| Step (§8) | State |
+|---|---|
+| 1. Headless record mode, `tests/` folder in `test:ci` | **Done.** `tools/mtp-record` (`mise run test:record`), `tests/` with a manifest (`mise run test:record-fork`), and `test:ci` runs upstream, then `tests/`. See `tests/README.md` |
+| 2. SMS Z80 timing ROM | **Done** (`tests/SMS/z80_timing`). Third-party SMS ROMs: not yet |
+| 3. SA-1 ROM | **First version done** (`tests/SNES/sa1_timing`): BRK/COP and memory speeds. IRQ/NMI entry and conflicts: not yet |
+| 4. 65816 edge-case ROM | Not started |
+| 5. GBA | Not started (BIOS decision open) |
+| Hardware runs | None yet |
+
+Side finding: SMS recordings couldn't be reproducible because the VDP started on a random
+scanline. Fixed for test mode (sms-verification-findings #10).
+
 ## 1. How MesenTests works today
 
 **Source.** [nesdev-org/MesenTests](https://github.com/nesdev-org/MesenTests), cloned into
@@ -39,7 +53,7 @@ Snapshot: `master` @ `dad7a4bf` (after PRs #6–#8), 2026-11-05.
   back to the post-boot state otherwise).
 - NES region is PAL only for tests named `demo_pal` or `pal_*`.
 
-**How tests are recorded today.** Only from the UI's test menu (`RomTestRecord` /
+**How tests were recorded before this plan.** Only from the UI's test menu (`RomTestRecord` /
 `RomTestStop` in `TestApiWrapper.cpp`, `UI/Utilities/RomTestHelper.cs`). There's no headless
 record mode.
 
@@ -53,8 +67,8 @@ record mode.
 | GBA | 209 | **none** (BIOS) |
 | WS | 15 | all |
 | PCE | 3 | all |
-| SMS / Game Gear / SG-1000 / ColecoVision | **0** | – |
-| SNES coprocessors | 1 (`cx4test`) | Cx4 only. **No SA-1**, SuperFX, DSP-n, S-DD1, SPC7110 or ST01x |
+| SMS / Game Gear / SG-1000 / ColecoVision | **0** (fork: 1, `tests/SMS`) | – |
+| SNES coprocessors | 1 (`cx4test`) (fork: 1 SA-1, `tests/SNES`) | Cx4 only upstream. **No SA-1** upstream; no SuperFX, DSP-n, S-DD1, SPC7110 or ST01x |
 
 612 tests pass, 218 are skipped (`test:ci`, 2026-11-05).
 

@@ -1,0 +1,4 @@
+# The fork's recorded tests: <.mtp under tests/> <ROM under bin/test-roms/> <frames to record>
+# Re-record all of them with `mise run test:record-fork` (rebuilds the ROMs first).
+SMS/z80_timing.mtp z80_timing.sms 120
+SNES/sa1_timing.mtp sa1_timing.sfc 120
