@@ -25,6 +25,9 @@ After the fixes, all of them pass.
 | 9 | System level | MesenTests has **no** SMS/GG/Coleco tests. The fork's `tests/SMS/z80_timing.mtp` now checks fixes 2–3 through the whole system; fixes 4–8 are still CPU-level only | – | **Partly closed** |
 | 10 | Recorded tests | The VDP started on a random scanline, so no SMS recording could replay exactly (always "passed with warnings") | – | **Fixed in this fork** (test mode only) |
 | 11 | Save states | The save-state round trip now supports `.sms`/`.gg`/`.sg`; the only SMS ROM available (the fork's `z80_timing`) is consistent | – | **Clean, thin coverage** |
+| 12 | Z80 interrupts | 14 scenarios against Zilog UM0080, Young and ares: IM 0/1/2 and NMI acceptance (timing, pushed PC, IFF1/2, R), NMI edge, EI delay, DI, RETN, HALT (after fixes 13–14) | – | **Clean** |
+| 13 | `LD A,I`/`LD A,R` then an interrupt | P/V kept IFF2; on the NMOS Z80 it reads 0 when an interrupt is accepted right after | – | **Fixed in this fork** (not on Game Gear) |
+| 14 | R during HALT | R didn't increase while halted | – | **Fixed in this fork** (judgment call) |
 
 ## How to reproduce
 
@@ -196,11 +199,66 @@ Game Gear. More SMS ROMs (plan §4.1) would widen this directly.
 app calls `Emulator::Release()` before destroying it, so this only affected the harness, which
 now drops the console first.
 
+## 12–14. Z80 interrupt scenarios
+
+**Method.** `tools/z80-irq-scenarios` (`mise run test:z80-irq`) compiles the real `SmsCpu` against
+the SingleStepTests harness's flat test bus. That setup now lives in
+`tools/z80-cpu-singlestep/TestSmsCpu.h`, shared by both tools. The data bus reads `$FF` during
+an acknowledge, as on the SMS. It raises interrupts through `SetIrqSource`/`SetNmiLevel` and
+checks:
+- IM 1 (13 T), IM 2 (19 T, vector from `I:$FF`), IM 0 with `$FF` on the bus (RST 38h, 13 T) and
+  NMI (11 T, `$0066`): pushed PC, IFF1/IFF2, and R + 1 for the acknowledge.
+- NMI is edge-triggered.
+- IRQ is not accepted after EI, and EI; EI delays again, but NMI is accepted right after EI.
+- DI masks IRQ, and RETN copies IFF2 to IFF1.
+- HALT runs 4-T cycles, and an IRQ ends it with the address after HALT pushed.
+- R during HALT (finding 14), and P/V after `LD A,I` when an interrupt follows (finding 13).
+
+Sources: Zilog UM0080 (interrupt response, HALT, EI, RETN), Sean Young's "The Undocumented Z80
+Documented" section 5, and ares `component/processor/z80/z80.cpp` `irq()`/`nmi()`.
+
+**Result.** 14/14 after fixes 13–14. Before them, 12/14. The IM 0 case passes because on the SMS
+the bus reads `$FF`, which is RST 38h. MesenCE's "IM 0 not implemented" (`TODOSMS`) only matters
+on hardware that puts another instruction on the bus.
+
+### 13. NMOS `LD A,I`/`LD A,R` P/V quirk (fixed)
+
+**Reproduction.** `LD A,I then IRQ (NMOS): P/V=$1 (expected $0)`.
+
+**Source.** On the NMOS Z80, if an interrupt is accepted right after `LD A,I` or `LD A,R`, P/V
+holds 0 instead of IFF2 (Young section 5). ares implements it (`if(P) PF = 0` in `irq()` and
+`nmi()`). SingleStepTests records the same condition in its `p` field. The SMS, SG-1000 and
+ColecoVision use NMOS Z80s. The Game Gear's Z80 is CMOS and doesn't have the quirk.
+
+**Effect.** Code that reads IFF2 with `LD A,I` to find out whether interrupts were enabled
+(common in save/restore routines) got the wrong answer when an interrupt hit right after.
+
+**Fix.** `LD_IR` records the cycle count it finishes on (`_ldIrEndCycle`). When an IRQ or NMI is
+accepted at exactly that cycle, `ClearParityAfterLdIr` clears P/V, except on the Game Gear.
+Normal instructions do no extra work: the check runs only on the interrupt-acceptance path.
+**Judgment call:** the Game Gear exception follows the CMOS behaviour Young describes. It hasn't
+been tested on hardware.
+
+### 14. R during HALT (fixed, judgment call)
+
+**Reproduction.** `R increments during HALT: R=$01 (expected $0B)` after 10 halted steps.
+
+**Source and disagreement.** UM0080 says the CPU executes NOPs during HALT to keep memory
+refresh going. Refresh is driven by R, which increases on every M1 cycle, and Young describes
+the same. **ares doesn't** increment R while halted (`if(HALT) return wait(1);` comes before
+`R++`). The fork follows the Zilog manual. **Judgment call**, worth a hardware test: a ROM that
+HALTs for a known number of lines and then reads R.
+
+**Effect.** The value of R after a HALT. Some games seed random numbers from R. Impossible
+Mission is the one the SMS VDP's random start scanline was added for upstream.
+
+**Fix.** The halted path of `SmsCpu::Exec` calls `IncrementR()` for each 4-T NOP cycle. That's
+on the halted path only.
+
 ## Ideas for further SMS verification
 
-- **Interrupts:** IM 1, IM 2, NMI, the EI delay, and `LD A,I` P/V when an interrupt is accepted
-  (the suite's `p`/`ei`). These need a scenario harness like `tools/gb-irq-scenarios`. IM 0 is
-  unimplemented (`TODOSMS`).
+- **Interrupts at system level:** the VDP's frame and line interrupt timing relative to the
+  CPU, and a hardware run that settles finding 14 (R during HALT).
 - More SMS/GG ROMs for the save-state round trip (finding 11): PSG/FM, mappers, Game Gear.
 - Game Gear CMOS behaviour (`OUT (C),0`).
 - More system-level tests in `tests/SMS`: interrupt timing (IM 1/NMI against the VDP), and

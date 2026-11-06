@@ -530,7 +530,9 @@ void SnesCpu::ProcessInterrupt(uint16_t vector, bool forHardwareInterrupt)
 
 	if(_state.EmulationMode) {
 		PushWord(_state.PC);
-		PushByte(_state.PS | 0x20);
+		//The pushed B flag (bit 4) is 1 for BRK and 0 for IRQ/NMI, so a handler on the shared
+		//$FFFE vector can tell them apart (the live P keeps bit 4 = X set in emulation mode)
+		PushByte(forHardwareInterrupt ? ((_state.PS | 0x20) & ~0x10) : (_state.PS | 0x20));
 
 		SetFlags(ProcFlags::IrqDisable);
 		ClearFlags(ProcFlags::Decimal);

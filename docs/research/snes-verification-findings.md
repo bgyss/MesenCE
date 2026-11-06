@@ -29,6 +29,8 @@ Snapshot: `apply-verified-fixes` @ `c8ce0381`, 2026-11-05, aarch64-darwin.
 | 14 | SA-1: read-modify-write in native mode, with the debugger | The modify cycle was reported to the SNES CPU's debugger instead of the SA-1's | **Fixed in this fork** (code reading only) |
 | 15 | System level | MesenTests has **no** SA-1 tests. The fork's `tests/SNES/sa1_timing.mtp` now checks fix 12 (BRK/COP) and the SA-1 memory speeds through the whole system | **Partly closed** |
 | 16 | Save states | Save state → fresh console → 120 frames compared, on all 83 SNES ROMs in MesenTests plus the fork's SA-1 ROM | **Clean** (the check catches a removed `SV()`; see below) |
+| 17 | 65816 interrupts (SNES CPU and SA-1) | 12 scenarios per CPU against the WDC datasheet and ares: entry sequence and cycle counts, pushed registers, NMI vs I, WAI, interruptible MVN (after fix 18) | **Clean** |
+| 18 | 65816: IRQ/NMI in emulation mode | The pushed P had B (bit 4) = 1, as for BRK, so a handler on the shared `$FFFE` vector couldn't tell an IRQ from a BRK | **Fixed in this fork** |
 
 ## How to reproduce
 
@@ -350,6 +352,53 @@ and is reported to the UI. Neither affects emulated state.
 - The comparison is of the serialized state, so state that only affects video or audio output
   isn't covered.
 
+## 17–18. 65816 interrupt scenarios
+
+**Method.** `tools/snes-irq-scenarios` (`mise run test:snes-irq`) compiles the real `SnesCpu` and
+`Sa1Cpu` against the flat test bus of the SingleStepTests harness. That setup now lives in
+`tools/snes-cpu-singlestep/TestCpus.h`, shared by both tools. The harness raises interrupts
+through the CPUs' own entry points (`SetIrqSource`, `SetNmiFlag`) and checks, on both CPUs, in
+both native and emulation mode:
+- IRQ and NMI entry: 8 cycles native, 7 emulation; PBR (native), PC of the next instruction
+  and P pushed; I = 1, D = 0, PBR = 0; the vector read. On the SA-1, the NMI/IRQ vectors come
+  from its registers.
+- NMI isn't masked by I; IRQ is.
+- WAI with I = 1: an IRQ resumes execution at the next instruction without the interrupt
+  sequence. With I = 0 it's taken, with the address after WAI pushed.
+- MVN is interruptible: the MVN's own address is pushed, and the move completes after RTI.
+- BRK in emulation mode pushes B = 1.
+
+Sources: the WDC W65C816S datasheet (interrupt sequence, WAI, MVN/MVP), and ares
+`component/processor/wdc65816/instruction.cpp` `interrupt()` for the sequence and pushed P.
+
+**Result.** 24/24 after fix 18. Before it, the 4 emulation-mode IRQ/NMI entry scenarios failed
+(two per CPU). Since the harness compiles the CPU sources itself, it's also the regression test.
+
+### 18. Emulation-mode IRQ/NMI pushed B = 1 (fixed)
+
+**Reproduction.**
+
+```
+FAIL  SNES: IRQ entry, emulation: pushed P=$39 (expected $29)
+FAIL  SNES: NMI entry with I = 1, emulation: pushed P=$34 (expected $24)
+```
+
+The same two failed on the SA-1. `ProcessInterrupt` pushed `PS | 0x20` for every interrupt.
+In emulation mode MesenCE keeps bit 4 of P set, because that's the X flag, forced to 1. So
+hardware interrupts pushed B = 1, the same as BRK.
+
+**Source.** In emulation mode, IRQ and BRK share the `$FFFE` vector, and the pushed B bit is how
+a handler tells them apart: 1 for BRK, 0 for IRQ/NMI (WDC datasheet). ares does the same:
+`push(EF ? P & ~0x10 : P)` for hardware interrupts, `push(P)` for BRK/COP.
+
+**Effect.** Any emulation-mode IRQ handler that checks B (the usual 6502 idiom on the
+shared vector) treated every IRQ as a BRK. SNES games normally run in native mode, so this
+mostly matters for boot code, homebrew and SA-1 programs that stay in emulation mode.
+
+**Fix.** In emulation mode, `ProcessInterrupt` pushes P with bit 4 cleared when
+`forHardwareInterrupt` is set. This is in `SnesCpu.Instructions.h`, so it applies to both
+CPUs. It's on the interrupt path only.
+
 ## Notes for maintainers
 
 - The makefile has no header dependency tracking. `Core/SNES/Debugger/DummySpc.cpp` `#include`s
@@ -362,9 +411,10 @@ and is reported to the UI. Neither affects emulated state.
   consoles), and on ROMs that use the other coprocessors (finding 16).
 - A test for the SPC I/O page: timers (`$FA-$FF`), the `$F0` speed and write-enable bits, and
   `$F1` port clearing, against fullsnes / anomie's docs.
-- 65816 interrupts: NMI/IRQ timing, the `IdleOrRead` dummy read before an interrupt, WAI wake-up
-  latency, and the DMA/HDMA interaction (`IrqLock`). These need a scenario harness like
-  `tools/gb-irq-scenarios`.
+- 65816 interrupts not covered by finding 17: interrupt latency relative to the PPU
+  (H/V-IRQ timing), the `IdleOrRead` dummy read before an interrupt (a MesenCE model of SNES
+  behaviour with no source cited), and the DMA/HDMA interaction (`IrqLock`). These need the real
+  `SnesConsole` rather than the flat test bus.
 - SA-1 system level: extend `tests/SNES/sa1_timing.s` with SNES → SA-1 IRQ/NMI entry latency and
   SNES-CPU/SA-1 ROM conflicts, and run it on hardware (finding 15).
 - The SA-1 H/V counter reads (`$2302-$2305`) and timer are unimplemented (`Sa1.cpp`).

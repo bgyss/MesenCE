@@ -250,6 +250,36 @@ export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
 exec bin/gb-irq-scenarios "$@"
 '''
 
+[tasks."test:snes-irq"]
+description = "65816 interrupt scenarios (SNES CPU and SA-1) vs the WDC datasheet and ares (mise run test:snes-irq -- [--verbose])"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+mkdir -p bin
+# Compiles Core/SNES/SnesCpu.cpp and Sa1Cpu.cpp itself (tools/snes-cpu-singlestep/TestCpus.h).
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/snes-irq-scenarios/scenarios.cpp "$lib" -pthread -o bin/snes-irq-scenarios
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+exec bin/snes-irq-scenarios "$@"
+'''
+
+[tasks."test:z80-irq"]
+description = "Z80 interrupt/HALT/EI scenarios vs Zilog UM0080, Young and ares (mise run test:z80-irq -- [--verbose])"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+mkdir -p bin
+# Compiles Core/SMS/SmsCpu.cpp itself (tools/z80-cpu-singlestep/TestSmsCpu.h).
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/z80-irq-scenarios/scenarios.cpp "$lib" -pthread -o bin/z80-irq-scenarios
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+exec bin/z80-irq-scenarios "$@"
+'''
+
 [tasks."test:nes-dma"]
 description = "NES OAM-DMA restart regression test (self-checking ROM, duplication glitch on)"
 depends = ["core"]
