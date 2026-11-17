@@ -46,6 +46,8 @@ private:
 	SmsMemoryManager* _memoryManager = nullptr;
 
 	int32_t _cbAddress = -1;
+	//Cycle count at the end of the last LD A,I / LD A,R (NMOS P/V quirk, see ClearParityAfterLdIr)
+	uint64_t _ldIrEndCycle = UINT64_MAX;
 	SmsCpuState _state = {};
 
 	Register16 _regAF = Register16(&_state.A, &_state.Flags);
@@ -85,6 +87,7 @@ private:
 
 	void LD(uint8_t& dst, uint8_t value);
 	void LD_IR(uint8_t& dst, uint8_t value);
+	void ClearParityAfterLdIr();
 	void LD(uint16_t& dst, uint16_t value);
 	void LD(Register16& dst, uint16_t value);
 	void LD_Indirect(uint16_t dst, uint8_t value);
