@@ -10,8 +10,8 @@
 	#pragma GCC diagnostic ignored "-Wparentheses"
 	#pragma GCC diagnostic ignored "-Wunused-variable"
 #elif defined(_MSC_VER)
-	#pragma warning(push)
-	#pragma warning(disable : 4146 4244 4389 4706 4100 4189)
+	//Vendored ares code: no MSVC warnings in this region (it is checked by clang/GCC and the suite)
+	#pragma warning(push, 0)
 #endif
 #include "MD/M68k/ares/m68000.inc"
 #if defined(__clang__)

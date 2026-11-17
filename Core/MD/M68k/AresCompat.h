@@ -10,7 +10,11 @@
 #include <type_traits>
 #include <utility>
 
-#define unreachable __builtin_unreachable()
+#if defined(_MSC_VER) && !defined(__clang__)
+	#define unreachable __assume(0)
+#else
+	#define unreachable __builtin_unreachable()
+#endif
 
 namespace AresCompat
 {

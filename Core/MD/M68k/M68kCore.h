@@ -1,7 +1,14 @@
 #pragma once
 #include <cstdint>
 #include <string>
+//Vendored ares code: MSVC /W4 /WX would reject its bool/integer mixing and unused parameters
+#if defined(_MSC_VER) && !defined(__clang__)
+	#pragma warning(push, 0)
+#endif
 #include "MD/M68k/ares/m68000.h"
+#if defined(_MSC_VER) && !defined(__clang__)
+	#pragma warning(pop)
+#endif
 
 enum class M68kAccess : uint8_t
 {
@@ -36,14 +43,14 @@ public:
 	virtual void Wait(uint32_t clocks) = 0;
 	virtual uint16_t BusRead(bool upper, bool lower, uint32_t address, M68kAccess access) = 0;
 	virtual void BusWrite(bool upper, bool lower, uint32_t address, uint16_t data, M68kAccess access) = 0;
-	virtual void AddressErrorCycle(bool write, uint32_t address, bool upper, bool lower) {}
+	virtual void AddressErrorCycle(bool /*write*/, uint32_t /*address*/, bool /*upper*/, bool /*lower*/) {}
 	virtual uint16_t Peek(uint32_t address) = 0;
 	// Called during interrupt acknowledge; return the level's autovector (default) or a vector number.
 	virtual uint32_t AcknowledgeInterrupt(uint8_t level) { return ares::M68000::Vector::Level1 + level - 1; }
 	// Debugger hooks: before an instruction executes (not while stopped), and after an
 	// interrupt's exception processing has loaded the handler address.
 	virtual void OnInstructionStart() {}
-	virtual void OnInterruptTaken(uint32_t originalPc, uint32_t handlerPc) {}
+	virtual void OnInterruptTaken(uint32_t /*originalPc*/, uint32_t /*handlerPc*/) {}
 
 	void PowerOn();
 	// Fetches SSP and PC from vectors 0 and 1 and fills the prefetch queue.
@@ -96,7 +103,7 @@ private:
 	using n32 = AresCompat::n32;
 	auto idle(u32 clocks) -> void final { Idle(clocks); }
 	auto wait(u32 clocks) -> void final { Wait(clocks); }
-	auto read(n1 upper, n1 lower, n24 address, n16 data = 0) -> n16 final { return BusRead(upper, lower, address, (M68kAccess)access); }
+	auto read(n1 upper, n1 lower, n24 address, n16 /*data*/ = 0) -> n16 final { return BusRead(upper, lower, address, (M68kAccess)access); }
 	auto write(n1 upper, n1 lower, n24 address, n16 data) -> void final { BusWrite(upper, lower, address, data, (M68kAccess)access); }
 	auto peek(n24 address) -> n16 final { return Peek(address); }
 	auto addressError(bool write, n32 address, bool upper, bool lower) -> void final;
