@@ -3,4 +3,4 @@
 # deliberately loads unaligned 16/32-bit words on x86 (MINIZ_USE_UNALIGNED_LOADS_AND_STORES in
 # Utilities/miniz.h). Only the alignment check is exempted, only for that file.
 [alignment]
-src:*/Utilities/miniz.cpp
+src:*Utilities/miniz.cpp
