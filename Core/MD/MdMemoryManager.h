@@ -38,6 +38,16 @@ private:
 
 	vector<uint8_t> _rom;
 	uint32_t _romMask = 0;
+
+	//Sega's bank-switching mapper (Super Street Fighter II, large homebrew): the 68000's cartridge
+	//space is eight 512 KiB windows; $A130F3/5/7/9/B/D/F select the ROM bank shown in windows 1-7
+	//(window 0 is fixed to bank 0). Enabled for ROMs over 4 MiB or a "SEGA SSF" system name.
+	bool _hasBankMapper = false;
+	uint8_t _romBank[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+	__forceinline uint32_t MapRom(uint32_t addr)
+	{
+		return _hasBankMapper ? (((uint32_t)_romBank[(addr >> 19) & 0x07] << 19) | (addr & 0x7FFFF)) : addr;
+	}
 	uint8_t* _workRam = nullptr;
 	uint8_t* _z80Ram = nullptr;
 	uint8_t* _saveRam = nullptr;

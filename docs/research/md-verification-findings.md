@@ -276,9 +276,10 @@ Informational (not failures under the accepted comparison, V1):
 
 Still KNOWN (audio, `tests/MD/synthetic/KNOWN`): `sound_ym_envelope_key_on_off`, now classified as
 a **BlastEm reference error**. The key-on pulse lasts 3136 master clocks (~58 µs, about 3 YM
-samples) because the display is off and the VBlank poll ends at once; the channel's attack rate
-(AR 28 plus key scaling) gives an instant attack. (The previous KNOWN text said "well under one YM
-sample"; that was wrong.)
+samples) because the display is off and the VBlank poll ends at once. The channel's attack rate is
+AR 28 with key scale 0, an effective rate of 58: fast, but **not** instant (instant needs 62), so the
+pulse covers exactly one envelope step. (Earlier KNOWN texts said "well under one YM sample" and
+"instant attack"; both were wrong.)
 
 - Evidence: the YM2612 writes of MesenCE's bus trace replayed through Nuked-OPN2
   (github.com/nukeykt/Nuked-OPN2, commit 335747d78cb0, a die-shot based cycle-accurate YM3438/YM2612
@@ -287,9 +288,8 @@ sample"; that was wrong.)
   block only (a start-up transient, rms 2.4). Both MesenCE and Nuked play a 260 Hz note (the
   channel's pitch); BlastEm plays none. nativekit's own model (`keyon_write`) also starts the attack
   on the write.
-- Remaining difference (open, not hidden by the KNOWN entry): the note lasts ~40 ms in MesenCE
-  (ymfm) and ~10 ms in Nuked. Possibly ymfm's attack/release timing for a key-off shortly after an
-  instant attack; not investigated yet.
+- Note length, investigated (A3): ~40 ms with ymfm, ~10 ms with Nuked-OPN2. Resolved by offering
+  Nuked-OPN2 as a selectable FM core; with it MesenCE plays the ~10 ms note.
 - Limits of this check: it compares activity and pitch only. On algorithms 0, 1 and 3 the replay
   harness reports dominant frequencies (16.7-24 kHz) that neither emulator shows, most likely an
   artifact of summing Nuked's time-multiplexed per-slot DAC outputs, so Nuked is not used as a
@@ -307,6 +307,35 @@ sample"; that was wrong.)
   broadband output, e.g. full-depth modulation in algorithms 2/3, compares spectral centroid
   and peak within 20%). Levels are not compared (different gain/DAC tables).
 - Result: 17 audio cases, 16 agree + 1 KNOWN (`sound_ym_envelope_key_on_off`, S3).
+
+### A3. Note length vs Nuked-OPN2, and the selectable Nuked-OPN2 FM core
+
+- Method (investigation tools, not in the tree): drive ymfm (as `MdApu` does, writes between
+  samples) and Nuked-OPN2 with the same writes and log each operator's envelope state and
+  attenuation per sample. In `sound_ym_envelope_key_on_off` both take exactly one attack step
+  before the key-off: ymfm 1023 → 511, Nuked 1023 → 767. Release is equally slow in both, so
+  ymfm's note starts 6 dB louder and lasts ~4× longer. The attack step is
+  `att += (~att * inc) >> 4`; at rate 58 the increment alternates between two values with the
+  global envelope counter (Nuked: `eg_stephi[rate&3][timer_low] + 3`; ymfm: its increment table).
+- Sweeping the key-on over 12 consecutive samples with the key held: both models produce the same
+  two attack sequences (`256 384 96 …` and `512 128 192 …`), so the arithmetic agrees. They differ
+  in (1) latency: ymfm reacts 0-2 samples after the key-on write, Nuked 3-5 (the die's register and
+  envelope pipeline); (2) envelope-tick phase. A search over ymfm's initial envelope counter and a
+  constant write delay matches at best 54 of 84 cases exactly, because Nuked latches key-on per
+  operator slot on its own internal cycle. So this is the gap between a sample-level and a
+  cycle-level model, not a fixable ymfm bug.
+- Resolution (as Genesis Plus GX does): `MdConfig::FmCore` selects ymfm (default) or Nuked-OPN2
+  (`Utilities/Audio/NukedOpn2`, LGPL-2.1+, commit 335747d7, unmodified). With Nuked, `MdApu`
+  clocks the chip per internal cycle (42 master clocks), applies writes at their exact cycle, and
+  uses the chip's own timers, busy flag and status reads (on a discrete YM2612, ports 1-3 return
+  the last latched status). Output is the sum of the 24 slot outputs per sample × 7 (about ymfm's
+  level; approximate). The save state records the core.
+- Evidence: with `--md-fm-core nuked` the key-on case plays the ~10 ms note (peak 231 for 2 blocks
+  of 256 samples, as the standalone replay). The whole corpus on the Nuked core: 60/60 reads, audio
+  16 + 1 known, replay 62/62 (`test:md-synthetic` and `test:md-replay` run both cores). The default
+  ymfm output is byte-identical to the previous build on all 61 cases (cross-build comparison).
+- Cost: Nuked ~4.2% of one core at real-time speed vs 0.4% for ymfm (M1 Max), so it is an option,
+  not the default (performance is a review criterion here).
 
 ### A2. 3- and 6-button pads (`Core/MD/Input/MdController.h`)
 
@@ -379,6 +408,56 @@ sample"; that was wrong.)
   `test:md-replay` (61/61). Negative control: with the fix in place, removing only
   `SV(_phase)` from `MdController::Serialize` makes the case fail at the same read; restoring it
   passes.
+
+### R3. Pads were recreated every frame once MdConfig gained padding (fixed)
+
+- Repro: after adding the 1-byte `FmCore` field, `io_pad6_across_frame` read the 6-button
+  handshake wrongly ($33 instead of $30), deterministically, in the new build only.
+- Cause: `MdControlManager::UpdateControlDevices` compared a stack copy of `MdConfig` with the
+  previous one by `memcmp` (`EmuSettings::IsEqual`), padding bytes included. The new field left 3
+  indeterminate padding bytes, so the configs compared unequal at every frame end, the pads were
+  recreated and the handshake reset. Fix: compare only the port fields (type, the four
+  `KeyMapping`s — `uint16_t` members only, no padding — and turbo speed).
+- Regression: `compare.py` now checks MesenCE's own cases against their expected read values
+  (the replay check could not see this: both sides recreated the pads alike). Negative control:
+  restoring the `memcmp` comparison fails the case at two reads; the fix passes.
+- Not changed: other consoles use the same `IsEqual(copy)` pattern; their configs happen to have
+  no trailing padding today. Recorded here as a latent risk.
+
+### C4. Cheats: Game Genie and Pro Action Replay (`mise run test:md-cheats`)
+
+- `CheatType::MdGameGenie` (ABCD-EFGH) and `MdProActionReplay` (AAAAAA:VVVV), the formats Genesis
+  Plus GX and Kega Fusion accept. Each code patches a 16-bit word and is split into two byte codes.
+  ROM addresses become patches applied on every cartridge bus read (68000, VDP DMA from ROM, Z80
+  bank window), as the hardware devices sit on the cartridge bus; debugger peeks show the
+  unpatched ROM. Work RAM codes are rewritten each frame. I/O and VDP addresses are rejected.
+- Game Genie bit layout from two descriptions that agree bit for bit (Genesis Plus GX's
+  `decode_cheat` and Charles MacDonald's Genesis Game Genie format notes). The test encodes its
+  codes from the documented layout string, independently of the C++ decoder.
+- Test (bus_map cartridge, which reads $004000): control read $0123; Action Replay 004000:BEEF
+  and Game Genie 93AA-AZTA ($004000 = $CAFE) change the bus read; FF0100:1234 lands in work RAM;
+  three invalid Game Genie codes and an I/O-area code are rejected. 8/8.
+- Found along the way: a Lua error while a script *loads* did not fail a headless run (the runner
+  entered headless mode after loading). Fixed in both runner paths; self-test added.
+
+### B3. Sega bank-switching mapper ("SSF2 mapper")
+
+- Super Street Fighter II's board and many large homebrew ROMs: eight 512 KiB windows; the odd
+  registers $A130F3…$A130FF select the ROM bank in windows 1-7, window 0 is fixed to bank 0.
+  Enabled for ROMs over 4 MiB or the header system name "SEGA SSF". Banks are serialized; the
+  debugger's ROM address translation follows them.
+- Test: `mapper_ssf2_banks` (MesenCE case, 5 MiB ROM): window 7 reads bank 7, then bank 9 after a
+  byte write to $A130FF, then bank 8 after a word write to $A130FE; window 0 still reads the header.
+  Passes, and replays identically across a save state.
+
+### D4. Mega Drive settings page
+
+- Before: no settings UI for the Mega Drive (region, model, pads, key bindings and volumes could not
+  be changed). Now: a Mega Drive tab in the settings window (also in the Options menu and the
+  per-system links) with region, model, RAM power-on state, FM core, FM/PSG volume, pad types, a
+  pad key-binding view (A/B/C with turbo, X/Y/Z, Start, Mode), video overrides, sprite limit and
+  layer toggles. Checked by compiling and by the C#/C++ layout comparison of `MdConfig` (2016
+  bytes, every field offset equal); not exercised by an automated UI test.
 
 ### R1. Recorded-ROM tests (`tests/MD/recorded`, `mise run test:ci`)
 

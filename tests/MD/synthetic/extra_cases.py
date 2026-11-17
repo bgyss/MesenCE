@@ -4,7 +4,7 @@
 from dataclasses import replace
 
 import cases
-from cases import Operation, READ, POLL
+from cases import Case, Operation, READ, WRITE, POLL
 
 
 def _pad6_across_frame():
@@ -30,5 +30,26 @@ def _pad6_across_frame():
     return replace(base, name="io_pad6_across_frame", operations=tuple(stretched), capture_frames=3)
 
 
+def _bank_mapper():
+    """Sega's bank-switching mapper on a 5 MiB ROM (Super Street Fighter II's board).
+
+    Window 7 ($380000-$3FFFFF) shows bank 7 at power-on; a byte write of 9 to $A130FF maps bank 9
+    ($480000), a word write of $0008 to $A130FE (low byte -> $A130FF) maps bank 8 ($400000).
+    Window 0 is fixed to bank 0 (the header at $000100 reads "SE").
+    """
+    rom_data = ((0x380000, 0x12), (0x380001, 0x34),   # bank 7
+                (0x400000, 0x56), (0x400001, 0x78),   # bank 8
+                (0x480000, 0xAB), (0x480001, 0xCD))   # bank 9
+    ops = (
+        Operation(READ, 2, 0x380000, 0x1234, compare_mask=0xFFFF),
+        Operation(WRITE, 1, 0xA130FF, 0x09),
+        Operation(READ, 2, 0x380000, 0xABCD, compare_mask=0xFFFF),
+        Operation(WRITE, 2, 0xA130FE, 0x0008),
+        Operation(READ, 2, 0x380000, 0x5678, compare_mask=0xFFFF),
+        Operation(READ, 2, 0x000100, 0x5345, compare_mask=0xFFFF),
+    )
+    return Case("mapper_ssf2_banks", ops, rom_size=0x500000, rom_data=rom_data, capture_frames=2)
+
+
 def all_cases():
-    return [_pad6_across_frame()]
+    return [_pad6_across_frame(), _bank_mapper()]

@@ -53,6 +53,8 @@ This fork's addition, not upstream.
     - `mise run headless` / `test:headless`: the native runner `bin/mesen-headless` (no UI/SDL; contract in `docs/headless.md`) and its self-test.
     - `mise run test:md-synthetic`: 60 synthetic cartridges (`tests/MD/synthetic`) vs the recorded BlastEm reference (reads, frames, per-chip audio); reviewed differences live in `tests/MD/synthetic/KNOWN`.
     - `mise run test:md-replay`: save-state replay must reproduce the bus trace and chip audio; `mise run test:md-xarch -- <other runner>`: byte-identical captures across builds/architectures.
+    - `mise run test:md-cheats`: Game Genie / Pro Action Replay codes on the bus_map cartridge. `test:md-synthetic` and `test:md-replay` run both FM cores (ymfm, Nuked-OPN2).
+    - Feature parity with other Mega Drive emulators: `docs/research/md-feature-parity.md`.
     - `mise run test:md-viewers`: the debugger's palette/tilemap/sprite viewers (`MdVdpTools`) must decode VRAM/CRAM exactly as the VDP renders.
   - Findings from these tools are logged in `docs/research/{nes,gb,snes,sms,gba,pce,md}-verification-findings.md`.
   - The makefile doesn't track `#include` dependencies. The dummy CPUs (`Debugger/Dummy*.cpp`) `#include` the real CPU `.cpp` files, so `touch` them after editing a CPU, or the debugger keeps stale code. **If you change a class layout in a header** (add or remove a member), touch every `.cpp` that includes it (e.g. `find Core/SMS -name '*.cpp' -exec touch {} +`). Otherwise objects compiled against the old layout corrupt memory: a stale `SmsCpu.h` made `test:ci` hang in `SmsPsg::Run`.

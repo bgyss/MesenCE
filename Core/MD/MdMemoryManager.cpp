@@ -38,6 +38,7 @@ void MdMemoryManager::Init(Emulator* emu, MdConsole* console, vector<uint8_t>& r
 	_hasTmss = hasTmss;
 
 	_rom = romData;
+	_hasBankMapper = romData.size() > 0x400000 || (romData.size() > 0x110 && memcmp(&romData[0x100], "SEGA SSF", 8) == 0);
 	uint32_t size = 1;
 	while(size < _rom.size()) {
 		size <<= 1;
@@ -141,7 +142,7 @@ uint8_t MdMemoryManager::ReadCartByte(uint32_t addr)
 	if(_saveRam && _state.SramEnabled && IsSaveRamAddress(addr)) {
 		return ReadSaveRam(addr);
 	}
-	return _rom[addr & _romMask];
+	return _rom[MapRom(addr) & _romMask];
 }
 
 uint8_t MdMemoryManager::ReadCartBus(uint32_t addr)
@@ -457,6 +458,8 @@ void MdMemoryManager::WriteControlRegister(uint32_t addr, uint8_t value, bool up
 	} else if(addr == 0xA130F1) {
 		_state.SramEnabled = value & 0x01;
 		_state.SramWriteProtected = value & 0x02;
+	} else if(_hasBankMapper && addr >= 0xA130F3 && addr <= 0xA130FF && (addr & 1)) {
+		_romBank[(addr - 0xA130F1) >> 1] = value & 0x3F;
 	} else if(addr >= 0xA14000 && addr < 0xA14004) {
 		if(_hasTmss) {
 			_state.Tmss[addr & 0x03] = value;
@@ -624,7 +627,7 @@ AddressInfo MdMemoryManager::GetAbsoluteAddress(uint32_t relAddr)
 			}
 			return { (int32_t)offset, MemoryType::MdSaveRam };
 		}
-		return { (int32_t)(relAddr & _romMask), MemoryType::MdPrgRom };
+		return { (int32_t)(MapRom(relAddr) & _romMask), MemoryType::MdPrgRom };
 	} else if(relAddr >= 0xE00000) {
 		return { (int32_t)(relAddr & 0xFFFF), MemoryType::MdWorkRam };
 	} else if(relAddr >= 0xA00000 && relAddr < 0xA04000) {
@@ -636,7 +639,17 @@ AddressInfo MdMemoryManager::GetAbsoluteAddress(uint32_t relAddr)
 int32_t MdMemoryManager::GetRelativeAddress(AddressInfo& absAddress)
 {
 	switch(absAddress.Type) {
-		case MemoryType::MdPrgRom: return absAddress.Address < 0x400000 ? absAddress.Address : -1;
+		case MemoryType::MdPrgRom:
+			if(_hasBankMapper) {
+				//The window currently showing that bank, if any
+				for(int i = 0; i < 8; i++) {
+					if(_romBank[i] == (uint32_t)absAddress.Address >> 19) {
+						return (i << 19) | (absAddress.Address & 0x7FFFF);
+					}
+				}
+				return -1;
+			}
+			return absAddress.Address < 0x400000 ? absAddress.Address : -1;
 		case MemoryType::MdWorkRam: return 0xFF0000 | (absAddress.Address & 0xFFFF);
 		case MemoryType::MdZ80Ram: return 0xA00000 | (absAddress.Address & 0x1FFF);
 		case MemoryType::MdSaveRam:
@@ -688,6 +701,8 @@ void MdMemoryManager::Serialize(Serializer& s)
 	SV(_state.SramEnabled);
 	SV(_state.SramWriteProtected);
 	SV(_state.TmssUnlocked);
+	SV(_hasBankMapper);
+	SVArray(_romBank, 8);
 	SVArray(_state.Tmss, 4);
 	SVArray(_state.Io.Data, 3);
 	SVArray(_state.Io.Ctrl, 3);
