@@ -3,7 +3,8 @@
 This repository is an independent fork of [MesenCE](https://github.com/nesdev-org/MesenCE). It's
 run as its own project and an open experiment: what happens when an emulator is developed with LLM
 assistance, backed by automated testing and formal verification. Changes are made and merged here
-directly. Nothing here is prepared for, or obliged to go, upstream.
+directly; this fork is not obliged to send anything upstream. Work may be offered upstream as a
+proposal (the Mega Drive core is), in which case upstream's own contribution rules apply to it.
 
 ## Licensing
 

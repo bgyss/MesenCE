@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MesenCE is a community fork of Mesen2: a multi-system emulator (NES, SNES, GB/SGB/GBC, GBA, PC Engine, SMS/Game Gear, WonderSwan, and in this fork Mega Drive/Genesis) with a C++17 emulation core and a C#/.NET 10 Avalonia UI.
 
-**This repository is an independent fork of MesenCE.** It's run as its own project, as an example of LLM-assisted development backed by testing and formal verification. Fixes are applied here directly, and nothing is prepared for or submitted upstream.
+**This repository is an independent fork of MesenCE.** It's run as its own project, as an example of LLM-assisted development backed by testing and formal verification. Fixes are applied here directly. Upstream branches are prepared only when the user asks (the Mega Drive core: `docs/upstream/`); upstream requires MIT-compatible code and currently prohibits AI-generated code, so such branches are proposals that disclose how they were made.
 
 ## Contribution policy (see CONTRIBUTING.md)
 
@@ -51,7 +51,7 @@ This fork's addition, not upstream.
   - Mega Drive (`Core/MD`, plan in `docs/research/mega-drive-genesis-feasibility.md`):
     - `mise run test:m68k-cpu`: the ares-derived 68000 (`Core/MD/M68k`) vs SingleStepTests `m68000` (plus `--scenarios` for reset/IRQ/STOP, `--bench`).
     - `mise run headless` / `test:headless`: the native runner `bin/mesen-headless` (no UI/SDL; contract in `docs/headless.md`) and its self-test.
-    - `mise run test:md-synthetic`: 60 synthetic cartridges (`tests/MD/synthetic`) vs the recorded BlastEm reference (reads, frames, per-chip audio); reviewed differences live in `tests/MD/synthetic/KNOWN`.
+    - `mise run test:md-synthetic`: 60 synthetic cartridges (`tests/MD/synthetic`) vs the recorded BlastEm reference (reads, frames, per-chip audio); reviewed differences live in `tests/MD/synthetic/KNOWN`. Plus MesenCE's own cases (`extra_cases.py`, checked against expected values): EEPROM boards, the bank mapper, Team Player/mouse/light guns (Lua input in `tests/MD/accessories`), and mid-line rendering (`tests/MD/midline/check_midline.py`). Per-case runner options (`--md-eeprom`, `--md-pads t:63n6,m`) travel in the generated spec's `runner_args`.
     - `mise run test:md-replay`: save-state replay must reproduce the bus trace and chip audio; `mise run test:md-xarch -- <other runner>`: byte-identical captures across builds/architectures.
     - `mise run test:md-cheats`: Game Genie / Pro Action Replay codes on the bus_map cartridge. `test:md-synthetic` and `test:md-replay` run both FM cores (ymfm, Nuked-OPN2).
     - Feature parity with other Mega Drive emulators: `docs/research/md-feature-parity.md`.
