@@ -109,17 +109,20 @@ void SmsCpu::ExecOpCode(uint8_t opCode)
 		}
 	};
 
-	auto getIndirectHl = [this]() constexpr -> uint16_t {
+	//(IX+d)/(IY+d) operands set WZ (MEMPTR) to the effective address
+	auto getIndirectHl = [this](uint8_t delay = 5) constexpr -> uint16_t {
 		switch(prefix) {
 			default: return _regHL;
 			case 0xDD: {
 				uint16_t value = _regIX + (int8_t)ReadCode();
-				ExecCycles(5);
+				_state.WZ = value;
+				ExecCycles(delay);
 				return value;
 			}
 			case 0xFD: {
 				uint16_t value = _regIY + (int8_t)ReadCode();
-				ExecCycles(5);
+				_state.WZ = value;
+				ExecCycles(delay);
 				return value;
 			}
 		}
@@ -202,7 +205,7 @@ void SmsCpu::ExecOpCode(uint8_t opCode)
 		case 0x33: INC_SP(); break;
 		case 0x34: INC_Indirect(getIndirectHl()); break;
 		case 0x35: DEC_Indirect(getIndirectHl()); break;
-		case 0x36: LD_IndirectImm(getIndirectHl()); break;
+		case 0x36: LD_IndirectImm<prefix>(getIndirectHl(0)); break;
 		case 0x37: SCF(); break;
 		case 0x38: JR((_state.Flags & SmsCpuFlags::Carry) != 0, ReadCode()); break;
 		case 0x39: ADD(getHl(), _state.SP); break;
@@ -343,7 +346,11 @@ void SmsCpu::ExecOpCode(uint8_t opCode)
 		case 0xC0: RET((_state.Flags & SmsCpuFlags::Zero) == 0); break;
 		case 0xC1: POP(_regBC); break;
 		case 0xC2: JP((_state.Flags & SmsCpuFlags::Zero) == 0, ReadCodeWord()); break;
-		case 0xC3: JP(ReadCodeWord()); break;
+		case 0xC3:
+			//JP nn sets WZ (JP (HL) shares JP() but doesn't)
+			_state.WZ = ReadCodeWord();
+			JP(_state.WZ);
+			break;
 		case 0xC4: CALL((_state.Flags & SmsCpuFlags::Zero) == 0, ReadCodeWord()); break;
 		case 0xC5: PUSH(_regBC); break;
 		case 0xC6: ADD(ReadCode()); break;
@@ -369,7 +376,10 @@ void SmsCpu::ExecOpCode(uint8_t opCode)
 		case 0xDA: JP((_state.Flags & SmsCpuFlags::Carry) != 0, ReadCodeWord()); break;
 		case 0xDB: IN_Imm(ReadCode()); break;
 		case 0xDC: CALL((_state.Flags & SmsCpuFlags::Carry) != 0, ReadCodeWord()); break;
-		case 0xDD: ExecOpCode<0xDD>(ReadNextOpCode()); break;
+		case 0xDD:
+			_state.FlagsChanged <<= 1;
+			ExecOpCode<0xDD>(ReadNextOpCode());
+			break;
 		case 0xDE: SBC(ReadCode()); break;
 		case 0xDF: RST(0x18); break;
 		case 0xE0: RET((_state.Flags & SmsCpuFlags::Parity) == 0); break;
@@ -404,7 +414,10 @@ void SmsCpu::ExecOpCode(uint8_t opCode)
 		case 0xFA: JP((_state.Flags & SmsCpuFlags::Sign) != 0, ReadCodeWord()); break;
 		case 0xFB: EI(); break;
 		case 0xFC: CALL((_state.Flags & SmsCpuFlags::Sign) != 0, ReadCodeWord()); break;
-		case 0xFD: ExecOpCode<0xFD>(ReadNextOpCode()); break;
+		case 0xFD:
+			_state.FlagsChanged <<= 1;
+			ExecOpCode<0xFD>(ReadNextOpCode());
+			break;
 		case 0xFE: CP(ReadCode()); break;
 		case 0xFF: RST(0x38); break;
 	}
@@ -530,8 +543,8 @@ void SmsCpu::ExchangeSp(Register16& reg)
 
 	ExecCycles(1);
 
-	Write(_state.SP, (uint8_t)regValue);
 	Write(_state.SP + 1, (uint8_t)(regValue >> 8));
+	Write(_state.SP, (uint8_t)regValue);
 
 	ExecCycles(2);
 }
@@ -595,6 +608,9 @@ void SmsCpu::RLD()
 	_state.A |= (value & 0xF0) >> 4;
 	value <<= 4;
 	value |= (a & 0x0F);
+
+	ExecCycles(4);
+
 	Write(_regHL, value);
 
 	SetStandardFlags<0xEC>(_state.A);
@@ -754,8 +770,6 @@ void SmsCpu::OUTD()
 	} else {
 		_state.WZ = _regBC - 1;
 	}
-	SetStandardFlags<0xE8>(_state.B);
-	SetFlag(SmsCpuFlags::AddSub);
 	uint8_t val = Read(_regHL);
 	if constexpr(forInc) {
 		_regHL.Inc();
@@ -763,6 +777,7 @@ void SmsCpu::OUTD()
 		_regHL.Dec();
 	}
 	WritePort(_state.C, val);
+	UpdateInOutFlags(val, val + _state.L);
 }
 
 void SmsCpu::OTDR()
@@ -800,15 +815,15 @@ void SmsCpu::IND()
 	} else {
 		_state.WZ = _regBC - 1;
 	}
-	_state.B--;
-	SetStandardFlags<0xE8>(_state.B);
-	SetFlag(SmsCpuFlags::AddSub);
 	uint8_t val = ReadPort(_state.C);
+	_state.B--;
 	Write(_regHL, val);
 	if constexpr(forInc) {
 		_regHL.Inc();
+		UpdateInOutFlags(val, val + (uint8_t)(_state.C + 1));
 	} else {
 		_regHL.Dec();
+		UpdateInOutFlags(val, val + (uint8_t)(_state.C - 1));
 	}
 }
 
@@ -837,11 +852,23 @@ void SmsCpu::INIR()
 	}
 }
 
+void SmsCpu::UpdateInOutFlags(uint8_t value, uint16_t k)
+{
+	//INI/IND/OUTI/OUTD: S, Z, X, Y from B; N = bit 7 of the value; H = C = carry out of k;
+	//P = parity of (k & 7) ^ B
+	SetStandardFlags<0xE8>(_state.B);
+	SetFlagState(SmsCpuFlags::AddSub, value & 0x80);
+	SetFlagState(SmsCpuFlags::Carry, k > 0xFF);
+	SetFlagState(SmsCpuFlags::HalfCarry, k > 0xFF);
+	SetFlagState(SmsCpuFlags::Parity, _parity.CheckParity((k & 0x07) ^ _state.B));
+}
+
 void SmsCpu::UpdateInOutRepeatFlags()
 {
+	_state.WZ = _state.PC + 1;
 	SetStandardFlags<0x28>(_state.PC >> 8);
 	if(CheckFlag(SmsCpuFlags::Carry)) {
-		if(CheckFlag(SmsCpuFlags::Sign)) {
+		if(CheckFlag(SmsCpuFlags::AddSub)) {
 			SetFlagState(SmsCpuFlags::Parity, _parity.CheckParity((_state.B - 1) & 0x07) == (uint8_t)CheckFlag(SmsCpuFlags::Parity));
 			SetFlagState(SmsCpuFlags::HalfCarry, (_state.B & 0x0F) == 0);
 		} else {
@@ -1026,7 +1053,7 @@ void SmsCpu::LD_IR(uint8_t& dst, uint8_t value)
 {
 	dst = value;
 
-	SetStandardFlags<0xE4>(value);
+	SetStandardFlags<0xEC>(value);
 	SetFlagState(SmsCpuFlags::Parity, _state.IFF2);
 	ClearFlag(SmsCpuFlags::HalfCarry);
 	ClearFlag(SmsCpuFlags::AddSub);
@@ -1061,10 +1088,14 @@ void SmsCpu::LD_Indirect_A(uint16_t dst)
 	_state.WZ = (_state.A << 8) | ((dst + 1) & 0xFF);
 }
 
+template<uint8_t prefix>
 void SmsCpu::LD_IndirectImm(uint16_t dst)
 {
 	uint8_t val = ReadCode();
-	ExecCycles(2);
+	if constexpr(prefix != 0) {
+		//LD (IX+d),n: the address calculation overlaps with the fetch of n
+		ExecCycles(2);
+	}
 	Write(dst, val);
 }
 
@@ -1080,6 +1111,7 @@ void SmsCpu::LDReg_Indirect16(uint16_t& dst, uint16_t addr)
 	uint8_t lo = Read(addr);
 	uint8_t hi = Read(addr + 1);
 	dst = lo | (hi << 8);
+	_state.WZ = addr + 1;
 }
 
 void SmsCpu::LDReg_Indirect16(Register16& dst, uint16_t addr)
@@ -1117,6 +1149,7 @@ void SmsCpu::INC_Indirect(uint16_t addr)
 {
 	uint8_t val = Read(addr);
 	INC(val);
+	ExecCycles(1);
 	Write(addr, val);
 }
 
@@ -1141,6 +1174,7 @@ void SmsCpu::DEC_Indirect(uint16_t addr)
 {
 	uint8_t val = Read(addr);
 	DEC(val);
+	ExecCycles(1);
 	Write(addr, val);
 }
 
@@ -1576,7 +1610,13 @@ void SmsCpu::SLL_Indirect(uint16_t addr)
 template<uint8_t bit>
 void SmsCpu::BIT(uint8_t src)
 {
-	uint8_t val = GetCbValue(src);
+	if(_cbAddress >= 0) {
+		//DD/FD CB xx with a register operand: undocumented alias of BIT n,(IX/IY+d)
+		BIT_Indirect<bit>(_regHL);
+		return;
+	}
+
+	uint8_t val = src;
 	uint8_t andResult = (val & (1 << bit));
 	SetStandardFlags<0xC4>(andResult);
 	SetStandardFlags<0x28>(val);
@@ -1669,6 +1709,7 @@ void SmsCpu::JR(int8_t offset)
 {
 	ExecCycles(5);
 	_state.PC += offset;
+	_state.WZ = _state.PC;
 }
 
 void SmsCpu::JR(bool condition, int8_t offset)
