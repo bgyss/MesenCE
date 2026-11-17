@@ -16,6 +16,7 @@ import numpy as np
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
+FM_CORE = "ymfm"
 REGIONS = {"U": "ntsc", "J": "ntsc-j", "E": "pal"}
 
 
@@ -60,8 +61,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("roms", type=pathlib.Path)
     ap.add_argument("--runner", type=pathlib.Path, default=ROOT / "bin/mesen-headless")
+    ap.add_argument("--fm-core", choices=("ymfm", "nuked"), default="ymfm", help="YM2612 core (MdConfig::FmCore)")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
+    global FM_CORE
+    FM_CORE = args.fm_core
     baseline = json.loads((HERE / "reference/baseline.json").read_text())
     known = {}
     for line in (HERE / "KNOWN").read_text().splitlines():
@@ -78,7 +82,7 @@ def main():
             total += 1
             out = tmp / name
             cmd = [str(args.runner), "run", "--rom", str(sp.with_suffix(".md")), "--frames", str(spec["frames"] + 1), "--out", str(out),
-                   "--chip-audio", "--region", REGIONS[spec["region"]], "--md-model", spec["model"], "--allow-dirty"]
+                   "--chip-audio", "--region", REGIONS[spec["region"]], "--md-model", spec["model"], "--allow-dirty", "--md-fm-core", FM_CORE]
             r = subprocess.run(cmd, capture_output=True, text=True)
             if r.returncode:
                 print("FAIL  %s: runner %s" % (name, r.stderr[-200:]))

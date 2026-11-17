@@ -340,7 +340,9 @@ namespace Mesen.Interop
 		PceRaw,
 		PceAddress,
 		SmsProActionReplay,
-		SmsGameGenie
+		SmsGameGenie,
+		MdGameGenie,
+		MdProActionReplay
 	}
 
 	public static class CheatTypeExtensions
@@ -353,6 +355,7 @@ namespace Mesen.Interop
 				CheatType.GbGameGenie or CheatType.GbGameShark => CpuType.Gameboy,
 				CheatType.PceRaw or CheatType.PceAddress => CpuType.Pce,
 				CheatType.SmsGameGenie or CheatType.SmsProActionReplay => CpuType.Sms,
+				CheatType.MdGameGenie or CheatType.MdProActionReplay => CpuType.MdM68k,
 				_ => throw new NotImplementedException("unsupported cheat type")
 			};
 		}

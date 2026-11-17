@@ -449,6 +449,8 @@ set -euo pipefail
 python3 tests/MD/synthetic/gen.py bin/md-synthetic
 python3 tests/MD/synthetic/compare.py bin/md-synthetic "$@"
 python3 tests/MD/synthetic/audio_compare.py bin/md-synthetic
+python3 tests/MD/synthetic/audio_compare.py bin/md-synthetic --fm-core nuked
+python3 tests/MD/synthetic/compare.py bin/md-synthetic --fm-core nuked
 '''
 
 [tasks."test:md-replay"]
@@ -459,6 +461,7 @@ run = '''
 set -euo pipefail
 python3 tests/MD/synthetic/gen.py bin/md-synthetic
 python3 tests/MD/synthetic/replay_check.py bin/md-synthetic --warmup 1 --frames 4
+python3 tests/MD/synthetic/replay_check.py bin/md-synthetic --fm-core nuked --warmup 1 --frames 4
 python3 tests/MD/synthetic/replay_check.py bin/md-synthetic --warmup 2 --frames 5
 objdir=$(ls -d InteropDLL/obj.* | head -1)
 lib=$(ls "$objdir"/MesenCore.* | head -1)
@@ -466,6 +469,16 @@ clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/savest
 export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
 bin/savestate-roundtrip --warmup 0 --frames 6 bin/md-synthetic
 bin/savestate-roundtrip --warmup 1 --frames 6 bin/md-synthetic
+'''
+
+[tasks."test:md-cheats"]
+description = "Mega Drive: Game Genie and Pro Action Replay codes (ROM patches on the bus, RAM codes, invalid codes) on the bus_map cartridge"
+depends = ["headless"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python3 tests/MD/synthetic/gen.py bin/md-synthetic
+python3 tests/MD/cheats/check_cheats.py bin/md-synthetic
 '''
 
 [tasks."test:md-viewers"]

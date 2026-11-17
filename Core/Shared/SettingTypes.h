@@ -859,6 +859,13 @@ struct WsConfig
 	uint32_t Channel5Vol = 100;
 };
 
+//YM2612 implementation: ymfm (sample-level, fast) or Nuked-OPN2 (cycle-accurate die model)
+enum class MdFmCore : uint8_t
+{
+	Ymfm,
+	Nuked
+};
+
 enum class MdModel : uint8_t
 {
 	Md1Va3, //Model 1 without TMSS
@@ -883,6 +890,8 @@ struct MdConfig
 
 	uint32_t FmVolume = 100;
 	uint32_t PsgVolume = 100;
+
+	MdFmCore FmCore = MdFmCore::Ymfm; //takes effect at power-on/reset
 };
 
 struct AudioPlayerConfig

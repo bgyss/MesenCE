@@ -344,6 +344,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 	string loadStatePath;
 	bool chipAudio = false;
 	string mdPads = "6,6";
+	string mdFmCore = "ymfm";
 	uint32_t frames = 0;
 	double timeout = 0;
 	bool allowDirty = false;
@@ -378,6 +379,8 @@ static int Run(const vector<string>& args, const string& commandLine)
 			mdModel = next();
 		} else if(args[i] == "--md-pads") {
 			mdPads = next();
+		} else if(args[i] == "--md-fm-core") {
+			mdFmCore = next();
 		} else if(args[i] == "--trace-limit") {
 			traceLimit = std::stoull(next());
 		} else if(args[i] == "--allow-dirty") {
@@ -450,6 +453,10 @@ static int Run(const vector<string>& args, const string& commandLine)
 				throw std::runtime_error("--md-model must be md1va3 or md1va6");
 			}
 			md.Model = mdModel == "md1va6" ? MdModel::Md1Va6 : MdModel::Md1Va3;
+			if(mdFmCore != "ymfm" && mdFmCore != "nuked") {
+				throw std::runtime_error("--md-fm-core must be ymfm or nuked");
+			}
+			md.FmCore = mdFmCore == "nuked" ? MdFmCore::Nuked : MdFmCore::Ymfm;
 			if(mdPads.size() != 3 || mdPads[1] != ',') {
 				throw std::runtime_error("--md-pads takes two pad types, e.g. 6,3");
 			}
@@ -475,6 +482,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 			{ "controllers", "standard pads on ports 1-2" },
 			{ "md_model", mdModel },
 			{ "md_pads", mdPads },
+			{ "md_fm_core", mdFmCore },
 			{ "audio_sample_rate", emu.GetSettings()->GetAudioConfig().SampleRate },
 			{ "dynamic_sample_rate", false }
 		};
@@ -505,6 +513,8 @@ static int Run(const vector<string>& args, const string& commandLine)
 			controlManager->UpdateInputState();
 		}
 
+		//Headless mode first: a Lua error while the script loads must fail the run too (stop code 65)
+		emu.SetHeadlessMode(frames);
 		int scriptId = -1;
 		if(!luaCode.empty()) {
 			emu.InitDebugger();
@@ -558,7 +568,6 @@ static int Run(const vector<string>& args, const string& commandLine)
 			manifest["chip_audio"] = { { "format", "s16le-stereo" }, { "sample_rate", md->GetApu()->GetSampleRate() }, { "files", { "ym2612.raw", "psg.raw" } } };
 		}
 
-		emu.SetHeadlessMode(frames);
 		std::atomic<bool> finished = false;
 		std::atomic<bool> timedOut = false;
 		std::thread watchdog;
@@ -790,9 +799,10 @@ static int NnesCompat(const vector<string>& a)
 		}
 		emu.GetSettings()->SetFlag(EmulationFlags::MaximumSpeed);
 		emu.InitDebugger();
+		//Headless mode before loading, so a stop or error during load is kept (not reset afterwards)
+		emu.SetHeadlessMode(0);
 		auto scripts = emu.InternalGetDebugger()->GetScriptManager();
 		int id = scripts->LoadScript("nnes-capture.lua", fs::absolute(a[2]).parent_path().string() + "/", code, -1);
-		emu.SetHeadlessMode(0);
 		if(!emu.HeadlessStopRequested()) {
 			emu.GetSoundMixer()->StartRecording(a[4]);
 			emu.Run();

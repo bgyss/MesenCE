@@ -9,6 +9,7 @@
 #include "Shared/Emulator.h"
 #include "Shared/EmuSettings.h"
 #include "Shared/BatteryManager.h"
+#include "Shared/CheatManager.h"
 #include "Shared/MemoryType.h"
 #include "Utilities/Serializer.h"
 
@@ -143,6 +144,15 @@ uint8_t MdMemoryManager::ReadCartByte(uint32_t addr)
 	return _rom[addr & _romMask];
 }
 
+uint8_t MdMemoryManager::ReadCartBus(uint32_t addr)
+{
+	uint8_t value = ReadCartByte(addr);
+	if(_emu->GetCheatManager()->HasCheats<CpuType::MdM68k>()) {
+		_emu->GetCheatManager()->ApplyCheat<CpuType::MdM68k>(addr & 0x3FFFFF, value);
+	}
+	return value;
+}
+
 bool MdMemoryManager::IsSaveRamAddress(uint32_t addr)
 {
 	if(addr < _saveRamStart || addr > _saveRamEnd) {
@@ -183,7 +193,7 @@ uint16_t MdMemoryManager::M68kRead(bool upper, bool lower, uint32_t addr, M68kAc
 		case 0:
 		case 1:
 			//Cartridge ($000000-$3FFFFF)
-			return (ReadCartByte(addr) << 8) | ReadCartByte(addr | 1);
+			return (ReadCartBus(addr) << 8) | ReadCartBus(addr | 1);
 
 		case 5:
 			if(addr < 0xA10000) {
@@ -485,7 +495,7 @@ uint8_t MdMemoryManager::Z80Read(uint16_t addr)
 		if((m68kAddr & 0xE00000) == 0xC00000) {
 			return 0xFF; //VDP through the window locks the machine; not modelled
 		}
-		return DebugRead(m68kAddr);
+		return m68kAddr < 0x400000 ? ReadCartBus(m68kAddr) : DebugRead(m68kAddr);
 	}
 }
 
@@ -534,7 +544,7 @@ uint16_t MdMemoryManager::DmaReadWord(uint32_t addr)
 	if(addr >= 0xE00000) {
 		return (_workRam[addr & 0xFFFF] << 8) | _workRam[(addr & 0xFFFF) | 1];
 	} else if(addr < 0x400000) {
-		return (ReadCartByte(addr) << 8) | ReadCartByte(addr | 1);
+		return (ReadCartBus(addr) << 8) | ReadCartBus(addr | 1);
 	}
 	//DMA from the Z80 area, I/O or the VDP itself returns undefined data; use the 68000 view
 	return M68kPeekWord(addr);

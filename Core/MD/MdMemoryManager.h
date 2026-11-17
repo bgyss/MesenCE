@@ -72,6 +72,8 @@ private:
 	uint8_t ReadSaveRam(uint32_t addr);
 	void WriteSaveRam(uint32_t addr, uint8_t value);
 	uint8_t ReadCartByte(uint32_t addr);
+	//Cartridge bus read as the CPUs and DMA see it: ROM patch cheats (Game Genie, Action Replay) apply
+	__forceinline uint8_t ReadCartBus(uint32_t addr);
 	void TraceDevice(uint64_t clock, MdBusDevice device, MdBusOp op, uint32_t address, uint32_t value);
 
 public:

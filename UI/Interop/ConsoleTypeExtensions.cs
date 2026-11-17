@@ -24,7 +24,6 @@ namespace Mesen.Interop
 			return type switch {
 				ConsoleType.Gba => false,
 				ConsoleType.Ws => false,
-				ConsoleType.Md => false,
 				_ => true
 			};
 		}

@@ -3,6 +3,7 @@
 #include "MD/MdTypes.h"
 #include "Shared/Audio/Sn76489.h"
 #include "Utilities/Audio/ymfm/ymfm_opn.h"
+#include "Utilities/Audio/NukedOpn2/ym3438.h"
 #include "Utilities/ISerializable.h"
 
 class Emulator;
@@ -12,6 +13,10 @@ class MdConsole;
 // 1008 master clocks) and the VDP's SN76489-compatible PSG (MCLK/15, one tone step per 16 PSG
 // clocks = 240 master clocks). Both run on the master clock; output is one stereo stream at the
 // YM2612 sample rate with the PSG averaged over each sample period.
+// The FM core is selectable (MdConfig::FmCore): ymfm applies register writes between samples;
+// Nuked-OPN2 (die-shot model) is clocked per internal cycle (6 YM clocks = 42 master clocks, 24
+// cycles per sample), so writes take effect at their exact cycle, and its timers, busy flag and
+// status reads are the chip's own. Nuked costs about 10x ymfm's CPU time.
 class MdApu final : public ymfm::ymfm_interface, public ISerializable
 {
 public:
@@ -30,12 +35,24 @@ private:
 	uint64_t _timerExpire[2] = {}; //0 = stopped
 	uint64_t _busyEnd = 0;
 
+	//Nuked-OPN2 core (allocated when selected)
+	static constexpr uint32_t NukedCycleClocks = 42;
+	static constexpr int32_t NukedGain = 7; //sum of 24 9-bit slot outputs -> about ymfm's level (approximate)
+	unique_ptr<ym3438_t> _nuked;
+	uint64_t _nukedClock = 0; //master clock of the next internal cycle
+	uint8_t _nukedSlot = 0;
+	int32_t _nukedAcc[2] = {};
+
 	vector<int16_t> _samples;
 	std::function<void(int32_t ymL, int32_t ymR, int32_t psgL, int32_t psgR)> _chipObserver;
 	uint32_t _sampleRate = 53267;
 
 	void ProcessTimers(uint64_t until);
+	void ComputePsg(int32_t& psgLeft, int32_t& psgRight);
 	void GenerateSample();
+	void FinishSample(int32_t ymLeft, int32_t ymRight);
+	void RunNuked(uint64_t masterClock);
+	void SelectCore(bool nuked);
 
 public:
 	MdApu();
@@ -51,6 +68,7 @@ public:
 	void WritePsg(uint8_t value);
 
 	SmsPsgState& GetPsgState() { return _psg.State; }
+	bool IsNukedCore() { return _nuked != nullptr; }
 	uint32_t GetSampleRate() { return _sampleRate; }
 
 	//Optional per-sample observer of the two chips before mixing (headless capture)

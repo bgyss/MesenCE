@@ -31,6 +31,7 @@ import cases  # noqa: E402
 import gen  # noqa: E402
 from cases import Operation, READ, WRITE, POLL  # noqa: E402
 
+FM_CORE = "ymfm"
 REGIONS = {"U": "ntsc", "J": "ntsc-j", "E": "pal"}
 
 
@@ -149,7 +150,7 @@ def run_case(runner, rom, spec, work):
     #and every case ends in an idle loop, so the reads and the final picture are unaffected.
     cmd = [str(runner), "run", "--rom", str(rom), "--frames", str(spec["frames"] + 2), "--out", str(out),
            "--trace", "bus", "--region", REGIONS[spec["region"]], "--md-model", spec["model"],
-           "--md-pads", "%s,%s" % (spec["pad1"], spec["pad2"]), "--allow-dirty"]
+           "--md-pads", "%s,%s" % (spec["pad1"], spec["pad2"]), "--allow-dirty", "--md-fm-core", FM_CORE]
     if spec["input"]["frames"]:
         inp = work / (spec["name"] + ".input.json")
         inp.write_text(json.dumps(spec["input"]))
@@ -172,14 +173,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("roms", type=pathlib.Path)
     ap.add_argument("--runner", type=pathlib.Path, default=ROOT / "bin/mesen-headless")
+    ap.add_argument("--fm-core", choices=("ymfm", "nuked"), default="ymfm", help="YM2612 core (MdConfig::FmCore)")
     ap.add_argument("--case", action="append")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
+    global FM_CORE
+    FM_CORE = args.fm_core
 
     baseline = json.loads((HERE / "reference/baseline.json").read_text())
     known = load_known()
     all_cases = {c.name: c for c in cases.all_cases()}
-    names = args.case or sorted(all_cases)
+    names = [n for n in args.case if n in all_cases] if args.case else sorted(all_cases)
     counts = {"pass": 0, "KNOWN": 0, "FAIL": 0}
     with tempfile.TemporaryDirectory() as tmp:
         work = pathlib.Path(tmp)
@@ -252,7 +256,36 @@ def main():
                     for reason in known[name]:
                         print("      known: " + reason)
     print("\n%d pass, %d known, %d fail (of %d)" % (counts["pass"], counts["KNOWN"], counts["FAIL"], len(names)))
-    return 1 if counts["FAIL"] else 0
+
+    #MesenCE's own cases (extra_cases.py) have no BlastEm reference: their READ steps must equal the
+    #case's expected values under compare_mask, and every POLL must terminate.
+    import extra_cases
+    extra_fail = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        work = pathlib.Path(tmp)
+        for case in extra_cases.all_cases():
+            if args.case and case.name not in args.case:
+                continue
+            spec = json.loads((args.roms / (case.name + ".json")).read_text())
+            ours, err = run_case(args.runner, args.roms / (case.name + ".md"), spec, work)
+            problems = [err] if err else []
+            if not err:
+                ops = expand_operations(case)
+                vals, polls, seg_err = segment_reads(ops, ours["reads"])
+                if seg_err:
+                    problems.append(seg_err)
+                else:
+                    for idx, got in vals:
+                        op = ops[idx]
+                        if op.compare_mask:
+                            value = got[0][2] if op.width != 4 else (got[0][2] << 16) | got[1][2]
+                            if (value & op.compare_mask) != (op.value & op.compare_mask):
+                                problems.append("step %d read $%X, case expects $%X under mask $%X" % (idx, value, op.value, op.compare_mask))
+            extra_fail += bool(problems)
+            print("%-5s %s (MesenCE case, expected values)" % ("FAIL" if problems else "pass", case.name))
+            for p in problems[:4]:
+                print("      " + p)
+    return 1 if counts["FAIL"] or extra_fail else 0
 
 
 if __name__ == "__main__":

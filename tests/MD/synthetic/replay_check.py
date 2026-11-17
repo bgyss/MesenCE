@@ -14,12 +14,13 @@ import argparse, json, pathlib, subprocess, sys, tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
+FM_CORE = "ymfm"
 REGIONS = {"U": "ntsc", "J": "ntsc-j", "E": "pal"}
 
 
 def run(runner, rom, spec, out, frames, extra):
     cmd = [str(runner), "run", "--rom", str(rom), "--frames", str(frames), "--out", str(out), "--region", REGIONS[spec["region"]],
-           "--md-model", spec["model"], "--md-pads", "%s,%s" % (spec["pad1"], spec["pad2"]), "--chip-audio", "--allow-dirty"] + extra
+           "--md-model", spec["model"], "--md-pads", "%s,%s" % (spec["pad1"], spec["pad2"]), "--chip-audio", "--allow-dirty", "--md-fm-core", FM_CORE] + extra
     if spec["input"]["frames"]:
         #Scripted pad input; frame numbers are absolute, so they continue across a state load
         inp = out.parent / (out.name + ".input.json")
@@ -39,9 +40,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("roms", type=pathlib.Path)
     ap.add_argument("--runner", type=pathlib.Path, default=ROOT / "bin/mesen-headless")
+    ap.add_argument("--fm-core", choices=("ymfm", "nuked"), default="ymfm", help="YM2612 core (MdConfig::FmCore)")
     ap.add_argument("--warmup", type=int, default=1)
     ap.add_argument("--frames", type=int, default=4)
     args = ap.parse_args()
+    global FM_CORE
+    FM_CORE = args.fm_core
     bad = 0
     specs = sorted(args.roms.glob("*.json"))
     with tempfile.TemporaryDirectory() as tmp:

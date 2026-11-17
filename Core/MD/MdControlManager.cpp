@@ -22,10 +22,26 @@ shared_ptr<BaseControlDevice> MdControlManager::CreateControllerDevice(Controlle
 	}
 }
 
+//Compares only what defines the devices, member by member. A memcmp of MdConfig also compares its
+//padding bytes (indeterminate in a copy), which made the pads look reconfigured and get recreated at
+//every frame end, resetting the 6-button handshake (found by io_pad6_across_frame).
+static bool SamePortConfig(const ControllerConfig& a, const ControllerConfig& b)
+{
+	const KeyMapping* ma[4] = { &a.Keys.Mapping1, &a.Keys.Mapping2, &a.Keys.Mapping3, &a.Keys.Mapping4 };
+	const KeyMapping* mb[4] = { &b.Keys.Mapping1, &b.Keys.Mapping2, &b.Keys.Mapping3, &b.Keys.Mapping4 };
+	for(int i = 0; i < 4; i++) {
+		//KeyMapping holds only uint16_t members: no padding
+		if(memcmp(ma[i], mb[i], sizeof(KeyMapping)) != 0) {
+			return false;
+		}
+	}
+	return a.Type == b.Type && a.Keys.TurboSpeed == b.Keys.TurboSpeed;
+}
+
 void MdControlManager::UpdateControlDevices()
 {
-	MdConfig cfg = _emu->GetSettings()->GetMdConfig();
-	if(_emu->GetSettings()->IsEqual(_prevConfig, cfg) && _controlDevices.size() > 0) {
+	MdConfig& cfg = _emu->GetSettings()->GetMdConfig();
+	if(_controlDevices.size() > 0 && SamePortConfig(_prevConfig.Port1, cfg.Port1) && SamePortConfig(_prevConfig.Port2, cfg.Port2)) {
 		return;
 	}
 

@@ -2618,6 +2618,8 @@ E
 			<Value ID="PceAddress">Physical Address (AAAAAA:VV)</Value>
 			<Value ID="SmsGameGenie">Game Genie (e.g A1B-2C3-D4E)</Value>
 			<Value ID="SmsProActionReplay">Pro Action Replay (e.g 00AAAAVV)</Value>
+			<Value ID="MdGameGenie">Mega Drive - Game Genie (e.g ABCD-EFGH)</Value>
+			<Value ID="MdProActionReplay">Mega Drive - Pro Action Replay (AAAAAA:VVVV)</Value>
 		</Enum>
 		<Enum ID="VideoLayer">
 			<Value ID="Bg1">BG layer 1</Value>

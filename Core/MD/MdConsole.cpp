@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "Shared/CheatManager.h"
 #include "MD/MdConsole.h"
 #include "MD/MdM68k.h"
 #include "MD/MdZ80.h"
@@ -136,6 +137,8 @@ void MdConsole::RunFrame()
 
 void MdConsole::ProcessEndOfFrame()
 {
+	//Action Replay RAM codes are rewritten once per frame
+	_emu->GetCheatManager()->RefreshRamCheats(CpuType::MdM68k);
 	_controlManager->UpdateControlDevices();
 	_controlManager->UpdateInputState();
 }

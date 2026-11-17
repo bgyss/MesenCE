@@ -25,6 +25,7 @@ public partial class MdConfig : BaseConfig<MdConfig>
 
 	[ObservableProperty][MinMax(0, 100)] public partial UInt32 FmVolume { get; set; } = 100;
 	[ObservableProperty][MinMax(0, 100)] public partial UInt32 PsgVolume { get; set; } = 100;
+	[ObservableProperty] public partial MdFmCore FmCore { get; set; } = MdFmCore.Ymfm;
 
 	public void ApplyConfig()
 	{
@@ -41,6 +42,7 @@ public partial class MdConfig : BaseConfig<MdConfig>
 			HideWindow = HideWindow,
 			FmVolume = FmVolume,
 			PsgVolume = PsgVolume,
+			FmCore = FmCore,
 		});
 	}
 
@@ -50,6 +52,13 @@ public partial class MdConfig : BaseConfig<MdConfig>
 		Port1.Type = ControllerType.MdController6Buttons;
 		Port2.Type = ControllerType.MdController6Buttons;
 	}
+}
+
+//Mirrors MdFmCore in Core/Shared/SettingTypes.h
+public enum MdFmCore : byte
+{
+	Ymfm,
+	Nuked
 }
 
 public enum MdModel : byte
@@ -77,4 +86,6 @@ public struct InteropMdConfig
 
 	public UInt32 FmVolume;
 	public UInt32 PsgVolume;
+
+	public MdFmCore FmCore;
 }

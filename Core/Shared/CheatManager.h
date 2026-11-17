@@ -20,7 +20,9 @@ enum class CheatType : uint8_t
 	PceRaw,
 	PceAddress,
 	SmsProActionReplay,
-	SmsGameGenie
+	SmsGameGenie,
+	MdGameGenie,
+	MdProActionReplay
 };
 
 struct InternalCheatCode
@@ -54,6 +56,8 @@ private:
 	unordered_map<uint32_t, InternalCheatCode> _cheatsByAddress[CpuTypeUtilities::GetCpuTypeCount()];
 
 	optional<InternalCheatCode> TryConvertCode(CheatCode code);
+	//A code can patch several bytes (Mega Drive codes patch a 16-bit word)
+	vector<InternalCheatCode> TryConvertCodes(CheatCode code);
 
 	optional<InternalCheatCode> ConvertFromSnesGameGenie(string code);
 	optional<InternalCheatCode> ConvertFromSnesProActionReplay(string code);
@@ -71,6 +75,10 @@ private:
 	optional<InternalCheatCode> ConvertFromSmsGameGenie(string code);
 	optional<InternalCheatCode> ConvertFromSmsProActionReplay(string code);
 
+	vector<InternalCheatCode> ConvertFromMdGameGenie(string code);
+	vector<InternalCheatCode> ConvertFromMdProActionReplay(string code);
+	vector<InternalCheatCode> MakeMdWordCheat(CheatType type, uint32_t address, uint16_t value);
+
 	__forceinline constexpr int GetBankShift(CpuType cpuType)
 	{
 		switch(cpuType) {
@@ -79,6 +87,7 @@ private:
 			case CpuType::Nes: return 8;
 			case CpuType::Pce: return 13;
 			case CpuType::Sms: return 8;
+			case CpuType::MdM68k: return 16;
 			default: throw std::runtime_error("unsupported cpu type");
 		}
 	}

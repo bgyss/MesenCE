@@ -39,12 +39,15 @@ check "emu.setInput addresses the requested port" 'grep -q "port1.start=false po
 set +e
 "$bin" run --rom "$nes" --frames 60 --out "$work/luaerr" --lua tests/headless/lua_error.lua --allow-dirty
 code=$?
+"$bin" run --rom "$nes" --frames 60 --out "$work/lualoaderr" --lua tests/headless/lua_load_error.lua --allow-dirty >/dev/null 2>&1
+lcode=$?
 "$bin" run --rom "$snes" --frames 100000000 --out "$work/timeout" --timeout 1 --allow-dirty
 tcode=$?
 "$bin" run --rom "$nes" --frames 10 --out "$work/dirty" >/dev/null 2>&1
 dcode=$?
 set -e
 check "a Lua error fails the run (exit 65, stop code 65)" '[ $code -eq 65 ] && grep -q "\"stop_code\": 65" "$work/luaerr/manifest.json"'
+check "a Lua error while the script loads fails the run too (exit 65)" '[ $lcode -eq 65 ]'
 check "timeout is reported as incomplete (exit 3) and fails validation" '[ $tcode -eq 3 ] && ! "$bin" validate "$work/timeout" >/dev/null 2>&1'
 if grep -q '"dirty": true' "$work/nes-a/manifest.json"; then
   check "a dirty build refuses a qualified capture" '[ $dcode -ne 0 ]'
