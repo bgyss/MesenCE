@@ -131,6 +131,12 @@ private:
 	int32_t _stopCode = 0;
 	bool _stopRequested = false;
 
+	// Native headless runner (tools/headless-runner): Run() is called on the caller's thread and
+	// returns at a frame boundary, either after _headlessFrameLimit frames or after a script stop.
+	bool _headless = false;
+	uint32_t _headlessFrameLimit = 0;
+	atomic<bool> _headlessStopRequested;
+
 	//For VS DualSystem, or when running e.g 2 Game Boys at once, this is used to
 	//disable all debugger hooks and memory registration for one of the 2 consoles.
 	//This is needed until the debugger tools are able to handle debugging 2 identical
@@ -258,6 +264,18 @@ public:
 
 	int32_t GetStopCode() { return _stopCode; }
 	void SetStopCode(int32_t stopCode);
+
+	// Headless mode: Run() returns at the end of the frame on which GetFrameCount() reaches
+	// frameLimit (0 = no limit) or on which a script requested a stop (SetStopCode); the console
+	// stays loaded so the caller can capture artifacts.
+	void SetHeadlessMode(uint32_t frameLimit)
+	{
+		_headless = true;
+		_headlessFrameLimit = frameLimit;
+		_headlessStopRequested = false;
+	}
+	bool HeadlessStopRequested() { return _headlessStopRequested; }
+	bool IsHeadless() { return _headless; }
 
 	void RegisterMemory(MemoryType type, void* memory, uint32_t size);
 	ConsoleMemoryInfo GetMemory(MemoryType type);

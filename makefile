@@ -238,3 +238,11 @@ clean:
 	rm -r -f $(MACOSOBJ)
 	rm -r -f $(DLLOBJ)
 	rm -r -f $(OUTFOLDER)
+
+# Native headless runner (tools/headless-runner): links only the emulation core, Lua and
+# SevenZip - no InteropDLL, SDL, X11 or MacOS objects - so it runs without a UI or display.
+HEADLESS_GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+HEADLESS_GIT_DIRTY := $(shell git diff --quiet HEAD -- 2>/dev/null && echo 0 || echo 1)
+headless: $(SEVENZIPOBJ) $(LUAOBJ) $(UTILOBJ) $(COREOBJ)
+	mkdir -p bin
+	$(CXX) $(CXXFLAGS) -DMESEN_GIT_COMMIT=\"$(HEADLESS_GIT_COMMIT)\" -DMESEN_GIT_DIRTY=$(HEADLESS_GIT_DIRTY) -o bin/mesen-headless tools/headless-runner/main.cpp $(SEVENZIPOBJ) $(LUAOBJ) $(UTILOBJ) $(COREOBJ) -pthread $(FSLIB)

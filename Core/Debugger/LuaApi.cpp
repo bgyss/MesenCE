@@ -981,7 +981,9 @@ int LuaApi::SetInput(lua_State* lua)
 {
 	LuaCallHelper l(lua);
 	l.ForceParamCount(3);
-	lua_settop(lua, 4);
+	// Exactly (input, port, subport): padding to 4 left a nil on top, so the port was read
+	// from the subport slot and emu.setInput(t, 1) addressed port 0.
+	lua_settop(lua, 3);
 
 	int subport = l.ReadInteger(0);
 	int port = l.ReadInteger();

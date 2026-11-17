@@ -411,3 +411,31 @@ run = [
 [tasks.clean]
 description = "Remove build outputs"
 run = "make clean"
+
+[tasks."test:m68k-cpu"]
+description = "Mega Drive 68000 vs SingleStepTests m68000, plus reset/IRQ/STOP scenarios (mise run test:m68k-cpu -- [--details N] [--kind K] [files...])"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+data="$PWD/bin/SingleStepTests-m68000"
+if [ ! -d "$data/v1" ]; then
+  git clone --depth 1 https://github.com/SingleStepTests/m68000.git "$data"
+fi
+mkdir -p bin
+# The harness compiles Core/MD/M68k/M68kCore.cpp itself (against a flat 16 MiB test bus).
+clang++ -std=c++17 -O2 -Wall -Werror -ICore tools/m68k-cpu-singlestep/singlestep.cpp Core/MD/M68k/M68kCore.cpp -o bin/m68k-cpu-singlestep
+bin/m68k-cpu-singlestep --scenarios
+havePath=0
+for a in "$@"; do [ -e "$a" ] && havePath=1; done
+if [ $havePath -eq 0 ]; then set -- "$@" "$data/v1"; fi
+exec bin/m68k-cpu-singlestep "$@"
+'''
+
+[tasks.headless]
+description = "Build the native headless runner bin/mesen-headless (no UI, SDL or display)"
+run = "make -j$(getconf _NPROCESSORS_ONLN) headless"
+
+[tasks."test:headless"]
+description = "Self-test the headless runner: determinism, validation, Lua input/error handling, timeout, nativekit host contract"
+depends = ["headless", "build:test-roms"]
+run = "tools/headless-runner/selftest.sh"

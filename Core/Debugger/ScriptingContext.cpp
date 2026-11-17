@@ -127,6 +127,10 @@ string ScriptingContext::GetErrorMessage()
 
 void ScriptingContext::ProcessLuaError()
 {
+	if(_debugger->GetEmulator()->IsHeadless()) {
+		// Headless runs (tools/headless-runner) fail on a script error instead of continuing.
+		_debugger->GetEmulator()->SetStopCode(65);
+	}
 	string errorMsg = GetErrorMessage();
 	if(StringUtilities::Contains(errorMsg, "attempt to call a nil value (global 'require')") || StringUtilities::Contains(errorMsg, "attempt to index a nil value (global 'os')") || StringUtilities::Contains(errorMsg, "attempt to index a nil value (global 'io')")) {
 		Log("I/O and OS libraries are disabled by default for security.\nYou can enable them here:\nScript->Settings->Script Window->Restrictions->Allow access to I/O and OS functions.");
