@@ -124,11 +124,12 @@ synchronisation with E) keeps ares' Mega Drive approximation (hardware-unverifie
 | Build | M instructions/s | × a 7.67 MHz 68000 |
 |---|---|---|
 | arm64 (native) | 43.1 / 45.3 / 45.4 | 77-81 |
-| x86-64 (`clang++ -arch x86_64`, run under Rosetta 2) | 24.7 / 21.4 / 26.0 | 38-46 |
+| x86-64, native (GitHub Actions `ubuntu-24.04`, AMD EPYC 9V45, clang -O2) | 69.3 / 67.4 / 67.6 | 120-124 |
+| x86-64 (`clang++ -arch x86_64`, run under Rosetta 2 on the M1 Max) | 24.7 / 21.4 / 26.0 | 38-46 |
 
-The x86-64 figures include Rosetta's translation overhead, so they are a lower bound for a
-native x86-64 host, not a measurement of one (no x86-64 machine available here). The x86-64
-build passes the full suite with the same counts (317,242 pass, 258 known). Dispatch uses ares'
+The native x86-64 run is the `md-sanitizers` workflow (`.github/workflows/md-sanitizers.yml`);
+the Rosetta row only shows translation overhead. The x86-64 build passes the full suite with the
+same counts (317,242 pass, 258 known). Dispatch uses ares'
 `std::function` table; a tighter dispatch is deferred until the console's own cost profile is
 known.
 

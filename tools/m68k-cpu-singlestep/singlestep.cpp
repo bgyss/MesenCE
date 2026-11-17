@@ -515,13 +515,15 @@ static int RunScenarios()
 	};
 
 	{
-		TestCpu c;
+		auto cHolder = std::make_unique<TestCpu>(); //heap: ~2 MiB dispatch table
+		TestCpu& c = *cHolder;
 		setup(c);
 		M68kRegisters r = c.GetRegisters();
 		check("reset loads SSP/PC and fills the queue", r.Ssp == 0xFFFF00 && r.Pc == 0x1004 && r.Ir == 0x4E71 && (r.Sr & 0x2700) == 0x2700);
 	}
 	{
-		TestCpu c;
+		auto cHolder = std::make_unique<TestCpu>(); //heap: ~2 MiB dispatch table
+		TestCpu& c = *cHolder;
 		setup(c);
 		c.Step(); // NOP at 0x1000
 		M68kRegisters r = c.GetRegisters();
@@ -534,7 +536,8 @@ static int RunScenarios()
 		check("level 4 > mask 3: autovector 28, I=4, frame PC/SR", a.Pc == 0x2404 && (a.Sr & 0x0700) == 0x0400 && a.Ssp == 0xFFFEFA && frame);
 	}
 	{
-		TestCpu c;
+		auto cHolder = std::make_unique<TestCpu>(); //heap: ~2 MiB dispatch table
+		TestCpu& c = *cHolder;
 		setup(c);
 		M68kRegisters r = c.GetRegisters();
 		r.Sr = 0x2400;
@@ -544,7 +547,8 @@ static int RunScenarios()
 		check("level 4 == mask 4 is not taken", c.GetRegisters().Pc == 0x1006);
 	}
 	{
-		TestCpu c;
+		auto cHolder = std::make_unique<TestCpu>(); //heap: ~2 MiB dispatch table
+		TestCpu& c = *cHolder;
 		setup(c);
 		c.SetInterruptLevel(7);
 		c.Step();
@@ -555,7 +559,8 @@ static int RunScenarios()
 		check("level 7 held: no second interrupt", c.GetRegisters().Ssp == ssp);
 	}
 	{
-		TestCpu c;
+		auto cHolder = std::make_unique<TestCpu>(); //heap: ~2 MiB dispatch table
+		TestCpu& c = *cHolder;
 		setup(c);
 		word(c, 0x1000, 0x4E72); // STOP #$2000
 		word(c, 0x1002, 0x2000);
@@ -575,7 +580,8 @@ static int RunScenarios()
 // Interpreter throughput on a flat bus: a loop of register, memory and branch instructions.
 static int RunBench()
 {
-	TestCpu c;
+	auto cHolder = std::make_unique<TestCpu>(); //heap: ~2 MiB dispatch table
+	TestCpu& c = *cHolder;
 	auto word = [&](uint32_t a, uint16_t v) {
 		c.Ram[a] = v >> 8;
 		c.Ram[a + 1] = (uint8_t)v;
@@ -648,7 +654,8 @@ int main(int argc, char** argv)
 		return 2;
 	}
 
-	TestCpu cpu;
+	auto cpuHolder = std::make_unique<TestCpu>(); //heap: ~2 MiB dispatch table (ares instructionTable)
+	TestCpu& cpu = *cpuHolder;
 	Stats stats;
 	auto start = std::chrono::steady_clock::now();
 	for(auto& path : files) {
