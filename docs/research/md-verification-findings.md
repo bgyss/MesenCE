@@ -256,16 +256,27 @@ Informational (not failures under the accepted comparison, V1):
 - `sound_ym_ports`: the busy bit (7) after a data write differs (ymfm holds it 32×6 YM clocks =
   1344 MCLK, BlastEm about 900 MCLK longer); the case asserts only the timer flags (mask $03).
 
-Still KNOWN (audio, `tests/MD/synthetic/KNOWN`): `sound_ym_envelope_key_on_off`. The key-on
-pulse lasts 3136 master clocks (~58 µs, about 3 YM samples) because the display is off and the
-VBlank poll ends at once; the channel's attack rate (AR 28 plus key scaling) gives an instant
-attack, so ymfm plays a note that then releases. BlastEm's stream holds only a start-up
-transient followed by a constant level (rms 2.4 after removing DC): no note. (The previous KNOWN
-text said "well under one YM sample" and "BlastEm produces no note"; the first was wrong and is
-corrected here.) nativekit's own model (`src/sound/ym2612.c`, `keyon_write`) also starts the
-attack on the key-on write. An independent die-level reference (Nuked-OPN2, replaying the same
-YM writes from our bus trace) was prepared to settle this; running it was stopped by the
-session's permission policy, so the question is open and the case stays KNOWN.
+Still KNOWN (audio, `tests/MD/synthetic/KNOWN`): `sound_ym_envelope_key_on_off`, now classified as
+a **BlastEm reference error**. The key-on pulse lasts 3136 master clocks (~58 µs, about 3 YM
+samples) because the display is off and the VBlank poll ends at once; the channel's attack rate
+(AR 28 plus key scaling) gives an instant attack. (The previous KNOWN text said "well under one YM
+sample"; that was wrong.)
+
+- Evidence: the YM2612 writes of MesenCE's bus trace replayed through Nuked-OPN2
+  (github.com/nukeykt/Nuked-OPN2, commit 335747d78cb0, a die-shot based cycle-accurate YM3438/YM2612
+  model, YM2612 mode, one sample per 24 internal cycles). Peak per 256 samples, median removed:
+  MesenCE 231 ×8 blocks then silence; Nuked 264 ×2 blocks then silence; BlastEm 114 in the first
+  block only (a start-up transient, rms 2.4). Both MesenCE and Nuked play a 260 Hz note (the
+  channel's pitch); BlastEm plays none. nativekit's own model (`keyon_write`) also starts the attack
+  on the write.
+- Remaining difference (open, not hidden by the KNOWN entry): the note lasts ~40 ms in MesenCE
+  (ymfm) and ~10 ms in Nuked. Possibly ymfm's attack/release timing for a key-off shortly after an
+  instant attack; not investigated yet.
+- Limits of this check: it compares activity and pitch only. On algorithms 0, 1 and 3 the replay
+  harness reports dominant frequencies (16.7-24 kHz) that neither emulator shows, most likely an
+  artifact of summing Nuked's time-multiplexed per-slot DAC outputs, so Nuked is not used as a
+  general reference for the corpus. Activity and stereo placement agree with MesenCE on all 12 YM
+  cases checked. The harness (`nuked_replay.c`) is not vendored or wired into a mise task.
 
 ## M5 — audio, controllers, debugger, determinism
 
