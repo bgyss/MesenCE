@@ -115,7 +115,7 @@ struct Harness
 			}
 		}
 
-		SmsCpuState& st = Cpu._state;
+		SmsCpuState& st = Cpu.GetState();
 		LoadRegs(st, in);
 		Cpu.Exec();
 

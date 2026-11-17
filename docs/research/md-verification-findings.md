@@ -118,3 +118,21 @@ synchronisation with E) keeps ares' Mega Drive approximation (hardware-unverifie
 80 times a 7.67 MHz 68000 on a flat bus. Dispatch uses ares' `std::function` table; a
 tighter dispatch is deferred until the console's own cost profile is known. x86-64: not
 assessed on this host.
+
+## M2 — shared Z80 engine
+
+### Z1. `Z80Engine<THost>` extracted from `SmsCpu` (no behaviour change)
+
+- `Core/Shared/Processors/Z80/Z80Engine.{h,inl}` holds the complete instruction set, flag
+  logic (F3/F5, WZ, Q via `FlagsChanged`), interrupt acceptance and HALT, unchanged apart from
+  host calls. The host is a CRTP parameter: memory/port access, cycle advance, IM 2 data bus,
+  the NMOS `LD A,I`/`LD A,R` P/V quirk, and the debugger/cheat hooks are inline calls on the
+  host class, so the hot path has no virtual calls. `SmsCpu` is now the SMS host;
+  `DummySmsCpu` (predictive debugger CPU) and the test-harness `TestSmsCpu` still build from the
+  same sources by renaming, and each host explicitly instantiates the engine.
+- `SmsCpuState` and its serialized field names are unchanged, so save states are compatible.
+- Evidence (all after the extraction): `test:z80-cpu` 1,604,000/1,604,000 pass; `test:z80-irq`
+  14/14; `test:savestate` on the SMS test ROM consistent; `test:ci` upstream and fork pass.
+  6000 frames of `z80_timing.sms` through `mesen-headless` give byte-identical artifacts
+  (audio, save state, screenshot, memory) on the pre- and post-extraction builds, in
+  7.41 s vs 7.44 s (three runs each; within run-to-run noise).
