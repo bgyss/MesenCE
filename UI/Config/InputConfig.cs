@@ -420,6 +420,10 @@ namespace Mesen.Config
 		//Mega Drive
 		MdController3Buttons,
 		MdController6Buttons,
+		MdTeamPlayer,
+		MdMouse,
+		MdMenacer,
+		MdJustifier,
 	}
 
 	public static class ControllerTypeExtensions
@@ -531,6 +535,9 @@ namespace Mesen.Config
 				case ControllerType.Pcv2Controller:
 				case ControllerType.MdController3Buttons:
 				case ControllerType.MdController6Buttons:
+				case ControllerType.MdMouse:
+				case ControllerType.MdMenacer:
+				case ControllerType.MdJustifier:
 					return true;
 			}
 

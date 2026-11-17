@@ -461,11 +461,40 @@ static int Run(const vector<string>& args, const string& commandLine)
 				throw std::runtime_error("--md-fm-core must be ymfm or nuked");
 			}
 			md.FmCore = mdFmCore == "nuked" ? MdFmCore::Nuked : MdFmCore::Ymfm;
-			if(mdPads.size() != 3 || mdPads[1] != ',') {
-				throw std::runtime_error("--md-pads takes two pad types, e.g. 6,3");
+			//Each port: 3 or 6 (pads), n (nothing), m (Sega Mouse), g (Menacer), j (Justifier), or
+			//t:ABCD (Team Player with four of 3/6/n on its ports A-D)
+			size_t comma = mdPads.find(',');
+			if(comma == string::npos) {
+				throw std::runtime_error("--md-pads takes two port devices, e.g. 6,3 or t:63n6,m");
 			}
-			md.Port1.Type = mdPads[0] == '3' ? ControllerType::MdController3Buttons : ControllerType::MdController6Buttons;
-			md.Port2.Type = mdPads[2] == '3' ? ControllerType::MdController3Buttons : ControllerType::MdController6Buttons;
+			auto parsePort = [](const string& spec, ControllerConfig& port, ControllerConfig* subPorts) {
+				auto padType = [](char c) {
+					switch(c) {
+						case '3': return ControllerType::MdController3Buttons;
+						case '6': return ControllerType::MdController6Buttons;
+						case 'n': return ControllerType::None;
+						default: throw std::runtime_error("--md-pads: unknown pad type");
+					}
+				};
+				if(spec.size() == 6 && spec.compare(0, 2, "t:") == 0) {
+					port.Type = ControllerType::MdTeamPlayer;
+					for(int i = 0; i < 4; i++) {
+						subPorts[i].Type = padType(spec[2 + i]);
+					}
+					return;
+				}
+				if(spec.size() != 1) {
+					throw std::runtime_error("--md-pads: bad port device " + spec);
+				}
+				switch(spec[0]) {
+					case 'm': port.Type = ControllerType::MdMouse; break;
+					case 'g': port.Type = ControllerType::MdMenacer; break;
+					case 'j': port.Type = ControllerType::MdJustifier; break;
+					default: port.Type = padType(spec[0]); break;
+				}
+			};
+			parsePort(mdPads.substr(0, comma), md.Port1, md.Port1SubPorts);
+			parsePort(mdPads.substr(comma + 1), md.Port2, md.Port2SubPorts);
 		}
 		//Test hook: force an EEPROM chip and board (the database is keyed by commercial ROM hashes)
 		MdEepromInfo eepromInfo = {};
@@ -524,18 +553,21 @@ static int Run(const vector<string>& args, const string& commandLine)
 			manifest["load_state"] = { { "sha256", FileSha256(loadStatePath) }, { "frame", emu.GetFrameCount() } };
 			frames += emu.GetFrameCount();
 		}
-		emu.RegisterInputProvider(&input);
-		//Apply the first frame's input before the first frame runs (frame 1 is 1-based)
-		if(BaseControlManager* controlManager = emu.GetConsole()->GetControlManager()) {
-			controlManager->UpdateInputState();
-		}
-
-		//Headless mode first: a Lua error while the script loads must fail the run too (stop code 65)
+		//Headless mode first: a Lua error while the script loads must fail the run too (stop code 65).
+		//The script is loaded before the input refresh below so that its inputPolled callbacks take
+		//part in it: after --load-state, a refresh without them replaced the input the script had set
+		//in the saved run with no input (io_menacer_hl diverged on replay).
 		emu.SetHeadlessMode(frames);
 		int scriptId = -1;
 		if(!luaCode.empty()) {
 			emu.InitDebugger();
 			scriptId = emu.InternalGetDebugger()->GetScriptManager()->LoadScript(fs::path(luaPath).filename().string(), fs::absolute(luaPath).parent_path().string() + "/", luaCode, -1);
+		}
+
+		emu.RegisterInputProvider(&input);
+		//Apply the first frame's input before the first frame runs (frame 1 is 1-based)
+		if(BaseControlManager* controlManager = emu.GetConsole()->GetControlManager()) {
+			controlManager->UpdateInputState();
 		}
 
 		//Trace profile "bus" (Mega Drive): every CPU bus access plus VDP, YM2612 and PSG port events, one

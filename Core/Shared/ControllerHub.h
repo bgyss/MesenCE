@@ -14,6 +14,7 @@
 #include "NES/Input/VirtualBoyController.h"
 #include "PCE/Input/PceController.h"
 #include "PCE/Input/PceAvenuePad6.h"
+#include "MD/Input/MdController.h"
 #include "Utilities/Serializer.h"
 #include "Utilities/StringUtilities.h"
 
@@ -108,6 +109,11 @@ public:
 
 				case ControllerType::PceAvenuePad6:
 					_ports[i].reset(new PceAvenuePad6(emu, 0, controllers[i].Keys));
+					break;
+
+				case ControllerType::MdController3Buttons:
+				case ControllerType::MdController6Buttons:
+					_ports[i].reset(new MdController(emu, 0, controllers[i].Keys, controllers[i].Type == ControllerType::MdController6Buttons));
 					break;
 			}
 		}

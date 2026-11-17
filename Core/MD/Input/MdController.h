@@ -4,13 +4,14 @@
 #include "Shared/Emulator.h"
 #include "Shared/EmuSettings.h"
 #include "Utilities/Serializer.h"
+#include "MD/Input/MdPortDevice.h"
 
 // Mega Drive 3- and 6-button pads (Sega Genesis Software Manual, "Control Pad"). Pins are active
 // low. TH high: ?1CBRLDU. TH low: ?0SA00DU. The 6-button pad counts TH high-to-low edges: on the
 // third low phase it reports ?0SA0000 (the 6-button ID), on the high phase after it ?1CBMXYZ,
 // on the fourth low phase ?0SA1111; it returns to the 3-button sequence when TH stays put for
 // about 1.5 ms (the exact timeout is a hardware-unverified choice).
-class MdController : public BaseControlDevice
+class MdController : public BaseControlDevice, public IMdPortDevice
 {
 private:
 	bool _sixButtons = false;
@@ -87,6 +88,49 @@ public:
 	//The pad is read through MdMemoryManager/MdControlManager (TH protocol), not a RAM-mapped port
 	uint8_t ReadRam(uint16_t addr) override { return 0; }
 	void WriteRam(uint16_t addr, uint8_t value) override {}
+
+	void WritePins(uint8_t levels, uint8_t outputs, uint64_t clock) override
+	{
+		//TH as the pad sees it: the driven level when it is an output, pulled high otherwise
+		bool th = (outputs & 0x40) ? (levels & 0x40) : true;
+		if(th != _th) {
+			OnThChange(th, clock);
+		}
+	}
+
+	uint8_t ReadPins(uint64_t clock) override { return ReadPins(_th, clock); }
+
+	bool IsSixButtons() { return _sixButtons; }
+
+	//Lua (emu.getInput/emu.setInput) button names
+	vector<DeviceButtonName> GetKeyNameAssociations() override
+	{
+		return {
+			{ "up", Buttons::Up },
+			{ "down", Buttons::Down },
+			{ "left", Buttons::Left },
+			{ "right", Buttons::Right },
+			{ "start", Buttons::Start },
+			{ "a", Buttons::A },
+			{ "b", Buttons::B },
+			{ "c", Buttons::C },
+			{ "x", Buttons::X },
+			{ "y", Buttons::Y },
+			{ "z", Buttons::Z },
+			{ "mode", Buttons::Mode },
+		};
+	}
+
+	//Active-low nibbles as the Team Player reports them (MdTeamPlayer.h): 0 = RLDU, 1 = SACB, 2 = MXYZ
+	uint8_t GetNibble(int index)
+	{
+		auto bit = [this](Buttons b, uint8_t mask) -> uint8_t { return IsPressed(b) ? 0 : mask; };
+		switch(index) {
+			case 0: return bit(Right, 0x08) | bit(Left, 0x04) | bit(Down, 0x02) | bit(Up, 0x01);
+			case 1: return bit(Start, 0x08) | bit(A, 0x04) | bit(C, 0x02) | bit(B, 0x01);
+			default: return bit(Mode, 0x08) | bit(X, 0x04) | bit(Y, 0x02) | bit(Z, 0x01);
+		}
+	}
 
 	void OnThChange(bool th, uint64_t clock)
 	{

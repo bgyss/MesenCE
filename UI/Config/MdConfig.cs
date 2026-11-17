@@ -9,8 +9,18 @@ public partial class MdConfig : BaseConfig<MdConfig>
 {
 	[ObservableProperty] public partial ConsoleOverrideConfig ConfigOverrides { get; set; } = new();
 
-	[ObservableProperty] public partial ControllerConfig Port1 { get; set; } = new();
-	[ObservableProperty] public partial ControllerConfig Port2 { get; set; } = new();
+	[ObservableProperty] public partial MdControllerConfig Port1 { get; set; } = new();
+	[ObservableProperty] public partial MdControllerConfig Port2 { get; set; } = new();
+
+	//Team Player ports A-D (port A uses the key bindings of the port the Team Player is on)
+	[ObservableProperty] public partial MdControllerConfig Port1A { get; set; } = new();
+	[ObservableProperty] public partial MdControllerConfig Port1B { get; set; } = new();
+	[ObservableProperty] public partial MdControllerConfig Port1C { get; set; } = new();
+	[ObservableProperty] public partial MdControllerConfig Port1D { get; set; } = new();
+	[ObservableProperty] public partial MdControllerConfig Port2A { get; set; } = new();
+	[ObservableProperty] public partial MdControllerConfig Port2B { get; set; } = new();
+	[ObservableProperty] public partial MdControllerConfig Port2C { get; set; } = new();
+	[ObservableProperty] public partial MdControllerConfig Port2D { get; set; } = new();
 
 	[ValidValues(ConsoleRegion.Auto, ConsoleRegion.Ntsc, ConsoleRegion.NtscJapan, ConsoleRegion.Pal)]
 	[ObservableProperty] public partial ConsoleRegion Region { get; set; } = ConsoleRegion.Auto;
@@ -43,14 +53,24 @@ public partial class MdConfig : BaseConfig<MdConfig>
 			FmVolume = FmVolume,
 			PsgVolume = PsgVolume,
 			FmCore = FmCore,
+			Port1A = Port1.ToInterop(Port1A.Type),
+			Port1B = Port1B.ToInterop(),
+			Port1C = Port1C.ToInterop(),
+			Port1D = Port1D.ToInterop(),
+			Port2A = Port2.ToInterop(Port2A.Type),
+			Port2B = Port2B.ToInterop(),
+			Port2C = Port2C.ToInterop(),
+			Port2D = Port2D.ToInterop(),
 		});
 	}
 
 	internal void InitializeDefaults(DefaultKeyMappingType defaultMappings)
 	{
-		Port1.InitDefaults(defaultMappings, ControllerType.MdController6Buttons);
+		Port1.InitDefaults<MdKeyMapping>(defaultMappings, ControllerType.MdController6Buttons);
 		Port1.Type = ControllerType.MdController6Buttons;
 		Port2.Type = ControllerType.MdController6Buttons;
+		Port1A.Type = ControllerType.MdController6Buttons;
+		Port2A.Type = ControllerType.MdController6Buttons;
 	}
 }
 
@@ -88,4 +108,14 @@ public struct InteropMdConfig
 	public UInt32 PsgVolume;
 
 	public MdFmCore FmCore;
+
+	//ControllerConfig Port1SubPorts[4], Port2SubPorts[4]
+	public InteropControllerConfig Port1A;
+	public InteropControllerConfig Port1B;
+	public InteropControllerConfig Port1C;
+	public InteropControllerConfig Port1D;
+	public InteropControllerConfig Port2A;
+	public InteropControllerConfig Port2B;
+	public InteropControllerConfig Port2C;
+	public InteropControllerConfig Port2D;
 }

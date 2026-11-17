@@ -264,7 +264,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         work = pathlib.Path(tmp)
         for case in extra_cases.all_cases():
-            if args.case and case.name not in args.case:
+            if (args.case and case.name not in args.case) or case.name in extra_cases.PICTURE_ONLY:
                 continue
             spec = json.loads((args.roms / (case.name + ".json")).read_text())
             ours, err = run_case(args.runner, args.roms / (case.name + ".md"), spec, work)

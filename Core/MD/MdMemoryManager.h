@@ -139,6 +139,9 @@ public:
 		_refreshSyncClock = _masterClock;
 	}
 	void AcknowledgeM68kInterrupt(uint8_t level);
+	//A light gun on `port` saw the beam (called by the VDP at the hit time)
+	void OnLightgunHit(uint8_t port, uint64_t clock);
+	MdControlManager* GetControlManager() { return _controlManager; }
 
 	uint16_t M68kRead(bool upper, bool lower, uint32_t addr, M68kAccess access);
 	void M68kWrite(bool upper, bool lower, uint32_t addr, uint16_t value, M68kAccess access);

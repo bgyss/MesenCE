@@ -671,6 +671,16 @@
 			<Control ID="lblController1">Port 1:</Control>
 			<Control ID="lblController2">Port 2:</Control>
 			<Control ID="lblMdPadNote">Most games work with the 6-button pad. A few older games misread it; choose the 3-button pad for those.</Control>
+			<Control ID="grpTeamPlayer">Team Player</Control>
+			<Control ID="lblTeamPlayer1A">Port A:</Control>
+			<Control ID="lblTeamPlayer1B">Port B:</Control>
+			<Control ID="lblTeamPlayer1C">Port C:</Control>
+			<Control ID="lblTeamPlayer1D">Port D:</Control>
+			<Control ID="lblTeamPlayer2A">Port A:</Control>
+			<Control ID="lblTeamPlayer2B">Port B:</Control>
+			<Control ID="lblTeamPlayer2C">Port C:</Control>
+			<Control ID="lblTeamPlayer2D">Port D:</Control>
+			<Control ID="lblMdAccessoryNote">Light guns are aimed with the mouse and are normally plugged into port 2. Menacer and Justifier games may ask you to calibrate the gun. The mouse is captured while a Sega Mouse is connected.</Control>
 		</Form>
 
 		<Form ID="WsConfigView">
@@ -2104,6 +2114,10 @@ E
 			<Value ID="SmsLightPhaser">Light Phaser</Value>
 			<Value ID="MdController3Buttons">Mega Drive 3-button pad</Value>
 			<Value ID="MdController6Buttons">Mega Drive 6-button pad</Value>
+			<Value ID="MdTeamPlayer">Sega Team Player</Value>
+			<Value ID="MdMouse">Sega Mouse</Value>
+			<Value ID="MdMenacer">Sega Menacer</Value>
+			<Value ID="MdJustifier">Konami Justifier</Value>
 			<Value ID="ColecoVisionController">ColecoVision Controller</Value>
 		</Enum>
 		<Enum ID="NesJissenMahjongButtons">
@@ -2177,6 +2191,22 @@ E
 			<Value ID="Cubic">Cubic</Value>
 			<Value ID="Sinc">Sinc</Value>
 			<Value ID="None">None</Value>
+		</Enum>
+		<Enum ID="MdMouseButtons">
+			<Value ID="Left">Left button</Value>
+			<Value ID="Right">Right button</Value>
+			<Value ID="Middle">Middle button</Value>
+			<Value ID="Start">Start</Value>
+		</Enum>
+		<Enum ID="MdMenacerButtons">
+			<Value ID="Trigger">Trigger (B)</Value>
+			<Value ID="Start">Start</Value>
+			<Value ID="A">A</Value>
+			<Value ID="C">C</Value>
+		</Enum>
+		<Enum ID="MdJustifierButtons">
+			<Value ID="Trigger">Trigger</Value>
+			<Value ID="Start">Start</Value>
 		</Enum>
 		<Enum ID="SnesSuperScopeButtons">
 			<Value ID="Fire">Fire</Value>

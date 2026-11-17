@@ -280,7 +280,11 @@ enum class ControllerType
 
 	//Mega Drive
 	MdController3Buttons,
-	MdController6Buttons
+	MdController6Buttons,
+	MdTeamPlayer,
+	MdMouse,
+	MdMenacer,
+	MdJustifier
 };
 
 struct KeyMapping
@@ -892,6 +896,10 @@ struct MdConfig
 	uint32_t PsgVolume = 100;
 
 	MdFmCore FmCore = MdFmCore::Ymfm; //takes effect at power-on/reset
+
+	//Pads plugged into a Team Player on port 1 or 2
+	ControllerConfig Port1SubPorts[4];
+	ControllerConfig Port2SubPorts[4];
 };
 
 struct AudioPlayerConfig

@@ -125,6 +125,10 @@
     <ClInclude Include="MD\Debugger\MdTraceLogger.h" />
     <ClInclude Include="MD\Debugger\MdVdpTools.h" />
     <ClInclude Include="MD\Input\MdController.h" />
+    <ClInclude Include="MD\Input\MdLightGun.h" />
+    <ClInclude Include="MD\Input\MdMouse.h" />
+    <ClInclude Include="MD\Input\MdPortDevice.h" />
+    <ClInclude Include="MD\Input\MdTeamPlayer.h" />
     <ClInclude Include="MD\M68k\AresCompat.h" />
     <ClInclude Include="MD\M68k\M68kCore.h" />
     <ClInclude Include="MD\M68k\ares\m68000.h" />

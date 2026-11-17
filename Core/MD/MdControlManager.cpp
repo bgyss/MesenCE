@@ -2,6 +2,9 @@
 #include "MD/MdControlManager.h"
 #include "MD/MdConsole.h"
 #include "MD/Input/MdController.h"
+#include "MD/Input/MdTeamPlayer.h"
+#include "MD/Input/MdMouse.h"
+#include "MD/Input/MdLightGun.h"
 #include "Shared/Emulator.h"
 #include "Shared/EmuSettings.h"
 #include "Utilities/Serializer.h"
@@ -18,6 +21,14 @@ shared_ptr<BaseControlDevice> MdControlManager::CreateControllerDevice(Controlle
 	switch(type) {
 		case ControllerType::MdController3Buttons: return shared_ptr<BaseControlDevice>(new MdController(_emu, port, keys, false));
 		case ControllerType::MdController6Buttons: return shared_ptr<BaseControlDevice>(new MdController(_emu, port, keys, true));
+		case ControllerType::MdTeamPlayer: {
+			ControllerConfig controllers[4];
+			std::copy(port == 0 ? cfg.Port1SubPorts : cfg.Port2SubPorts, (port == 0 ? cfg.Port1SubPorts : cfg.Port2SubPorts) + 4, controllers);
+			return shared_ptr<BaseControlDevice>(new MdTeamPlayer(_emu, port, controllers));
+		}
+		case ControllerType::MdMouse: return shared_ptr<BaseControlDevice>(new MdMouse(_emu, port, keys));
+		case ControllerType::MdMenacer: return shared_ptr<BaseControlDevice>(new MdLightGun(_emu, port, keys, false));
+		case ControllerType::MdJustifier: return shared_ptr<BaseControlDevice>(new MdLightGun(_emu, port, keys, true));
 		default: return nullptr;
 	}
 }
@@ -38,39 +49,80 @@ static bool SamePortConfig(const ControllerConfig& a, const ControllerConfig& b)
 	return a.Type == b.Type && a.Keys.TurboSpeed == b.Keys.TurboSpeed;
 }
 
+static bool SameSubPorts(const ControllerConfig* a, const ControllerConfig* b)
+{
+	for(int i = 0; i < 4; i++) {
+		if(!SamePortConfig(a[i], b[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
 void MdControlManager::UpdateControlDevices()
 {
 	MdConfig& cfg = _emu->GetSettings()->GetMdConfig();
-	if(_controlDevices.size() > 0 && SamePortConfig(_prevConfig.Port1, cfg.Port1) && SamePortConfig(_prevConfig.Port2, cfg.Port2)) {
+	if(_controlDevices.size() > 0 && SamePortConfig(_prevConfig.Port1, cfg.Port1) && SamePortConfig(_prevConfig.Port2, cfg.Port2) &&
+		SameSubPorts(_prevConfig.Port1SubPorts, cfg.Port1SubPorts) && SameSubPorts(_prevConfig.Port2SubPorts, cfg.Port2SubPorts)) {
 		return;
 	}
 
 	auto lock = _deviceLock.AcquireSafe();
 	ClearDevices();
+	_portDevices[0] = _portDevices[1] = nullptr;
+	_hasLightgun = false;
 	for(int i = 0; i < 2; i++) {
 		shared_ptr<BaseControlDevice> device = CreateControllerDevice(i == 0 ? cfg.Port1.Type : cfg.Port2.Type, i);
 		if(device) {
 			RegisterControlDevice(device);
+			_portDevices[i] = dynamic_cast<IMdPortDevice*>(device.get());
+			ControllerType type = device->GetControllerType();
+			_hasLightgun |= type == ControllerType::MdMenacer || type == ControllerType::MdJustifier;
 		}
 	}
 	_prevConfig = cfg;
 }
 
-uint8_t MdControlManager::ReadPad(uint8_t port, bool th, uint64_t masterClock)
+uint8_t MdControlManager::ReadPort(uint8_t port, uint64_t masterClock)
 {
-	shared_ptr<MdController> pad = std::dynamic_pointer_cast<MdController>(GetControlDevice(port));
-	if(!pad) {
+	IMdPortDevice* device = _portDevices[port];
+	if(!device) {
 		return 0x7F;
 	}
 	SetInputReadFlag();
-	return pad->ReadPins(th, masterClock);
+	return device->ReadPins(masterClock) & 0x7F;
 }
 
-void MdControlManager::OnThChange(uint8_t port, bool th, uint64_t masterClock)
+void MdControlManager::WritePort(uint8_t port, uint8_t levels, uint8_t outputs, uint64_t masterClock)
 {
-	shared_ptr<MdController> pad = std::dynamic_pointer_cast<MdController>(GetControlDevice(port));
-	if(pad) {
-		pad->OnThChange(th, masterClock);
+	if(_portDevices[port]) {
+		_portDevices[port]->WritePins(levels, outputs, masterClock);
+	}
+}
+
+int32_t MdControlManager::GetLightgunX(uint16_t row, uint8_t& port)
+{
+	for(uint8_t i = 0; i < 2; i++) {
+		if(_portDevices[i]) {
+			int32_t x = _portDevices[i]->GetLightgunX(row);
+			if(x >= 0) {
+				port = i;
+				return x;
+			}
+		}
+	}
+	return -1;
+}
+
+uint32_t MdControlManager::GetLightgunLatency(uint8_t port, bool h40)
+{
+	return _portDevices[port] ? _portDevices[port]->GetLightgunLatency(h40) : 0;
+}
+
+void MdControlManager::OnLightgunHit(uint8_t port, uint64_t masterClock)
+{
+	if(_portDevices[port]) {
+		_portDevices[port]->OnLightgunHit(masterClock);
 	}
 }
 

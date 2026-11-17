@@ -12,6 +12,16 @@ namespace Mesen.ViewModels
 			ControllerType.None,
 			ControllerType.MdController3Buttons,
 			ControllerType.MdController6Buttons,
+			ControllerType.MdTeamPlayer,
+			ControllerType.MdMouse,
+			ControllerType.MdMenacer,
+			ControllerType.MdJustifier,
+		};
+
+		public Enum[] AvailableControllerTypesTeamPlayer => new Enum[] {
+			ControllerType.None,
+			ControllerType.MdController3Buttons,
+			ControllerType.MdController6Buttons,
 		};
 
 		[Obsolete("For designer only")]

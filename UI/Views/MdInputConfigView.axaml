@@ -6,6 +6,7 @@
 	xmlns:vm="using:Mesen.ViewModels"
 	xmlns:l="using:Mesen.Localization"
 	xmlns:c="using:Mesen.Controls"
+	xmlns:cfg="using:Mesen.Config"
 	mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="450"
 	VerticalAlignment="Stretch"
 	HorizontalAlignment="Stretch"
@@ -19,7 +20,7 @@
 	<ScrollViewer AllowAutoHide="False" HorizontalScrollBarVisibility="Auto" Padding="0 0 2 0">
 		<StackPanel>
 			<c:OptionSection Header="{l:Translate grpControllers}" Margin="0">
-				<Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" HorizontalAlignment="Left">
+				<Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" HorizontalAlignment="Left">
 					<TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Translate lblController1}" />
 					<c:InputComboBox
 						Grid.Row="0" Grid.Column="1"
@@ -29,17 +30,106 @@
 						AvailableValues="{Binding AvailableControllerTypes}"
 					/>
 
-					<TextBlock Grid.Row="1" Grid.Column="0" Text="{l:Translate lblController2}" />
+					<c:GroupBox
+						Header="{l:Translate grpTeamPlayer}"
+						IsVisible="{Binding Config.Port1.Type, Converter={StaticResource EnumMatchConverter}, ConverterParameter={x:Static cfg:ControllerType.MdTeamPlayer}}"
+						HorizontalAlignment="Left"
+						Margin="0 5 -6 5"
+						Grid.Row="1"
+						Grid.Column="1"
+						Grid.ColumnSpan="2"
+					>
+						<Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+							<TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Translate lblTeamPlayer1A}" />
+							<c:InputComboBox
+								Grid.Row="0" Grid.Column="1"
+								Config="{Binding Config.Port1}"
+								ControllerType="{Binding Config.Port1A.Type}"
+								AvailableValues="{Binding AvailableControllerTypesTeamPlayer}"
+							/>
+
+							<TextBlock Grid.Row="1" Grid.Column="0" Text="{l:Translate lblTeamPlayer1B}" />
+							<c:InputComboBox
+								Grid.Row="1" Grid.Column="1"
+								Config="{Binding Config.Port1B}"
+								ControllerType="{Binding Config.Port1B.Type}"
+								AvailableValues="{Binding AvailableControllerTypesTeamPlayer}"
+							/>
+
+							<TextBlock Grid.Row="2" Grid.Column="0" Text="{l:Translate lblTeamPlayer1C}" />
+							<c:InputComboBox
+								Grid.Row="2" Grid.Column="1"
+								Config="{Binding Config.Port1C}"
+								ControllerType="{Binding Config.Port1C.Type}"
+								AvailableValues="{Binding AvailableControllerTypesTeamPlayer}"
+							/>
+
+							<TextBlock Grid.Row="3" Grid.Column="0" Text="{l:Translate lblTeamPlayer1D}" />
+							<c:InputComboBox
+								Grid.Row="3" Grid.Column="1"
+								Config="{Binding Config.Port1D}"
+								ControllerType="{Binding Config.Port1D.Type}"
+								AvailableValues="{Binding AvailableControllerTypesTeamPlayer}"
+							/>
+						</Grid>
+					</c:GroupBox>
+
+					<TextBlock Grid.Row="2" Grid.Column="0" Text="{l:Translate lblController2}" />
 					<c:InputComboBox
-						Grid.Row="1" Grid.Column="1"
+						Grid.Row="2" Grid.Column="1"
 						Port="1"
 						Config="{Binding Config.Port2}"
 						ControllerType="{Binding Config.Port2.Type}"
 						AvailableValues="{Binding AvailableControllerTypes}"
 					/>
+
+					<c:GroupBox
+						Header="{l:Translate grpTeamPlayer}"
+						IsVisible="{Binding Config.Port2.Type, Converter={StaticResource EnumMatchConverter}, ConverterParameter={x:Static cfg:ControllerType.MdTeamPlayer}}"
+						HorizontalAlignment="Left"
+						Margin="0 5 -6 5"
+						Grid.Row="3"
+						Grid.Column="1"
+						Grid.ColumnSpan="2"
+					>
+						<Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+							<TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Translate lblTeamPlayer2A}" />
+							<c:InputComboBox
+								Grid.Row="0" Grid.Column="1"
+								Config="{Binding Config.Port2}"
+								ControllerType="{Binding Config.Port2A.Type}"
+								AvailableValues="{Binding AvailableControllerTypesTeamPlayer}"
+							/>
+
+							<TextBlock Grid.Row="1" Grid.Column="0" Text="{l:Translate lblTeamPlayer2B}" />
+							<c:InputComboBox
+								Grid.Row="1" Grid.Column="1"
+								Config="{Binding Config.Port2B}"
+								ControllerType="{Binding Config.Port2B.Type}"
+								AvailableValues="{Binding AvailableControllerTypesTeamPlayer}"
+							/>
+
+							<TextBlock Grid.Row="2" Grid.Column="0" Text="{l:Translate lblTeamPlayer2C}" />
+							<c:InputComboBox
+								Grid.Row="2" Grid.Column="1"
+								Config="{Binding Config.Port2C}"
+								ControllerType="{Binding Config.Port2C.Type}"
+								AvailableValues="{Binding AvailableControllerTypesTeamPlayer}"
+							/>
+
+							<TextBlock Grid.Row="3" Grid.Column="0" Text="{l:Translate lblTeamPlayer2D}" />
+							<c:InputComboBox
+								Grid.Row="3" Grid.Column="1"
+								Config="{Binding Config.Port2D}"
+								ControllerType="{Binding Config.Port2D.Type}"
+								AvailableValues="{Binding AvailableControllerTypesTeamPlayer}"
+							/>
+						</Grid>
+					</c:GroupBox>
 				</Grid>
 			</c:OptionSection>
 			<TextBlock Margin="0 10 0 0" TextWrapping="Wrap" Text="{l:Translate lblMdPadNote}" />
+			<TextBlock Margin="0 10 0 0" TextWrapping="Wrap" Text="{l:Translate lblMdAccessoryNote}" />
 		</StackPanel>
 	</ScrollViewer>
 </UserControl>

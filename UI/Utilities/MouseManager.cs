@@ -202,7 +202,8 @@ namespace Mesen.Utilities
 					InputApi.HasControlDevice(ControllerType.SuborMouse) ||
 					InputApi.HasControlDevice(ControllerType.FamicomArkanoidController) ||
 					InputApi.HasControlDevice(ControllerType.NesArkanoidController) ||
-					InputApi.HasControlDevice(ControllerType.HoriTrack)
+					InputApi.HasControlDevice(ControllerType.HoriTrack) ||
+					InputApi.HasControlDevice(ControllerType.MdMouse)
 				);
 
 				if(hasMouseDevice) {
@@ -226,7 +227,9 @@ namespace Mesen.Utilities
 					InputApi.HasControlDevice(ControllerType.NesZapper) ||
 					InputApi.HasControlDevice(ControllerType.SmsLightPhaser) ||
 					InputApi.HasControlDevice(ControllerType.SuperScope) ||
-					InputApi.HasControlDevice(ControllerType.BandaiHyperShot)
+					InputApi.HasControlDevice(ControllerType.BandaiHyperShot) ||
+					InputApi.HasControlDevice(ControllerType.MdMenacer) ||
+					InputApi.HasControlDevice(ControllerType.MdJustifier)
 				);
 
 				if(hasLightGun) {

@@ -2,6 +2,7 @@
 # They reuse cases.py's operation format and expected values and are built by gen.py next to the
 # nativekit cases. Copyright notice and license: GPL-3.0, as the rest of MesenCE.
 from dataclasses import replace
+import pathlib
 
 import cases
 from cases import Case, Operation, READ, WRITE, POLL
@@ -201,9 +202,102 @@ def _midline_cram(h40):
                                extra_operations=tuple(frame * 12), capture_frames=4)
 
 
+_ACCESSORIES = pathlib.Path(__file__).resolve().parents[1] / "accessories"
+
+
+def _wait_frames(count):
+    """Pass `count` frames (VBlank flag set, then clear, `count` times): Lua input is set from then on."""
+    ops = []
+    for _ in range(count):
+        ops.append(Operation(POLL, 2, 0xC00004, 0x0008, compare_mask=0x0008))
+        ops.append(Operation(POLL, 2, 0xC00004, 0x0000, compare_mask=0x0008))
+    return ops
+
+
+def _team_player():
+    """Team Player on port 1 in Multi mode (pads A=6, B=3, C=none, D=6; tests/MD/accessories/teamplayer.lua).
+
+    The 68000 drives TH and TR ($A10009 = $60) and walks the protocol (MdTeamPlayer.h): each read
+    expects TL to follow TR and the nibble for that step. Pressed: A Up+A, B Start, D Mode+X.
+    """
+    data, ctrl = 0xA10003, 0xA10009
+    steps = [  # (TH/TR written, expected port byte under $7F)
+        (0x60, 0x73),  # idle: TL=1, data 0011
+        (0x20, 0x3F),  # TH low: selected, 1111
+        (0x00, 0x00), (0x20, 0x30),  # 0000 0000
+        (0x00, 0x01), (0x20, 0x30), (0x00, 0x0F), (0x20, 0x31),  # IDs: A 6-btn, B 3-btn, C none, D 6-btn
+        (0x00, 0x0E), (0x20, 0x3B), (0x00, 0x0F),  # A: RLDU (Up), SACB (A), MXYZ
+        (0x20, 0x3F), (0x00, 0x07),  # B: RLDU, SACB (Start)
+        (0x20, 0x3F), (0x00, 0x0F), (0x20, 0x33),  # D: RLDU, SACB, MXYZ (Mode, X)
+        (0x00, 0x00),  # past the last pad
+        (0x60, 0x73),  # TH high: idle again
+    ]
+    ops = [cases._vdp_reg(1, 0x44)] + _wait_frames(3) + [Operation(WRITE, 1, ctrl, 0x60)]
+    for written, expected in steps:
+        ops += [Operation(WRITE, 1, data, written), Operation(READ, 1, data, expected, compare_mask=0x7F)]
+    RUNNER_ARGS["io_teamplayer"] = ["--md-pads", "t:63n6,6", "--lua", str(_ACCESSORIES / "teamplayer.lua")]
+    return Case("io_teamplayer", tuple(ops), capture_frames=6)
+
+
+def _mouse():
+    """Sega Mouse on port 1 (tests/MD/accessories/mouse.lua: +5 X, +3 Y (up), left button).
+
+    After each TR edge the 68000 polls until TL follows TR (the mouse answers about 12 us later),
+    then reads the nibble: ID B, F, F, flags 0, buttons 1, X 0/5, Y 0/3 (MdMouse.h).
+    """
+    data, ctrl = 0xA10003, 0xA10009
+    ops = [cases._vdp_reg(1, 0x44)] + _wait_frames(3) + [Operation(WRITE, 1, ctrl, 0x60), Operation(WRITE, 1, data, 0x60),
+                             Operation(READ, 1, data, 0x70, compare_mask=0x7F),
+                             Operation(WRITE, 1, data, 0x20), Operation(READ, 1, data, 0x3B, compare_mask=0x7F)]
+    for i, nibble in enumerate((0xF, 0xF, 0x0, 0x1, 0x0, 0x5, 0x0, 0x3)):
+        tr = 0x20 if i & 1 else 0x00
+        ops += [Operation(WRITE, 1, data, tr),
+                Operation(POLL, 1, data, 0x10 if tr else 0x00, compare_mask=0x10),
+                Operation(READ, 1, data, tr | (0x10 if tr else 0) | nibble, compare_mask=0x7F)]
+    ops.append(Operation(WRITE, 1, data, 0x60))
+    RUNNER_ARGS["io_mouse"] = ["--md-pads", "m,6", "--lua", str(_ACCESSORIES / "mouse.lua")]
+    return Case("io_mouse", tuple(ops), capture_frames=6)
+
+
+def _light_gun(name, gun, h40, expected_hv, probe):
+    """A light gun on port 2 aimed at pixel (100, 50) latches the H/V counter through the HL input.
+
+    VDP register 0 bit 1 (latch) and register 11 bit 3 (level 2 interrupt) are set, and port 2's
+    control register has bit 7 (HL) with TH as an input. After a full frame the H/V counter read
+    returns the value latched when the gun pulled TH low (MdLightGun.h): line 50, H = pixel / 2
+    plus the gun's latency. `probe` adds the gun's own pin checks.
+    """
+    data, ctrl = 0xA10005, 0xA1000B
+    ops = [Operation(POLL, 2, 0xC00004, 0x0008, compare_mask=0x0008),
+           cases._vdp_reg(0, 0x06), cases._vdp_reg(1, 0x44), cases._vdp_reg(11, 0x08),
+           cases._vdp_reg(12, 0x81 if h40 else 0x00)]
+    ops += _wait_frames(3) + list(probe)
+    ops += [Operation(WRITE, 1, data, 0x00), Operation(WRITE, 1, ctrl, 0xB0)] + _wait_frames(2)
+    ops.append(Operation(READ, 2, 0xC00008, expected_hv, compare_mask=0xFFFF))
+    RUNNER_ARGS[name] = ["--md-pads", "6," + gun, "--lua", str(_ACCESSORIES / (("menacer" if gun == "g" else "justifier") + ".lua"))]
+    return Case(name, tuple(ops), capture_frames=8)
+
+
+def _accessory_cases():
+    menacer_probe = [Operation(WRITE, 1, 0xA1000B, 0x30), Operation(WRITE, 1, 0xA10005, 0x00),
+                     Operation(READ, 1, 0xA10005, 0x49, compare_mask=0x4F)]  # TH high, Start + B (trigger)
+    justifier_probe = [Operation(WRITE, 1, 0xA1000B, 0x40),  # ID probe: TH output
+                       Operation(WRITE, 1, 0xA10005, 0x40), Operation(READ, 1, 0xA10005, 0x70, compare_mask=0x7F),
+                       Operation(WRITE, 1, 0xA10005, 0x00), Operation(READ, 1, 0xA10005, 0x33, compare_mask=0x7F)]
+    return [_team_player(), _mouse(),
+            # H40: pixel 0 latches H $52 (the 6-in-1 offset), pixel 100 latches $83
+            _light_gun("io_menacer_hl", "g", True, 0x3283, menacer_probe),
+            # H32, no latency: H = 50 = $32
+            _light_gun("io_justifier_hl", "j", False, 0x3232, justifier_probe)]
+
+
 #Extra mesen-headless options per case (gen.py copies them into the run spec)
 RUNNER_ARGS = {}
 
+#Cases checked on their picture by their own script (their steps run until the capture ends, so
+#compare.py's expected-read check does not apply): tests/MD/midline/check_midline.py
+PICTURE_ONLY = {"vdp_midline_cram_h32", "vdp_midline_cram_h40"}
+
 
 def all_cases():
-    return [_pad6_across_frame(), _bank_mapper()] + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)]
+    return [_pad6_across_frame(), _bank_mapper()] + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)] + _accessory_cases()

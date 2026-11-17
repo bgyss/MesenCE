@@ -428,9 +428,7 @@ uint8_t MdMemoryManager::ReadIo(uint32_t addr)
 			uint8_t port = ((addr & 0x1F) - 3) >> 1;
 			uint8_t ctrl = _state.Io.Ctrl[port];
 			uint8_t data = _state.Io.Data[port];
-			//TH (bit 6) as seen by the pad: the driven level when it is an output, pulled high otherwise
-			bool th = (ctrl & 0x40) ? (data & 0x40) : true;
-			uint8_t pins = port < 2 ? _controlManager->ReadPad(port, th, _masterClock) : 0x7F;
+			uint8_t pins = port < 2 ? _controlManager->ReadPort(port, _masterClock) : 0x7F;
 			return (data & 0x80) | (data & ctrl & 0x7F) | (pins & ~ctrl & 0x7F);
 		}
 
@@ -459,6 +457,17 @@ uint8_t MdMemoryManager::ReadIo(uint32_t addr)
 	}
 }
 
+void MdMemoryManager::OnLightgunHit(uint8_t port, uint64_t clock)
+{
+	_controlManager->OnLightgunHit(port, clock);
+	//TH falling on a port whose control register has bit 7 set (and TH as an input) is the VDP's
+	//HL input (Eke-Eke, "Sega Genesis Lightguns")
+	uint8_t ctrl = _state.Io.Ctrl[port];
+	if((ctrl & 0x80) && !(ctrl & 0x40)) {
+		_vdp->TriggerExternalInterrupt(clock);
+	}
+}
+
 void MdMemoryManager::WriteIo(uint32_t addr, uint8_t value)
 {
 	switch(addr & 0x1F) {
@@ -466,11 +475,9 @@ void MdMemoryManager::WriteIo(uint32_t addr, uint8_t value)
 		case 0x05:
 		case 0x07: {
 			uint8_t port = ((addr & 0x1F) - 3) >> 1;
-			bool prevTh = (_state.Io.Ctrl[port] & 0x40) ? (_state.Io.Data[port] & 0x40) : true;
 			_state.Io.Data[port] = value;
-			bool th = (_state.Io.Ctrl[port] & 0x40) ? (value & 0x40) : true;
-			if(port < 2 && th != prevTh) {
-				_controlManager->OnThChange(port, th, _masterClock);
+			if(port < 2) {
+				_controlManager->WritePort(port, value & 0x7F, _state.Io.Ctrl[port] & 0x7F, _masterClock);
 			}
 			break;
 		}
@@ -479,11 +486,9 @@ void MdMemoryManager::WriteIo(uint32_t addr, uint8_t value)
 		case 0x0B:
 		case 0x0D: {
 			uint8_t port = ((addr & 0x1F) - 9) >> 1;
-			bool prevTh = (_state.Io.Ctrl[port] & 0x40) ? (_state.Io.Data[port] & 0x40) : true;
 			_state.Io.Ctrl[port] = value;
-			bool th = (value & 0x40) ? (_state.Io.Data[port] & 0x40) : true;
-			if(port < 2 && th != prevTh) {
-				_controlManager->OnThChange(port, th, _masterClock);
+			if(port < 2) {
+				_controlManager->WritePort(port, _state.Io.Data[port] & 0x7F, value & 0x7F, _masterClock);
 			}
 			break;
 		}

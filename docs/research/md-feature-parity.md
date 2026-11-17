@@ -5,7 +5,9 @@ mode through the Power Base Converter are separate systems and out of scope here
 each implemented item is in [`md-verification-findings.md`](md-verification-findings.md).
 
 The comparison columns are what those emulators are generally known to offer (Genesis Plus GX,
-BlastEm, ares). They are a summary for planning, not an audited feature list of each project.
+BlastEm, ares). They are a summary for planning, not an audited feature list of each project; the
+ares column for controllers was checked against its source tree (`md/controller`: pads and the Mega
+Mouse; `md/cartridge/board`: J-Cart).
 
 Legend: ✅ implemented and tested · ⚠️ implemented with a documented approximation · ❌ missing
 
@@ -17,7 +19,7 @@ Legend: ✅ implemented and tested · ⚠️ implemented with a documented appro
 | Z80 | ✅ | ✅ | ✅ | ✅ | shared with SMS; SingleStepTests 1,604,000 pass |
 | VDP: modes, planes, window, sprites, shadow/highlight, interlace 2 | ✅ | ✅ | ✅ | ✅ | synthetic corpus 60/60 |
 | VDP: FIFO, DMA timing, H/V counters, interrupts | ⚠️ | ✅ | ✅ | ✅ | slot model from the Sega manual |
-| Mid-line raster effects | ❌ | ✅ | ✅ | ✅ | renderer works per line |
+| Mid-line raster effects | ⚠️ | ✅ | ✅ | ✅ | lines drawn in segments at register/VRAM/CRAM/VSRAM writes; no CRAM dots |
 | YM2612 (fast core) | ✅ | ✅ | ✅ | ✅ | ymfm |
 | YM2612 cycle-accurate core | ✅ | ✅ | — | — | Nuked-OPN2, selectable |
 | PSG | ✅ | ✅ | ✅ | ✅ | |
@@ -35,7 +37,7 @@ Legend: ✅ implemented and tested · ⚠️ implemented with a documented appro
 | Battery SRAM from the header (incl. odd/even lanes, $A130F1) | ✅ | ✅ | ✅ | ✅ | .srm |
 | Sonic 3 & Knuckles lock-on image (SRAM overlapping ROM) | ⚠️ | ✅ | ✅ | ✅ | follows from $A130F1 support; not tested on the real image |
 | Sega bank mapper (SSF2, >4 MiB) | ✅ | ✅ | ✅ | ✅ | |
-| I²C EEPROM saves (≈30 titles) | ❌ | ✅ | ✅ | ✅ | needs a per-game chip/pin table |
+| I²C EEPROM saves (35 ROMs) | ✅ | ✅ | ✅ | ✅ | ares' hash list, MAME's board wiring; `.eep` |
 | Game-specific database (region fixes, special boards) | ❌ | ✅ | ✅ | ✅ | |
 | Unlicensed / pirate mappers | ❌ | ✅ | some | some | |
 
@@ -44,9 +46,11 @@ Legend: ✅ implemented and tested · ⚠️ implemented with a documented appro
 | Feature | MesenCE | GPGX | BlastEm | ares | Notes |
 |---|---|---|---|---|---|
 | 3- and 6-button pads, key binding UI | ✅ | ✅ | ✅ | ✅ | |
-| Team Player / EA 4-Way Play multitaps | ❌ | ✅ | ✅ | ✅ | needed for 3-4 player sports games |
-| Sega Mouse | ❌ | ✅ | ✅ | ✅ | |
-| Menacer / Justifier light guns | ❌ | ✅ | ❌ | ✅ | |
+| Team Player multitap | ✅ | ✅ | ✅ | ❌ | pads only (no mouse behind it) |
+| EA 4-Way Play | ❌ | ✅ | ✅ | ❌ | no source under a usable license found |
+| Sega Mouse | ✅ | ✅ | ✅ | ✅ | |
+| Menacer / Justifier light guns | ⚠️ | ✅ | ❌ | ❌ | fixed latency per gun; blue Justifier only |
+| J-Cart (extra ports on the cartridge) | ❌ | ✅ | ✅ | ✅ | Micro Machines 2/Military, Pete Sampras |
 
 ## Frontend and tools
 
@@ -62,10 +66,9 @@ Legend: ✅ implemented and tested · ⚠️ implemented with a documented appro
 
 ## Most useful next steps
 
-1. **I²C EEPROM saves:** the chip types (24C01, 24C02, 24C08, 24C16, 24C65) and the cartridge
-   pin wiring per title need a sourced table. Genesis Plus GX's table is under a non-commercial
-   license, so it cannot be copied into this GPLv3 fork; the facts need an independent source.
-2. **Multitaps** (Team Player, EA 4-Way Play): protocols are documented; many sports games use them.
-3. **Mid-line rendering:** needed for raster effects in some games and demos.
+1. **Testing with commercial cartridges:** EEPROM hash matches, gun calibration and Team Player
+   games have only been tested with synthetic cartridges.
+2. **J-Cart** (two extra pad ports on Codemasters cartridges) and the **EA 4-Way Play**.
+3. **CRAM dots and DMA timing during active display**, for the remaining raster effects.
 4. **Model 1 output low-pass filter**, as an option.
-5. **Sega Mouse and light guns.**
+5. **Game database** (region fixes, special boards, unlicensed mappers).

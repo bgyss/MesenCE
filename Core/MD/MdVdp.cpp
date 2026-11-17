@@ -2,6 +2,7 @@
 #include "MD/MdVdp.h"
 #include "MD/MdConsole.h"
 #include "MD/MdMemoryManager.h"
+#include "MD/MdControlManager.h"
 #include "Shared/Emulator.h"
 #include "Shared/EmuSettings.h"
 #include "Shared/MemoryType.h"
@@ -212,6 +213,11 @@ void MdVdp::Run(uint64_t masterClock)
 		}
 
 		uint64_t lineEnd = _lineStartClock + MdTiming::ClocksPerLine;
+		if(_lightgunClock <= masterClock && _lightgunClock < lineEnd) {
+			uint64_t hit = _lightgunClock;
+			_lightgunClock = UINT64_MAX;
+			_memoryManager->OnLightgunHit(_lightgunPort, hit);
+		}
 		if(masterClock < lineEnd) {
 			_state.HClock = (uint16_t)(masterClock - _lineStartClock);
 			break;
@@ -246,6 +252,22 @@ void MdVdp::ProcessLineStart()
 		_vintRaisedThisFrame = false;
 		_frameWidth = IsH40() ? 320 : 256;
 		_frameHeight = GetActiveLines() * (GetInterlaceMode() == 3 ? 2 : 1);
+	}
+
+	//Light gun: schedule the moment the gun pulls TH low for this line (a hit whose latency carried
+	//it past the end of the previous line is still pending and fires first)
+	if(_lightgunClock == UINT64_MAX && line < GetActiveLines()) {
+		MdControlManager* controlManager = _memoryManager->GetControlManager();
+		if(controlManager->HasLightgun()) {
+			uint16_t row = GetInterlaceMode() == 3 ? (line * 2 + (_state.OddFrame ? 1 : 0)) : line;
+			uint8_t port = 0;
+			int32_t x = controlManager->GetLightgunX(row, port);
+			if(x >= 0 && x < (IsH40() ? 320 : 256)) {
+				uint32_t activeStart = IsH40() ? RenderOffsetH40 : RenderOffsetH32;
+				_lightgunPort = port;
+				_lightgunClock = _lineStartClock + activeStart + (uint64_t)x * (IsH40() ? 8 : 10) + controlManager->GetLightgunLatency(port, IsH40());
+			}
+		}
 	}
 
 	//The H interrupt counter counts down on lines 0 through the first VBlank line, and is
@@ -297,7 +319,22 @@ uint8_t MdVdp::GetM68kInterruptLevel()
 	if(_state.HIntPending && (_state.Regs[0] & 0x10)) {
 		return 4;
 	}
+	if(_extIntPending && (_state.Regs[11] & 0x08)) {
+		return 2;
+	}
 	return 0;
+}
+
+void MdVdp::TriggerExternalInterrupt(uint64_t clock)
+{
+	if(_state.Regs[11] & 0x08) {
+		_extIntPending = true;
+	}
+	if(_state.Regs[0] & 0x02) {
+		uint16_t h = GetHCounterForClock((uint32_t)(clock - _lineStartClock)) >> 1;
+		_state.HvLatch = (GetVCounter() << 8) | (h & 0xFF);
+		_state.HvLatched = true;
+	}
 }
 
 void MdVdp::AcknowledgeInterrupt(uint8_t level)
@@ -306,6 +343,8 @@ void MdVdp::AcknowledgeInterrupt(uint8_t level)
 		_state.VIntPending = false;
 	} else if(level == 4) {
 		_state.HIntPending = false;
+	} else if(level == 2) {
+		_extIntPending = false;
 	}
 }
 
@@ -916,6 +955,9 @@ void MdVdp::Serialize(Serializer& s)
 	SVArray(_lineSpritePixels, 320);
 	SVArray(_lineSpritePriority, 320);
 	SV(_vintRaisedThisFrame);
+	SV(_extIntPending);
+	SV(_lightgunClock);
+	SV(_lightgunPort);
 	SVArray(_fifo, 4);
 	SV(_fifoCount);
 	SV(_fifoLastCompletion);

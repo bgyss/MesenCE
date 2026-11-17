@@ -64,6 +64,11 @@ private:
 	uint8_t _lineSpritePriority[320] = {};
 	bool _vintRaisedThisFrame = false;
 
+	//External interrupt (HL input from a control port, level 2) and the pending light gun hit
+	bool _extIntPending = false;
+	uint64_t _lightgunClock = UINT64_MAX;
+	uint8_t _lightgunPort = 0;
+
 	//FIFO completion times, oldest first
 	uint64_t _fifo[4] = {};
 	uint8_t _fifoCount = 0;
@@ -138,6 +143,9 @@ public:
 	void WritePort(uint8_t port, uint16_t value, bool upper, bool lower);
 
 	uint8_t GetM68kInterruptLevel();
+	//HL input (control port TH falling with the port's HL enable): level 2 interrupt if enabled in
+	//register 11, H/V counter latch if enabled in register 0
+	void TriggerExternalInterrupt(uint64_t clock);
 	void AcknowledgeInterrupt(uint8_t level);
 	bool IsZ80InterruptActive() { return _state.Z80IntActive; }
 

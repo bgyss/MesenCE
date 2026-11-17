@@ -503,6 +503,62 @@ pulse covers exactly one envelope step. (Earlier KNOWN texts said "well under on
   in the middle of a line. The 60 BlastEm-referenced cases are unchanged (60/60), and 3000 frames
   of `render_h40` take the same time (4.2-4.4 s) before and after.
 
+### A4. Accessories: Team Player, Sega Mouse, Menacer, Justifier (`Core/MD/Input/`)
+
+- Before: only 3- and 6-button pads; the control ports passed only TH to the device.
+- The ports now pass every pin the console drives (data and control registers, `IMdPortDevice`), and
+  the devices answer with their own pin levels. Sources, by device:
+  - Team Player (Sega Tap), "Multi" mode, four 3/6-button pads on one port: MAME
+    `src/devices/bus/sms_ctrl/teamplayer.cpp` (BSD-3-Clause; MAME says it is derived from what
+    software expects). Pads are sampled when TH falls; each TR edge gives the next nibble with TL
+    following TR: two zero nibbles, the four port IDs, then RLDU / SACB (/ MXYZ) per pad.
+  - Sega Mouse: MAME `sms_ctrl/mouse.cpp` (BSD-3) and ares `md/controller/mega-mouse` (ISC). ID
+    nibble $B, then per TR edge: two $F nibbles (movement latched on the first), sign/overflow
+    flags, buttons, X and Y as high/low nibbles; data changes 7.2 us after the edge and TL follows
+    TR 12 us after it (games poll TL).
+  - Menacer and Justifier: Eke-Eke, "Sega Genesis Lightguns" (2008; notes from disassembling the
+    gun games, untested on hardware according to the author). The gun pulls TH low when it sees the
+    beam; with bit 7 of the port's control register set, that is the VDP's HL input: a level 2
+    interrupt (register 11 bit 3) and an H/V counter latch (register 0 bit 1). Button bits and the
+    Justifier's ID probe answers are as listed there.
+- Judgment calls: the gun sees the beam at the mouse position whenever it is on screen (no
+  brightness test); TH then stays low for one line. Latency from the beam to TH: Menacer 1344
+  master clocks, chosen so that pixel 0 latches H counter $52 in H40, the Menacer 6-in-1 offset
+  (Body Count uses $48, T2 $84 without latching, so those games may be a few pixels off until
+  calibrated); Justifier 0 (Lethal Enforcers' default; Lethal Enforcers II adds $18 and offers
+  calibration). Only the blue Justifier is connected. The mouse's counts are clamped to 9 bits, so
+  its overflow flags stay clear. A mouse behind a Team Player is not supported (nor in MAME). The
+  EA 4-Way Play is not implemented: no source under a usable license was found.
+- Tests (`mise run test:md-synthetic`, cases in `tests/MD/synthetic/extra_cases.py`, input from Lua
+  scripts in `tests/MD/accessories/`): `io_teamplayer` walks the whole Team Player sequence with
+  pads 6/3/none/6 and buttons held on A, B and D; `io_mouse` reads the ID and the eight nibbles
+  after polling TL; `io_menacer_hl` and `io_justifier_hl` read the gun's pins (Justifier: both ID
+  probe answers) and the H/V counter latched through HL on line 50 ($3283 in H40, $3232 in H32).
+  All four fail with plain pads in their place, pass with the devices, and replay identically
+  across save states (`test:md-replay`). The runner's `--md-pads` takes `t:ABCD`, `m`, `g`, `j`.
+- UI: the Mega Drive input page offers the four devices, with Team Player port A-D selectors and
+  key bindings for the mouse and gun buttons; the mouse is captured for the Sega Mouse and the
+  cursor becomes a crosshair for the guns. The C# and C++ `MdConfig` layouts were compared after
+  the change (9952 bytes; sub-ports at 2016 and 5984 on both sides). Not exercised with real
+  hardware or commercial games.
+
+### D5. Lua could not read or set Mega Drive pad input (fixed)
+
+- `emu.getInput`/`emu.setInput` use a device's button-name list; the Mega Drive pad had none, so
+  both silently did nothing on the Mega Drive. The pads, mouse and guns now list their buttons
+  (`up`, `down`, `left`, `right`, `start`, `a`, `b`, `c`, `x`, `y`, `z`, `mode`; mouse and guns
+  also `x`/`y` coordinates). Found while writing the accessory tests, which depend on it.
+
+### R4. Headless runner: a Lua script's input was dropped right after `--load-state` (fixed)
+
+- Repro: `io_menacer_hl` replayed from a state saved after frame 2 read the gun's buttons as
+  released in frame 3 ($40 instead of $49); the uninterrupted run read them pressed.
+- Cause: the runner refreshes input once before the first frame, but loaded the Lua script after
+  that refresh, so the script's `inputPolled` callback did not take part and the refresh replaced
+  the restored input with none. The emulator itself does not refresh input on a state load.
+- Fix: load the script before the refresh. `test:md-replay` is 73/73 again, and the runner's
+  self-test still passes.
+
 ### D4. Mega Drive settings page
 
 - Before: no settings UI for the Mega Drive (region, model, pads, key bindings and volumes could not
