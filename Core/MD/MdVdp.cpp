@@ -193,7 +193,7 @@ void MdVdp::Run(uint64_t masterClock)
 		if(!_lineRendered && masterClock >= _lineStartClock + renderOffset) {
 			_lineRendered = true;
 			if(_state.Scanline < GetActiveLines()) {
-				RenderLine(_state.Scanline);
+				BeginLine(_state.Scanline);
 			}
 		}
 
@@ -218,8 +218,9 @@ void MdVdp::Run(uint64_t masterClock)
 		}
 
 		if(!_lineRendered && _state.Scanline < GetActiveLines()) {
-			RenderLine(_state.Scanline);
+			BeginLine(_state.Scanline);
 		}
+		FinishLine();
 		_lineStartClock = lineEnd;
 		_state.Scanline++;
 		if(_state.Scanline >= _linesPerFrame) {
@@ -397,6 +398,7 @@ void MdVdp::WriteRegister(uint8_t reg, uint8_t value)
 	if(reg >= 24) {
 		return;
 	}
+	CatchUp(_memoryManager->GetMasterClock());
 	if(!(_state.Regs[1] & 0x04) && reg > 10) {
 		//Mode 4 (SMS compatibility) only has registers 0-10
 		return;
@@ -446,6 +448,8 @@ void MdVdp::WriteData(uint16_t value)
 	uint8_t code = _state.Code;
 	if((code & 0x0F) == 0x01 || (code & 0x0F) == 0x03 || (code & 0x0F) == 0x05) {
 		PushFifo(code);
+		//The write lands when its FIFO entry reaches an access slot
+		CatchUp(_fifoLastCompletion);
 		WriteMemory(code, _state.Address, value);
 	}
 	_state.Address += _state.Regs[15];
@@ -481,6 +485,7 @@ uint32_t MdVdp::GetDmaLength()
 
 void MdVdp::RunDma68k()
 {
+	CatchUp(_memoryManager->GetMasterClock());
 	uint32_t length = GetDmaLength();
 	uint32_t source = ((_state.Regs[23] & 0x7F) << 17) | (_state.Regs[22] << 9) | (_state.Regs[21] << 1);
 	uint8_t code = _state.Code & 0x0F;
@@ -510,6 +515,7 @@ void MdVdp::RunDma68k()
 
 void MdVdp::RunDmaFill(uint16_t value)
 {
+	CatchUp(_memoryManager->GetMasterClock());
 	uint32_t length = GetDmaLength();
 	uint8_t code = _state.Code & 0x0F;
 	uint8_t fillByte = value >> 8;
@@ -539,6 +545,7 @@ void MdVdp::RunDmaFill(uint16_t value)
 
 void MdVdp::RunDmaCopy()
 {
+	CatchUp(_memoryManager->GetMasterClock());
 	uint32_t length = GetDmaLength();
 	uint16_t source = _state.Regs[21] | (_state.Regs[22] << 8);
 	for(uint32_t i = 0; i < length; i++) {
@@ -655,16 +662,69 @@ void MdVdp::RenderSprites(uint16_t line, uint8_t* spritePixels, uint8_t* spriteP
 	}
 }
 
-void MdVdp::RenderLine(uint16_t line)
+void MdVdp::BeginLine(uint16_t line)
 {
 	bool interlace2 = GetInterlaceMode() == 3;
 	uint32_t row = interlace2 ? (line * 2 + (_state.OddFrame ? 1 : 0)) : line;
 	if(row >= MaxHeight) {
 		return;
 	}
-	bool h40 = IsH40();
+	_lineActive = true;
+	_lineX = 0;
 	//Rows use the frame's width (fixed at line 0) as their stride
-	uint32_t width = std::min<uint32_t>(h40 ? 320 : 256, _frameWidth);
+	_lineWidth = (uint16_t)std::min<uint32_t>(IsH40() ? 320 : 256, _frameWidth);
+
+	//Horizontal scroll is fetched during the preceding blanking period
+	uint16_t hscrollBase = (_state.Regs[13] & 0x3F) << 10;
+	uint16_t hsEntry = 0;
+	switch(_state.Regs[11] & 0x03) {
+		case 0: hsEntry = 0; break;
+		case 1: hsEntry = (line & 0x07); break;
+		case 2: hsEntry = (line & ~0x07); break;
+		case 3: hsEntry = line; break;
+	}
+	uint16_t hsAddr = hscrollBase + hsEntry * 4;
+	_lineHScrollA = ((_vram[hsAddr & 0xFFFF] << 8) | _vram[(hsAddr + 1) & 0xFFFF]) & 0x3FF;
+	_lineHScrollB = ((_vram[(hsAddr + 2) & 0xFFFF] << 8) | _vram[(hsAddr + 3) & 0xFFFF]) & 0x3FF;
+
+	//The sprite line is evaluated before the line starts
+	memset(_lineSpritePixels, 0, sizeof(_lineSpritePixels));
+	memset(_lineSpritePriority, 0, sizeof(_lineSpritePriority));
+	if(IsDisplayEnabled() && !_emu->GetSettings()->GetMdConfig().DisableSprites) {
+		RenderSprites(line, _lineSpritePixels, _lineSpritePriority, interlace2);
+	}
+}
+
+void MdVdp::CatchUpLine(uint64_t clock)
+{
+	uint64_t activeStart = _lineStartClock + (IsH40() ? RenderOffsetH40 : RenderOffsetH32);
+	if(clock <= activeStart) {
+		return;
+	}
+	uint64_t x = (clock - activeStart) / (IsH40() ? 8 : 10);
+	RenderPixels((uint16_t)std::min<uint64_t>(x, _lineWidth));
+}
+
+void MdVdp::FinishLine()
+{
+	if(_lineActive) {
+		RenderPixels(_lineWidth);
+		_lineActive = false;
+	}
+}
+
+void MdVdp::RenderPixels(uint16_t endX)
+{
+	if(endX <= _lineX) {
+		return;
+	}
+	uint32_t startX = _lineX;
+	_lineX = endX;
+
+	uint16_t line = _state.Scanline;
+	bool interlace2 = GetInterlaceMode() == 3;
+	uint32_t row = interlace2 ? (line * 2 + (_state.OddFrame ? 1 : 0)) : line;
+	bool h40 = IsH40();
 	uint16_t* out = _currentBuffer + row * _frameWidth;
 
 	auto toPixel = [this](uint8_t colorIndex, uint8_t shade) -> uint16_t {
@@ -676,7 +736,7 @@ void MdVdp::RenderLine(uint16_t line)
 	uint8_t bgIndex = _state.Regs[7] & 0x3F;
 	if(!IsDisplayEnabled()) {
 		uint16_t bg = toPixel(bgIndex, ShadeNormal);
-		for(uint32_t x = 0; x < width; x++) {
+		for(uint32_t x = startX; x < endX; x++) {
 			out[x] = bg;
 		}
 		return;
@@ -695,17 +755,8 @@ void MdVdp::RenderLine(uint16_t line)
 		planeH = 64;
 	}
 
-	uint16_t hscrollBase = (_state.Regs[13] & 0x3F) << 10;
-	uint16_t hsEntry = 0;
-	switch(_state.Regs[11] & 0x03) {
-		case 0: hsEntry = 0; break;
-		case 1: hsEntry = (line & 0x07); break;
-		case 2: hsEntry = (line & ~0x07); break;
-		case 3: hsEntry = line; break;
-	}
-	uint16_t hsAddr = hscrollBase + hsEntry * 4;
-	uint16_t hscrollA = ((_vram[hsAddr & 0xFFFF] << 8) | _vram[(hsAddr + 1) & 0xFFFF]) & 0x3FF;
-	uint16_t hscrollB = ((_vram[(hsAddr + 2) & 0xFFFF] << 8) | _vram[(hsAddr + 3) & 0xFFFF]) & 0x3FF;
+	uint16_t hscrollA = _lineHScrollA;
+	uint16_t hscrollB = _lineHScrollB;
 
 	uint16_t planeABase = (_state.Regs[2] & 0x38) << 10;
 	uint16_t planeBBase = (_state.Regs[4] & 0x07) << 13;
@@ -719,11 +770,8 @@ void MdVdp::RenderLine(uint16_t line)
 	bool winDown = _state.Regs[18] & 0x80;
 	bool lineInWindow = winDown ? (line >= winV * 8) : (line < winV * 8);
 
-	uint8_t spritePixels[320] = {};
-	uint8_t spritePriority[320] = {};
-	if(!cfg.DisableSprites) {
-		RenderSprites(line, spritePixels, spritePriority, interlace2);
-	}
+	uint8_t* spritePixels = _lineSpritePixels;
+	uint8_t* spritePriority = _lineSpritePriority;
 
 	bool shadowHighlight = _state.Regs[12] & 0x08;
 	bool blankLeftColumn = _state.Regs[0] & 0x20;
@@ -749,7 +797,7 @@ void MdVdp::RenderLine(uint16_t line)
 		priOut = entry & 0x8000;
 	};
 
-	for(uint32_t x = 0; x < width; x++) {
+	for(uint32_t x = startX; x < endX; x++) {
 		//Vertical scroll: full screen, or per 16-pixel column
 		uint32_t column = (x >> 4) & 0x1F;
 		uint16_t vscrollA = perColumnVScroll ? _vsram[(column * 2) % 40] : _vsram[0];
@@ -860,6 +908,13 @@ void MdVdp::Serialize(Serializer& s)
 	SV(_lineStartClock);
 	SV(_z80IntEndClock);
 	SV(_lineRendered);
+	SV(_lineActive);
+	SV(_lineX);
+	SV(_lineWidth);
+	SV(_lineHScrollA);
+	SV(_lineHScrollB);
+	SVArray(_lineSpritePixels, 320);
+	SVArray(_lineSpritePriority, 320);
 	SV(_vintRaisedThisFrame);
 	SVArray(_fifo, 4);
 	SV(_fifoCount);

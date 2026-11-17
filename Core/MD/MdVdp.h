@@ -13,8 +13,12 @@ class MdMemoryManager;
 // are listed in docs/research/md-verification-findings.md):
 //  - a line is 3420 master clocks; a "line" here starts where the V counter increments and the
 //    H interrupt is raised (H counter $84 in H32, $A5 in H40);
-//  - each visible line is rendered when its active display starts, from the registers and
-//    memories at that time (line granularity);
+//  - each visible line is set up when its active display starts (horizontal scroll and the
+//    sprite line are latched there) and drawn in pixel segments: before any write that changes
+//    the picture (register, VRAM/CRAM/VSRAM, DMA) during active display, the pixels the beam has
+//    already passed are drawn with the old state, so mid-line changes (palette, scroll, display
+//    enable, background colour) split the line at the beam position. Pixel clock: MCLK/10 in
+//    H32, MCLK/8 in H40 (Sega Genesis Software Manual, VDP clocks);
 //  - CPU writes go through a 4-entry FIFO drained at the external access slots of each line
 //    (16/18 per active line in H32/H40, 167/205 per blank line); a VRAM word uses two slots,
 //    CRAM/VSRAM words one. A write into a full FIFO stalls the 68000 until a slot frees it.
@@ -49,6 +53,15 @@ private:
 	uint64_t _lineStartClock = 0;
 	uint64_t _z80IntEndClock = 0;
 	bool _lineRendered = false;
+
+	//The line being drawn (see BeginLine/RenderPixels): pixels [0, _lineX) are already output
+	bool _lineActive = false;
+	uint16_t _lineX = 0;
+	uint16_t _lineWidth = 0;
+	uint16_t _lineHScrollA = 0;
+	uint16_t _lineHScrollB = 0;
+	uint8_t _lineSpritePixels[320] = {};
+	uint8_t _lineSpritePriority[320] = {};
 	bool _vintRaisedThisFrame = false;
 
 	//FIFO completion times, oldest first
@@ -86,7 +99,17 @@ private:
 	void RetireFifo(uint64_t clock);
 
 	void ProcessLineStart();
-	void RenderLine(uint16_t line);
+	void BeginLine(uint16_t line);
+	void RenderPixels(uint16_t endX);
+	void FinishLine();
+	//Draws the current line up to the beam position at `clock`, before a write changes the picture
+	__forceinline void CatchUp(uint64_t clock)
+	{
+		if(_lineActive) {
+			CatchUpLine(clock);
+		}
+	}
+	void CatchUpLine(uint64_t clock);
 	void RenderSprites(uint16_t line, uint8_t* spritePixels, uint8_t* spritePriority, bool interlace2);
 	void EndFrame();
 

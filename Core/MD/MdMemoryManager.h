@@ -12,6 +12,7 @@ class MdZ80;
 class MdVdp;
 class MdApu;
 class MdControlManager;
+class MdEepromDevice;
 
 // The Mega Drive bus (Sega Genesis Software Manual: memory map, system I/O, Z80 control):
 //
@@ -48,6 +49,21 @@ private:
 	{
 		return _hasBankMapper ? (((uint32_t)_romBank[(addr >> 19) & 0x07] << 19) | (addr & 0x7FFFF)) : addr;
 	}
+	//Serial EEPROM saves (MdEeprom.h): the chip, and where its lines sit on the cartridge bus
+	unique_ptr<MdEepromDevice> _eeprom;
+	uint32_t _eepromReadAddr = 0xFFFFFFFF;
+	uint8_t _eepromReadBit = 0;
+	uint32_t _eepromSdaAddr = 0;
+	uint8_t _eepromSdaBit = 0;
+	uint32_t _eepromSclAddr = 0;
+	uint8_t _eepromSclBit = 0;
+	bool _eepromScl = true;
+	bool _eepromSda = true;
+	//Set when the cartridge has battery RAM or an EEPROM, so ROM reads take one branch otherwise
+	bool _hasCartSave = false;
+	void InitEeprom(vector<uint8_t>& romData);
+	void WriteEeprom(uint32_t addr, uint8_t value);
+
 	uint8_t* _workRam = nullptr;
 	uint8_t* _z80Ram = nullptr;
 	uint8_t* _saveRam = nullptr;
@@ -146,6 +162,7 @@ public:
 	int32_t GetZ80RelativeAddress(AddressInfo& absAddress);
 
 	uint8_t* GetSaveRam() { return _saveRam; }
+	MdEepromDevice* GetEeprom() { return _eeprom.get(); }
 	uint32_t GetSaveRamSize() { return _saveRamSize; }
 
 	void Serialize(Serializer& s) override;

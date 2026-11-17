@@ -6,6 +6,7 @@
 #include "MD/MdVdp.h"
 #include "MD/MdApu.h"
 #include "MD/MdMemoryManager.h"
+#include "MD/MdEeprom.h"
 #include "MD/MdControlManager.h"
 #include "MD/MdDefaultVideoFilter.h"
 #include "Shared/Emulator.h"
@@ -147,6 +148,10 @@ void MdConsole::SaveBattery()
 {
 	if(_memoryManager && _memoryManager->GetSaveRamSize()) {
 		_emu->GetBatteryManager()->SaveBattery(".srm", _memoryManager->GetSaveRam(), _memoryManager->GetSaveRamSize());
+	}
+	if(_memoryManager && _memoryManager->GetEeprom()) {
+		MdEepromDevice* eeprom = _memoryManager->GetEeprom();
+		_emu->GetBatteryManager()->SaveBattery(".eep", eeprom->GetMemory(), eeprom->GetSize());
 	}
 }
 

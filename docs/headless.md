@@ -15,6 +15,7 @@ mesen-headless run --rom ROM --frames N --out NEW_DIR [--input INPUT.json] [--lu
                    [--trace bus] [--trace-limit EVENTS] [--chip-audio]     # Mega Drive only
                    [--md-model md1va3|md1va6] [--md-pads 6,6]              # Mega Drive only
                    [--md-fm-core ymfm|nuked]                               # Mega Drive only
+                   [--md-eeprom CHIP,BOARD]   # Mega Drive test hook, e.g. X24C01,Sega
 mesen-headless validate OUT_DIR
 mesen-headless doctor
 mesen-headless nnes-compat ROM HOME LUA RESULT WAV   # nativekit NES capture host contract

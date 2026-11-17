@@ -9,6 +9,8 @@
 #include "Shared/Emulator.h"
 #include "Shared/EmuSettings.h"
 #include "Shared/BatteryManager.h"
+#include "MD/MdEeprom.h"
+#include "Utilities/Sha256.h"
 #include "Shared/CheatManager.h"
 #include "Shared/MemoryType.h"
 #include "Utilities/Serializer.h"
@@ -38,6 +40,7 @@ void MdMemoryManager::Init(Emulator* emu, MdConsole* console, vector<uint8_t>& r
 	_hasTmss = hasTmss;
 
 	_rom = romData;
+	InitEeprom(romData);
 	_hasBankMapper = romData.size() > 0x400000 || (romData.size() > 0x110 && memcmp(&romData[0x100], "SEGA SSF", 8) == 0);
 	uint32_t size = 1;
 	while(size < _rom.size()) {
@@ -74,12 +77,15 @@ void MdMemoryManager::Init(Emulator* emu, MdConsole* console, vector<uint8_t>& r
 		//Battery RAM above the ROM is enabled at power-on; RAM overlapping the ROM needs $A130F1.
 		_state.SramEnabled = _saveRamStart >= _rom.size();
 	}
+	_hasCartSave = _saveRam || _eeprom;
 
 	_emu->RegisterMemory(MemoryType::MdPrgRom, _rom.data(), (uint32_t)_rom.size());
 	_emu->RegisterMemory(MemoryType::MdWorkRam, _workRam, 0x10000);
 	_emu->RegisterMemory(MemoryType::MdZ80Ram, _z80Ram, 0x2000);
 	if(_saveRam) {
 		_emu->RegisterMemory(MemoryType::MdSaveRam, _saveRam, _saveRamSize);
+	} else if(_eeprom) {
+		_emu->RegisterMemory(MemoryType::MdSaveRam, _eeprom->GetMemory(), _eeprom->GetSize());
 	}
 
 	_state.Z80Reset = true;
@@ -137,10 +143,73 @@ void MdMemoryManager::TraceDevice(uint64_t clock, MdBusDevice device, MdBusOp op
 	}
 }
 
+void MdMemoryManager::InitEeprom(vector<uint8_t>& romData)
+{
+	MdEepromInfo info = MdEepromDatabase::Find(Sha256::Of(romData.data(), romData.size()));
+	if(info.Chip == MdEepromChip::None || info.Board == MdEepromBoard::None) {
+		return;
+	}
+
+	//Board wiring: MAME, src/devices/bus/megadrive/eeprom.cpp and jcart.cpp (see MdEeprom.h)
+	switch(info.Board) {
+		default:
+		case MdEepromBoard::Sega:
+			_eepromSdaAddr = _eepromSclAddr = _eepromReadAddr = 0x200001;
+			_eepromSdaBit = _eepromReadBit = 0;
+			_eepromSclBit = 1;
+			break;
+		case MdEepromBoard::Ea:
+			_eepromSdaAddr = _eepromSclAddr = _eepromReadAddr = 0x200001;
+			_eepromSdaBit = _eepromReadBit = 7;
+			_eepromSclBit = 6;
+			break;
+		case MdEepromBoard::Acclaim16:
+			_eepromSdaAddr = _eepromSclAddr = _eepromReadAddr = 0x200001;
+			_eepromSdaBit = 0;
+			_eepromSclBit = 1;
+			_eepromReadBit = 1;
+			break;
+		case MdEepromBoard::Acclaim32:
+			_eepromSdaAddr = _eepromReadAddr = 0x200001;
+			_eepromSclAddr = 0x200000;
+			_eepromSdaBit = _eepromSclBit = _eepromReadBit = 0;
+			break;
+		case MdEepromBoard::Codemasters:
+			_eepromSdaAddr = _eepromSclAddr = 0x300000;
+			_eepromSdaBit = 0;
+			_eepromSclBit = 1;
+			_eepromReadAddr = 0x380001;
+			_eepromReadBit = 7;
+			break;
+	}
+
+	_eeprom.reset(new MdEepromDevice(info.Chip));
+	_emu->GetBatteryManager()->LoadBattery(".eep", _eeprom->GetMemory(), _eeprom->GetSize());
+}
+
+void MdMemoryManager::WriteEeprom(uint32_t addr, uint8_t value)
+{
+	if(addr == _eepromSclAddr) {
+		_eepromScl = (value >> _eepromSclBit) & 0x01;
+	}
+	if(addr == _eepromSdaAddr) {
+		_eepromSda = (value >> _eepromSdaBit) & 0x01;
+	}
+	if(addr == _eepromSclAddr || addr == _eepromSdaAddr) {
+		_eeprom->SetLines(_eepromScl, _eepromSda);
+	}
+}
+
 uint8_t MdMemoryManager::ReadCartByte(uint32_t addr)
 {
-	if(_saveRam && _state.SramEnabled && IsSaveRamAddress(addr)) {
-		return ReadSaveRam(addr);
+	if(_hasCartSave) [[unlikely]] {
+		if(_eeprom && addr == _eepromReadAddr) {
+			//Only the SDA bit is driven (MAME returns the other bits as 0)
+			return (_eeprom->ReadSda() ? 1 : 0) << _eepromReadBit;
+		}
+		if(_saveRam && _state.SramEnabled && IsSaveRamAddress(addr)) {
+			return ReadSaveRam(addr);
+		}
 	}
 	return _rom[MapRom(addr) & _romMask];
 }
@@ -236,6 +305,14 @@ void MdMemoryManager::M68kWrite(bool upper, bool lower, uint32_t addr, uint16_t 
 	switch(addr >> 21) {
 		case 0:
 		case 1:
+			if(_eeprom) {
+				if(upper) {
+					WriteEeprom(addr, value >> 8);
+				}
+				if(lower) {
+					WriteEeprom(addr | 1, (uint8_t)value);
+				}
+			}
 			if(_saveRam && _state.SramEnabled) {
 				if(upper && IsSaveRamAddress(addr)) {
 					WriteSaveRam(addr, value >> 8);
@@ -707,4 +784,9 @@ void MdMemoryManager::Serialize(Serializer& s)
 	SVArray(_state.Io.Data, 3);
 	SVArray(_state.Io.Ctrl, 3);
 	SVArray(_state.Io.Serial, 3);
+	if(_eeprom) {
+		SV(_eepromScl);
+		SV(_eepromSda);
+		SV(_eeprom);
+	}
 }

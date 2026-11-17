@@ -150,7 +150,7 @@ def run_case(runner, rom, spec, work):
     #and every case ends in an idle loop, so the reads and the final picture are unaffected.
     cmd = [str(runner), "run", "--rom", str(rom), "--frames", str(spec["frames"] + 2), "--out", str(out),
            "--trace", "bus", "--region", REGIONS[spec["region"]], "--md-model", spec["model"],
-           "--md-pads", "%s,%s" % (spec["pad1"], spec["pad2"]), "--allow-dirty", "--md-fm-core", FM_CORE]
+           "--md-pads", "%s,%s" % (spec["pad1"], spec["pad2"]), "--allow-dirty", "--md-fm-core", FM_CORE] + spec.get("runner_args", [])
     if spec["input"]["frames"]:
         inp = work / (spec["name"] + ".input.json")
         inp.write_text(json.dumps(spec["input"]))

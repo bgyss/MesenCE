@@ -20,7 +20,7 @@ REGIONS = {"U": "ntsc", "J": "ntsc-j", "E": "pal"}
 
 def run(runner, rom, spec, out, frames, extra):
     cmd = [str(runner), "run", "--rom", str(rom), "--frames", str(frames), "--out", str(out), "--region", REGIONS[spec["region"]],
-           "--md-model", spec["model"], "--md-pads", "%s,%s" % (spec["pad1"], spec["pad2"]), "--chip-audio", "--allow-dirty", "--md-fm-core", FM_CORE] + extra
+           "--md-model", spec["model"], "--md-pads", "%s,%s" % (spec["pad1"], spec["pad2"]), "--chip-audio", "--allow-dirty", "--md-fm-core", FM_CORE] + spec.get("runner_args", []) + extra
     if spec["input"]["frames"]:
         #Scripted pad input; frame numbers are absolute, so they continue across a state load
         inp = out.parent / (out.name + ".input.json")

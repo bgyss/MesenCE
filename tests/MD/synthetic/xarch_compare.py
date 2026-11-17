@@ -21,7 +21,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 def run(runner, rom, spec, out, frames, extra):
     cmd = [str(runner), "run", "--rom", str(rom), "--frames", str(frames), "--out", str(out), "--region", REGIONS[spec["region"]],
            "--md-model", spec["model"], "--md-pads", "%s,%s" % (spec["pad1"], spec["pad2"]), "--trace", "bus", "--chip-audio",
-           "--allow-dirty"] + extra
+           "--allow-dirty"] + spec.get("runner_args", []) + extra
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode:
         raise RuntimeError("%s: %s" % (runner, r.stderr[-300:]))

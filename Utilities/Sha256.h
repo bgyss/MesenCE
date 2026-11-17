@@ -1,5 +1,7 @@
 #pragma once
-// Minimal SHA-256 (FIPS 180-4) for artifact provenance in the headless runner.
+// Minimal SHA-256 (FIPS 180-4): artifact provenance in the headless runner, and cartridge
+// identification in databases keyed by SHA-256 (the Mega Drive EEPROM table).
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <string>

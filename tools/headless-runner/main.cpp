@@ -48,8 +48,9 @@
 #include "Utilities/magic_enum.hpp"
 #include "MD/MdConsole.h"
 #include "MD/MdApu.h"
+#include "MD/MdEeprom.h"
 #include "Shared/BaseControlManager.h"
-#include "sha256.h"
+#include "Utilities/Sha256.h"
 
 #ifndef MESEN_GIT_COMMIT
 	#define MESEN_GIT_COMMIT "unknown"
@@ -345,6 +346,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 	bool chipAudio = false;
 	string mdPads = "6,6";
 	string mdFmCore = "ymfm";
+	string mdEeprom;
 	uint32_t frames = 0;
 	double timeout = 0;
 	bool allowDirty = false;
@@ -381,6 +383,8 @@ static int Run(const vector<string>& args, const string& commandLine)
 			mdPads = next();
 		} else if(args[i] == "--md-fm-core") {
 			mdFmCore = next();
+		} else if(args[i] == "--md-eeprom") {
+			mdEeprom = next();
 		} else if(args[i] == "--trace-limit") {
 			traceLimit = std::stoull(next());
 		} else if(args[i] == "--allow-dirty") {
@@ -463,6 +467,18 @@ static int Run(const vector<string>& args, const string& commandLine)
 			md.Port1.Type = mdPads[0] == '3' ? ControllerType::MdController3Buttons : ControllerType::MdController6Buttons;
 			md.Port2.Type = mdPads[2] == '3' ? ControllerType::MdController3Buttons : ControllerType::MdController6Buttons;
 		}
+		//Test hook: force an EEPROM chip and board (the database is keyed by commercial ROM hashes)
+		MdEepromInfo eepromInfo = {};
+		if(!mdEeprom.empty()) {
+			size_t comma = mdEeprom.find(',');
+			auto chip = magic_enum::enum_cast<MdEepromChip>(mdEeprom.substr(0, comma));
+			auto board = comma == string::npos ? std::nullopt : magic_enum::enum_cast<MdEepromBoard>(mdEeprom.substr(comma + 1));
+			if(!chip || !board || *chip == MdEepromChip::None || *board == MdEepromBoard::None) {
+				throw std::runtime_error("--md-eeprom takes CHIP,BOARD, e.g. X24C01,Sega");
+			}
+			eepromInfo = { *chip, *board };
+		}
+		MdEepromDatabase::SetOverride(eepromInfo);
 		MessageManager::SetOptions(false, false);
 		emu.Initialize(false);
 		if(!emu.LoadRom(VirtualFile(fs::absolute(rom).string()), VirtualFile(), false)) {
@@ -483,6 +499,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 			{ "md_model", mdModel },
 			{ "md_pads", mdPads },
 			{ "md_fm_core", mdFmCore },
+			{ "md_eeprom", mdEeprom.empty() ? "database" : mdEeprom },
 			{ "audio_sample_rate", emu.GetSettings()->GetAudioConfig().SampleRate },
 			{ "dynamic_sample_rate", false }
 		};

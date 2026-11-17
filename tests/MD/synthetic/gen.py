@@ -251,7 +251,12 @@ def run_spec(case):
     return {"name": case.name, "frames": case.capture_frames, "region": case.region,
             "model": case.model, "pad1": case.pad1, "pad2": case.pad2,
             "input": {"frames": script}, "capture": capture,
-            "weave_fields": case.weave_fields}
+            "weave_fields": case.weave_fields,
+            "runner_args": RUNNER_ARGS.get(case.name, [])}
+
+
+#Extra mesen-headless options per case (e.g. --md-eeprom), filled from extra_cases.RUNNER_ARGS
+RUNNER_ARGS = {}
 
 
 def check_vasm(vasm):
@@ -282,6 +287,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     import extra_cases  # MesenCE's own cases (no BlastEm reference)
     all_cases = cases.all_cases() + extra_cases.all_cases()
+    RUNNER_ARGS.update(extra_cases.RUNNER_ARGS)
     for case in all_cases:
         (out / (case.name + ".md")).write_bytes(build(case))
         (out / (case.name + ".json")).write_text(json.dumps(run_spec(case), indent=1) + "\n")

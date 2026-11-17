@@ -450,6 +450,59 @@ pulse covers exactly one envelope step. (Earlier KNOWN texts said "well under on
   byte write to $A130FF, then bank 8 after a word write to $A130FE; window 0 still reads the header.
   Passes, and replays identically across a save state.
 
+### B4. Serial EEPROM saves (`Core/MD/MdEeprom.{h,cpp}`)
+
+- Before: games that save to an I2C EEPROM (NBA Jam, NHLPA '93, Wonder Boy in Monster World, Mega
+  Man: The Wily Wars, Micro Machines 2, ...) could not save; reads of the EEPROM returned ROM
+  padding ($FF), so the games saw no EEPROM.
+- Sources, by kind:
+  - chip protocol: the Xicor X24C01 and Atmel/ST 24C01-24C65 datasheets (START/STOP, ACK on the
+    9th clock, sequential reads, page writes wrapping inside the page; page sizes 4, 8, 16 or 32
+    bytes);
+  - board wiring (address and data bit of SDA in, SDA out, SCL): MAME
+    `src/devices/bus/megadrive/eeprom.cpp` and `jcart.cpp` (BSD-3-Clause), whose table credits
+    Eke-Eke's notes; Codemasters' wiring is marked as not fully confirmed there;
+  - which games use which chip and board: ares' database (`mia/medium/mega-drive.cpp`, ISC),
+    35 ROM hashes. The header does not describe EEPROM saves (a SpritesMind thread on Rockman Mega
+    World: SRAM and EEPROM releases share a product ID), so there is no header detection. Genesis
+    Plus GX's table was not used (non-commercial license).
+- Judgment calls: NBA Jam's chip is a 24C02 with the standard device + address protocol (MAME) where
+  ares names it "X24C02"; the EEPROM read address returns only the SDA bit, other bits 0 (as MAME);
+  writes take effect immediately (no write-cycle busy time).
+- Saves go to `<rom>.eep` through the battery manager, like `.srm`; the EEPROM is also in save
+  states and shown as the save RAM memory type in the debugger.
+- Tests: five MesenCE cases in `tests/MD/synthetic/extra_cases.py` (`mise run test:md-synthetic`),
+  one per board (Sega and EA X24C01, Acclaim 16M 24C02, Acclaim 32M 24C04, Codemasters 24C65). Each
+  bit-bangs I2C through the 68000: an erased cell reads $FF, page writes wrap (X24C01 4-byte and
+  24C02 8-byte pages), the device block bits select 256-byte blocks (24C04), and 16-bit addresses
+  work (24C65). The runner's `--md-eeprom CHIP,BOARD` test hook selects the board because the
+  database is keyed by commercial ROM hashes. All pass; without the EEPROM the same cases fail
+  (reads return $FF). The cases also replay identically across save states (`test:md-replay`).
+- Not covered by automation: the hash lookup on real cartridges (no commercial ROMs in the repo),
+  and the `.eep` file round trip (the headless runner never writes save files by design). SHA-256
+  is shared with the runner (`Utilities/Sha256.h`) and matches `shasum -a 256`.
+
+### V3. Mid-line rendering (`Core/MD/MdVdp.cpp`)
+
+- Before: each line was drawn in one go when its active display started, so a change made during
+  the line (an H-interrupt handler or a CPU loop writing CRAM, VSRAM, VRAM or a register while the
+  beam is in the middle of the line) applied to the whole line, or to none of it.
+- Now: the line is set up at the start of active display (horizontal scroll and the sprite line
+  are latched there) and drawn in segments. Before a register write, a VDP data-port write (at the
+  time its FIFO entry reaches an access slot), or a DMA, the pixels the beam has passed are drawn
+  with the old state. Beam position: the active display starts at the existing render offset, at
+  MCLK/10 per pixel in H32 and MCLK/8 in H40 (Sega Genesis Software Manual).
+- Test: `vdp_midline_cram_h32/h40` (`tests/MD/midline/check_midline.py`, in
+  `mise run test:md-synthetic`): every frame, the background colour is set to red in the middle of
+  line 100 and back to black in the middle of line 200. Passes with one black-to-red and one
+  red-to-black transition (H32 at x=156, H40 at x=193, rows 102 and 202). The build before this
+  change fails the same check (no line contains two colours). The column itself is not asserted:
+  there is no hardware or reference capture for it.
+- Not modelled: the "CRAM dot" (a write during active display shows the written colour for one
+  pixel); DMA still writes its whole transfer at once; a change of H32/H40 or of the interlace mode
+  in the middle of a line. The 60 BlastEm-referenced cases are unchanged (60/60), and 3000 frames
+  of `render_h40` take the same time (4.2-4.4 s) before and after.
+
 ### D4. Mega Drive settings page
 
 - Before: no settings UI for the Mega Drive (region, model, pads, key bindings and volumes could not

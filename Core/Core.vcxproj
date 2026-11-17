@@ -131,6 +131,7 @@
     <ClInclude Include="MD\MdApu.h" />
     <ClInclude Include="MD\MdConsole.h" />
     <ClInclude Include="MD\MdControlManager.h" />
+    <ClInclude Include="MD\MdEeprom.h" />
     <ClInclude Include="MD\MdDefaultVideoFilter.h" />
     <ClInclude Include="MD\MdM68k.h" />
     <ClInclude Include="MD\MdMemoryManager.h" />
@@ -992,6 +993,7 @@
     <ClCompile Include="MD\MdApu.cpp" />
     <ClCompile Include="MD\MdConsole.cpp" />
     <ClCompile Include="MD\MdControlManager.cpp" />
+    <ClCompile Include="MD\MdEeprom.cpp" />
     <ClCompile Include="MD\MdM68k.cpp" />
     <ClCompile Include="MD\MdMemoryManager.cpp" />
     <ClCompile Include="MD\MdVdp.cpp" />
