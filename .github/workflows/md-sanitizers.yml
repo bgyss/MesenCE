@@ -12,6 +12,7 @@ on:
       - 'tests/MD/**'
       - 'tools/m68k-cpu-singlestep/**'
       - '.github/workflows/md-sanitizers.yml'
+      - '.github/sanitizers/**'
 
 jobs:
   md-sanitizers:
