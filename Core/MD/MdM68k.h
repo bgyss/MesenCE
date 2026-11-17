@@ -35,8 +35,8 @@ public:
 
 	void Idle(uint32_t clocks) override;
 	void Wait(uint32_t clocks) override;
-	uint16_t BusRead(bool upper, bool lower, uint32_t address, M68kAccess access) override;
-	void BusWrite(bool upper, bool lower, uint32_t address, uint16_t data, M68kAccess access) override;
+	uint16_t BusRead(bool upper, bool lower, uint32_t address, M68kAccess accessType) override;
+	void BusWrite(bool upper, bool lower, uint32_t address, uint16_t data, M68kAccess accessType) override;
 	uint16_t Peek(uint32_t address) override;
 	uint32_t AcknowledgeInterrupt(uint8_t level) override;
 	void OnInstructionStart() override;

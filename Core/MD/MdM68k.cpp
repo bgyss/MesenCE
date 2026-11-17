@@ -40,16 +40,16 @@ void MdM68k::Wait(uint32_t clocks)
 	_memoryManager->AdvanceM68k(clocks);
 }
 
-uint16_t MdM68k::BusRead(bool upper, bool lower, uint32_t address, M68kAccess access)
+uint16_t MdM68k::BusRead(bool upper, bool lower, uint32_t address, M68kAccess accessType)
 {
-	uint16_t value = _memoryManager->M68kRead(upper, lower, address, access);
+	uint16_t value = _memoryManager->M68kRead(upper, lower, address, accessType);
 	if(_console->HasBusObserver()) {
 		uint8_t width = (upper && lower) ? 2 : 1;
 		uint32_t addr = (address & 0xFFFFFE) | (upper ? 0 : 1);
 		uint32_t v = width == 2 ? value : (upper ? (value >> 8) : (value & 0xFF));
-		_console->NotifyBus({ _memoryManager->GetMasterClock(), MdBusDevice::M68k, access == M68kAccess::Program ? MdBusOp::Fetch : MdBusOp::Read, width, addr, v });
+		_console->NotifyBus({ _memoryManager->GetMasterClock(), MdBusDevice::M68k, accessType == M68kAccess::Program ? MdBusOp::Fetch : MdBusOp::Read, width, addr, v });
 	}
-	MemoryOperationType opType = access == M68kAccess::Program ? MemoryOperationType::ExecOperand : MemoryOperationType::Read;
+	MemoryOperationType opType = accessType == M68kAccess::Program ? MemoryOperationType::ExecOperand : MemoryOperationType::Read;
 	if(upper && lower) {
 		_emu->ProcessMemoryRead<CpuType::MdM68k, 2>(address & 0xFFFFFE, value, opType);
 	} else {
@@ -59,7 +59,7 @@ uint16_t MdM68k::BusRead(bool upper, bool lower, uint32_t address, M68kAccess ac
 	return value;
 }
 
-void MdM68k::BusWrite(bool upper, bool lower, uint32_t address, uint16_t data, M68kAccess access)
+void MdM68k::BusWrite(bool upper, bool lower, uint32_t address, uint16_t data, M68kAccess accessType)
 {
 	if(upper && lower) {
 		if(!_emu->ProcessMemoryWrite<CpuType::MdM68k, 2>(address & 0xFFFFFE, data, MemoryOperationType::Write)) {
@@ -78,7 +78,7 @@ void MdM68k::BusWrite(bool upper, bool lower, uint32_t address, uint16_t data, M
 		uint32_t v = width == 2 ? data : (upper ? (data >> 8) : (data & 0xFF));
 		_console->NotifyBus({ _memoryManager->GetMasterClock(), MdBusDevice::M68k, MdBusOp::Write, width, addr, v });
 	}
-	_memoryManager->M68kWrite(upper, lower, address, data, access);
+	_memoryManager->M68kWrite(upper, lower, address, data, accessType);
 }
 
 uint16_t MdM68k::Peek(uint32_t address)
@@ -154,48 +154,48 @@ void MdM68k::SetState(MdM68kState& state)
 
 void MdM68k::Serialize(Serializer& s)
 {
-	ares::M68000::Registers& r = RawState();
+	ares::M68000::Registers& reg = RawState();
 	for(int i = 0; i < 8; i++) {
-		uint32_t d = r.d[i];
-		uint32_t a = r.a[i];
+		uint32_t d = reg.d[i];
+		uint32_t a = reg.a[i];
 		SVI(d);
 		SVI(a);
 		if(!s.IsSaving()) {
-			r.d[i] = d;
-			r.a[i] = a;
+			reg.d[i] = d;
+			reg.a[i] = a;
 		}
 	}
-	uint32_t sp = r.sp;
-	uint32_t pc = r.pc;
-	uint8_t mask = r.i;
-	uint16_t irc = r.irc;
-	uint16_t ir = r.ir;
-	uint16_t ird = r.ird;
+	uint32_t sp = reg.sp;
+	uint32_t pc = reg.pc;
+	uint8_t mask = reg.i;
+	uint16_t irc = reg.irc;
+	uint16_t ir = reg.ir;
+	uint16_t ird = reg.ird;
 	SV(sp);
 	SV(pc);
-	SV(r.c);
-	SV(r.v);
-	SV(r.z);
-	SV(r.n);
-	SV(r.x);
+	SV(reg.c);
+	SV(reg.v);
+	SV(reg.z);
+	SV(reg.n);
+	SV(reg.x);
 	SV(mask);
-	SV(r.s);
-	SV(r.t);
+	SV(reg.s);
+	SV(reg.t);
 	SV(irc);
 	SV(ir);
 	SV(ird);
-	SV(r.stop);
-	SV(r.reset);
+	SV(reg.stop);
+	SV(reg.reset);
 	SV(RawIrqLevel());
 	SV(RawNmiPending());
 	SV(RawHalted());
 	SV(_cycleCount);
 	if(!s.IsSaving()) {
-		r.sp = sp;
-		r.pc = pc;
-		r.i = mask;
-		r.irc = irc;
-		r.ir = ir;
-		r.ird = ird;
+		reg.sp = sp;
+		reg.pc = pc;
+		reg.i = mask;
+		reg.irc = irc;
+		reg.ir = ir;
+		reg.ird = ird;
 	}
 }
