@@ -70,6 +70,11 @@ namespace Mesen.Controls
 			NavigateTo(ConfigWindowTab.Ws);
 		}
 
+		private void OnClickMd(object sender, RoutedEventArgs e)
+		{
+			NavigateTo(ConfigWindowTab.Md);
+		}
+
 		private void NavigateTo(ConfigWindowTab console)
 		{
 			if(this.GetWindow()?.DataContext is ConfigViewModel cfg) {
@@ -149,6 +154,17 @@ namespace Mesen.Controls
 								ConfigType.Emulation => WsConfigTab.Emulation,
 								ConfigType.Input => WsConfigTab.Input,
 								_ or ConfigType.Video => WsConfigTab.Video,
+							};
+						}
+						break;
+
+					case ConfigWindowTab.Md:
+						if(cfg.Md != null) {
+							cfg.Md.SelectedTab = ConfigType switch {
+								ConfigType.Audio => MdConfigTab.Audio,
+								ConfigType.Emulation => MdConfigTab.General,
+								ConfigType.Input => MdConfigTab.Input,
+								_ or ConfigType.Video => MdConfigTab.Video,
 							};
 						}
 						break;

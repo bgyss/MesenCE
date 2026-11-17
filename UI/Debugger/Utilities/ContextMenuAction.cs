@@ -678,6 +678,8 @@ namespace Mesen.Debugger.Utilities
 		Sms,
 		[IconFile("WsIcon")]
 		Ws,
+		[IconFile("MdIcon")]
+		Md,
 		[IconFile("Drive")]
 		OtherConsoles,
 		[IconFile("MediaPause")]
