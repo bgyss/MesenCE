@@ -1,0 +1,9 @@
+# Reviewed differences from the BlastEm reference: <case> <reason>. Each is a reference
+# disagreement, not a hardware-verified fact; see docs/research/md-verification-findings.md (S3).
+sprite_collision_status VDP status bits 15-10 are open bus. MesenCE returns the 68000's prefetched word (the last word on the bus before the VDP read, as Genesis Plus GX does: m68k_read_bus_16(pc)); BlastEm returns the current opcode. Bits 9-0 match.
+sprite_overflow_status_h32 Same open-bus difference in VDP status bits 15-10; bits 9-0 (overflow, VBlank, FIFO) match.
+sprite_overflow_status_h40 Same open-bus difference in VDP status bits 15-10; bits 9-0 match.
+sprite_overflow_status_reread_h32 Same open-bus difference in VDP status bits 15-10; bits 9-0, including the flag cleared by the first read, match.
+vdp_port_timing First status read right after reset: open-bus bits 15-10 differ as above, and the H blank bit depends on the VDP's position at power-on, which neither emulator models from hardware data.
+sound_ym_ports YM2612 busy flag after a data write: ymfm holds it for 32 x 6 YM clocks (1344 master clocks); BlastEm keeps it set ~900 master clocks longer. Port 0 (read while busy) matches, ports 1-3 read later differ. No hardware measurement available here.
+sound_ym_envelope_key_on_off The display is off, so the VBlank poll ends at once and key-off follows key-on within a few microseconds (well under one YM2612 sample). ymfm starts the attack at the key-on write and then releases (audible decay); BlastEm produces no note. How the chip treats a sub-sample key-on pulse is not established here (hardware-unverified).

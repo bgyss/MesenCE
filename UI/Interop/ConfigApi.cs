@@ -107,6 +107,8 @@ namespace Mesen.Interop
 		SmsDebuggerEnabled = (1 << 10),
 		GbaDebuggerEnabled = (1 << 11),
 		WsDebuggerEnabled = (1 << 12),
+		MdM68kDebuggerEnabled = (1 << 13),
+		MdZ80DebuggerEnabled = (1 << 14),
 	}
 
 	public struct InteropShortcutKeyInfo

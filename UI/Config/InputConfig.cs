@@ -416,6 +416,10 @@ namespace Mesen.Config
 		WsController,
 		WsControllerVertical,
 		Pcv2Controller,
+
+		//Mega Drive
+		MdController3Buttons,
+		MdController6Buttons,
 	}
 
 	public static class ControllerTypeExtensions

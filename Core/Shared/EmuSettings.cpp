@@ -36,6 +36,7 @@ void EmuSettings::CopySettings(EmuSettings& src)
 	SetSmsConfig(src._sms);
 	SetGbaConfig(src._gba);
 	SetWsConfig(src._ws);
+	SetMdConfig(src._md);
 
 	_shader = src._shader;
 }
@@ -155,6 +156,14 @@ void EmuSettings::Serialize(Serializer& s)
 		case ConsoleType::Ws:
 			SV(_ws.Model);
 			SV(_ws.UseBootRom);
+			break;
+
+		case ConsoleType::Md:
+			SV(_md.Port1.Type);
+			SV(_md.Port2.Type);
+			SV(_md.Region);
+			SV(_md.Model);
+			SV(_md.RamPowerOnState);
 			break;
 
 		default:
@@ -342,6 +351,16 @@ WsConfig& EmuSettings::GetWsConfig()
 	return _ws;
 }
 
+void EmuSettings::SetMdConfig(MdConfig& config)
+{
+	_md = config;
+}
+
+MdConfig& EmuSettings::GetMdConfig()
+{
+	return _md;
+}
+
 void EmuSettings::SetGameConfig(GameConfig& config)
 {
 	_game = config;
@@ -504,6 +523,7 @@ OverscanDimensions EmuSettings::GetOverscan()
 		case ConsoleType::Gameboy:
 		case ConsoleType::Gba:
 		case ConsoleType::Ws:
+		case ConsoleType::Md:
 			break;
 	}
 

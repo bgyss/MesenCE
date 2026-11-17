@@ -70,6 +70,11 @@ extern "C"
 		_emu->GetSettings()->SetCvConfig(config);
 	}
 
+	DllExport void __stdcall SetMdConfig(MdConfig config)
+	{
+		_emu->GetSettings()->SetMdConfig(config);
+	}
+
 	DllExport void __stdcall SetWsConfig(WsConfig config)
 	{
 		_emu->GetSettings()->SetWsConfig(config);

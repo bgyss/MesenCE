@@ -439,3 +439,31 @@ run = "make -j$(getconf _NPROCESSORS_ONLN) headless"
 description = "Self-test the headless runner: determinism, validation, Lua input/error handling, timeout, nativekit host contract"
 depends = ["headless", "build:test-roms"]
 run = "tools/headless-runner/selftest.sh"
+
+[tasks."test:md-synthetic"]
+description = "Mega Drive: build the 60 synthetic cartridges and compare MesenCE (reads, frames) with the recorded BlastEm reference"
+depends = ["headless"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python3 tests/MD/synthetic/gen.py bin/md-synthetic
+python3 tests/MD/synthetic/compare.py bin/md-synthetic "$@"
+python3 tests/MD/synthetic/audio_compare.py bin/md-synthetic
+'''
+
+[tasks."test:md-replay"]
+description = "Mega Drive: save-state replay equality (bus trace, picture, memories) on the 60 synthetic cartridges, plus the state round trip"
+depends = ["headless", "core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python3 tests/MD/synthetic/gen.py bin/md-synthetic
+python3 tests/MD/synthetic/replay_check.py bin/md-synthetic --warmup 1 --frames 4
+python3 tests/MD/synthetic/replay_check.py bin/md-synthetic --warmup 2 --frames 5
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/savestate-roundtrip/roundtrip.cpp "$lib" -pthread -o bin/savestate-roundtrip
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+bin/savestate-roundtrip --warmup 0 --frames 6 bin/md-synthetic
+bin/savestate-roundtrip --warmup 1 --frames 6 bin/md-synthetic
+'''

@@ -180,7 +180,9 @@ namespace Mesen.Interop
 
 		Gba,
 
-		Ws
+		Ws,
+
+		Md
 	}
 
 	public enum ConsoleType
@@ -192,6 +194,7 @@ namespace Mesen.Interop
 		Sms = 4,
 		Gba = 5,
 		Ws = 6,
+		Md = 7,
 	}
 
 	public enum ByteCodeFormat

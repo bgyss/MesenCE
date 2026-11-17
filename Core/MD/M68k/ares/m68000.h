@@ -8,6 +8,8 @@
 
 namespace ares {
 using namespace AresCompat;
+//MesenCE: pch.h has a global "using std::string"; prefer the nall-compatible one here
+using string = AresCompat::string;
 
 struct M68000 {
   virtual auto idle(u32 clocks) -> void = 0;

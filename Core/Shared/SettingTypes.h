@@ -276,7 +276,11 @@ enum class ControllerType
 	//WS
 	WsController,
 	WsControllerVertical,
-	Pcv2Controller
+	Pcv2Controller,
+
+	//Mega Drive
+	MdController3Buttons,
+	MdController6Buttons
 };
 
 struct KeyMapping
@@ -400,7 +404,8 @@ enum class ConsoleType
 	PcEngine = 3,
 	Sms = 4,
 	Gba = 5,
-	Ws = 6
+	Ws = 6,
+	Md = 7
 };
 
 enum class GameboyModel
@@ -854,6 +859,30 @@ struct WsConfig
 	uint32_t Channel5Vol = 100;
 };
 
+enum class MdModel : uint8_t
+{
+	Md1Va3, //Model 1 without TMSS
+	Md1Va6 //TMSS: VDP locked until the cartridge writes "SEGA" to $A14000
+};
+
+struct MdConfig
+{
+	ControllerConfig Port1;
+	ControllerConfig Port2;
+
+	//Auto picks the region from the cartridge header (U, then J, then E)
+	ConsoleRegion Region = ConsoleRegion::Auto;
+	MdModel Model = MdModel::Md1Va3;
+	RamState RamPowerOnState = RamState::AllZeros;
+
+	bool RemoveSpriteLimit = false;
+	bool DisableSprites = false;
+	bool HideBgLayers[3] = {};
+
+	uint32_t FmVolume = 100;
+	uint32_t PsgVolume = 100;
+};
+
 struct AudioPlayerConfig
 {
 	uint32_t Volume = 100;
@@ -1178,4 +1207,6 @@ enum class DebuggerFlags
 	SmsDebuggerEnabled = (1 << 10),
 	GbaDebuggerEnabled = (1 << 11),
 	WsDebuggerEnabled = (1 << 12),
+	MdM68kDebuggerEnabled = (1 << 13),
+	MdZ80DebuggerEnabled = (1 << 14),
 };

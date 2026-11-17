@@ -46,6 +46,9 @@
 #include "Utilities/FolderUtilities.h"
 #include "Utilities/VirtualFile.h"
 #include "Utilities/magic_enum.hpp"
+#include "MD/MdConsole.h"
+#include "MD/MdApu.h"
+#include "Shared/BaseControlManager.h"
 #include "sha256.h"
 
 #ifndef MESEN_GIT_COMMIT
@@ -97,7 +100,7 @@ static int ButtonBit(ConsoleType console, const string& rawName)
 	static const std::map<string, int> snes = { { "A", 0 }, { "B", 1 }, { "X", 2 }, { "Y", 3 }, { "L", 4 }, { "R", 5 }, { "SELECT", 6 }, { "START", 7 }, { "UP", 8 }, { "DOWN", 9 }, { "LEFT", 10 }, { "RIGHT", 11 } };
 	static const std::map<string, int> sms = { { "UP", 0 }, { "DOWN", 1 }, { "LEFT", 2 }, { "RIGHT", 3 }, { "1", 4 }, { "2", 5 }, { "PAUSE", 6 } };
 	static const std::map<string, int> pce = { { "UP", 0 }, { "DOWN", 1 }, { "LEFT", 2 }, { "RIGHT", 3 }, { "RUN", 4 }, { "SELECT", 5 }, { "I", 6 }, { "II", 7 } };
-	[[maybe_unused]] static const std::map<string, int> md = { { "UP", 0 }, { "DOWN", 1 }, { "LEFT", 2 }, { "RIGHT", 3 }, { "START", 4 }, { "A", 5 }, { "B", 6 }, { "C", 7 }, { "X", 8 }, { "Y", 9 }, { "Z", 10 }, { "MODE", 11 } };
+	static const std::map<string, int> md = { { "UP", 0 }, { "DOWN", 1 }, { "LEFT", 2 }, { "RIGHT", 3 }, { "START", 4 }, { "A", 5 }, { "B", 6 }, { "C", 7 }, { "X", 8 }, { "Y", 9 }, { "Z", 10 }, { "MODE", 11 } };
 	const std::map<string, int>* table = nullptr;
 	switch(console) {
 		case ConsoleType::Nes:
@@ -105,7 +108,7 @@ static int ButtonBit(ConsoleType console, const string& rawName)
 		case ConsoleType::Snes: table = &snes; break;
 		case ConsoleType::Sms: table = &sms; break;
 		case ConsoleType::PcEngine: table = &pce; break;
-		// MD_SUPPORT_CONSOLE
+		case ConsoleType::Md: table = &md; break;
 		default: break;
 	}
 	if(table) {
@@ -188,7 +191,6 @@ static void ConfigureDeterministic(EmuSettings* settings, ConsoleRegion region)
 {
 	// TestMode is the CI runner's switch for otherwise-random power-on state.
 	settings->SetFlag(EmulationFlags::TestMode);
-	settings->SetFlag(EmulationFlags::ConsoleMode);
 	settings->SetFlag(EmulationFlags::MaximumSpeed);
 
 	auto& nes = settings->GetNesConfig();
@@ -288,7 +290,11 @@ static void ConfigureDeterministic(EmuSettings* settings, ConsoleRegion region)
 
 	settings->GetGameboyConfig().RamPowerOnState = RamState::AllZeros;
 
-	// MD_SUPPORT_SETTINGS
+	auto& md = settings->GetMdConfig();
+	md.Region = region;
+	md.RamPowerOnState = RamState::AllZeros;
+	md.Port1.Type = ControllerType::MdController6Buttons;
+	md.Port2.Type = ControllerType::MdController6Buttons;
 
 	auto& prefs = settings->GetPreferences();
 	prefs.DisableGameSelectionScreen = true;
@@ -332,7 +338,12 @@ static int Usage()
 
 static int Run(const vector<string>& args, const string& commandLine)
 {
-	string rom, out, inputPath, luaPath, regionName = "auto";
+	string rom, out, inputPath, luaPath, traceProfile, regionName = "auto";
+	uint64_t traceLimit = 5000000;
+	string mdModel = "md1va3";
+	string loadStatePath;
+	bool chipAudio = false;
+	string mdPads = "6,6";
 	uint32_t frames = 0;
 	double timeout = 0;
 	bool allowDirty = false;
@@ -357,6 +368,18 @@ static int Run(const vector<string>& args, const string& commandLine)
 			regionName = next();
 		} else if(args[i] == "--timeout") {
 			timeout = std::stod(next());
+		} else if(args[i] == "--trace") {
+			traceProfile = next();
+		} else if(args[i] == "--chip-audio") {
+			chipAudio = true;
+		} else if(args[i] == "--load-state") {
+			loadStatePath = next();
+		} else if(args[i] == "--md-model") {
+			mdModel = next();
+		} else if(args[i] == "--md-pads") {
+			mdPads = next();
+		} else if(args[i] == "--trace-limit") {
+			traceLimit = std::stoull(next());
 		} else if(args[i] == "--allow-dirty") {
 			allowDirty = true;
 		} else {
@@ -365,7 +388,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 		}
 	}
 	ConsoleRegion region;
-	if(rom.empty() || out.empty() || frames == 0 || !ParseRegion(regionName, region)) {
+	if(rom.empty() || out.empty() || frames == 0 || !ParseRegion(regionName, region) || (!traceProfile.empty() && traceProfile != "bus")) {
 		return Usage();
 	}
 	if(MESEN_GIT_DIRTY && !allowDirty) {
@@ -421,6 +444,18 @@ static int Run(const vector<string>& args, const string& commandLine)
 	{
 		Emulator emu;
 		ConfigureDeterministic(emu.GetSettings(), region);
+		{
+			MdConfig& md = emu.GetSettings()->GetMdConfig();
+			if(mdModel != "md1va3" && mdModel != "md1va6") {
+				throw std::runtime_error("--md-model must be md1va3 or md1va6");
+			}
+			md.Model = mdModel == "md1va6" ? MdModel::Md1Va6 : MdModel::Md1Va3;
+			if(mdPads.size() != 3 || mdPads[1] != ',') {
+				throw std::runtime_error("--md-pads takes two pad types, e.g. 6,3");
+			}
+			md.Port1.Type = mdPads[0] == '3' ? ControllerType::MdController3Buttons : ControllerType::MdController6Buttons;
+			md.Port2.Type = mdPads[2] == '3' ? ControllerType::MdController3Buttons : ControllerType::MdController6Buttons;
+		}
 		MessageManager::SetOptions(false, false);
 		emu.Initialize(false);
 		if(!emu.LoadRom(VirtualFile(fs::absolute(rom).string()), VirtualFile(), false)) {
@@ -438,6 +473,8 @@ static int Run(const vector<string>& args, const string& commandLine)
 		manifest["settings"] = {
 			{ "power_on", "TestMode, RAM all zeros" },
 			{ "controllers", "standard pads on ports 1-2" },
+			{ "md_model", mdModel },
+			{ "md_pads", mdPads },
 			{ "audio_sample_rate", emu.GetSettings()->GetAudioConfig().SampleRate },
 			{ "dynamic_sample_rate", false }
 		};
@@ -451,12 +488,74 @@ static int Run(const vector<string>& args, const string& commandLine)
 				return ExitUsage;
 			}
 		}
+		if(!loadStatePath.empty()) {
+			//Resume from a save state (checkpoint replay): --frames counts frames after the state
+			std::ifstream stateFile(loadStatePath, std::ios::binary);
+			if(!stateFile || !emu.GetSaveStateManager()->LoadState(stateFile)) {
+				std::cerr << "could not load state " << loadStatePath << "\n";
+				emu.Release();
+				return ExitFailure;
+			}
+			manifest["load_state"] = { { "sha256", FileSha256(loadStatePath) }, { "frame", emu.GetFrameCount() } };
+			frames += emu.GetFrameCount();
+		}
 		emu.RegisterInputProvider(&input);
+		//Apply the first frame's input before the first frame runs (frame 1 is 1-based)
+		if(BaseControlManager* controlManager = emu.GetConsole()->GetControlManager()) {
+			controlManager->UpdateInputState();
+		}
 
 		int scriptId = -1;
 		if(!luaCode.empty()) {
 			emu.InitDebugger();
 			scriptId = emu.InternalGetDebugger()->GetScriptManager()->LoadScript(fs::path(luaPath).filename().string(), fs::absolute(luaPath).parent_path().string() + "/", luaCode, -1);
+		}
+
+		//Trace profile "bus" (Mega Drive): every CPU bus access plus VDP, YM2612 and PSG port events, one
+		//text line each: "<master clock> <device> <op> <width> <address> <value>" (hex fields).
+		std::ofstream traceFile;
+		uint64_t traceEvents = 0;
+		bool traceTruncated = false;
+		if(!traceProfile.empty()) {
+			MdConsole* md = dynamic_cast<MdConsole*>(emu.GetConsole().get());
+			if(!md) {
+				std::cerr << "--trace bus is only implemented for the Mega Drive\n";
+				emu.Release();
+				return ExitUsage;
+			}
+			traceFile.open(outDir / "trace.txt");
+			traceFile << "# mesen-md-bus-trace/1 clock device(1=68k 2=z80 3=vdp 4=ym2612 5=psg) op(1=fetch 2=read 3=write) width address value\n";
+			md->SetBusObserver([&](const MdBusEvent& e) {
+				if(traceEvents >= traceLimit) {
+					traceTruncated = true;
+					return;
+				}
+				traceEvents++;
+				char line[96];
+				snprintf(line, sizeof(line), "%llx %d %d %d %x %x\n", (unsigned long long)e.Clock, (int)e.Device, (int)e.Op, (int)e.Width, e.Address, e.Value);
+				traceFile << line;
+			});
+		}
+
+		//--chip-audio (Mega Drive): YM2612 and PSG streams before mixing, s16 little-endian stereo at the
+		//YM2612 sample rate (master clock / 1008)
+		std::ofstream ymFile, psgFile;
+		if(chipAudio) {
+			MdConsole* md = dynamic_cast<MdConsole*>(emu.GetConsole().get());
+			if(!md) {
+				std::cerr << "--chip-audio is only implemented for the Mega Drive\n";
+				emu.Release();
+				return ExitUsage;
+			}
+			ymFile.open(outDir / "ym2612.raw", std::ios::binary);
+			psgFile.open(outDir / "psg.raw", std::ios::binary);
+			md->GetApu()->SetChipObserver([&](int32_t yl, int32_t yr, int32_t pl, int32_t pr) {
+				int16_t ym[2] = { (int16_t)std::clamp(yl, -32768, 32767), (int16_t)std::clamp(yr, -32768, 32767) };
+				int16_t psg[2] = { (int16_t)std::clamp(pl, -32768, 32767), (int16_t)std::clamp(pr, -32768, 32767) };
+				ymFile.write((const char*)ym, sizeof(ym));
+				psgFile.write((const char*)psg, sizeof(psg));
+			});
+			manifest["chip_audio"] = { { "format", "s16le-stereo" }, { "sample_rate", md->GetApu()->GetSampleRate() }, { "files", { "ym2612.raw", "psg.raw" } } };
 		}
 
 		emu.SetHeadlessMode(frames);
@@ -513,6 +612,20 @@ static int Run(const vector<string>& args, const string& commandLine)
 			{ "stop_code", emu.GetStopCode() },
 			{ "wall_seconds", elapsed }
 		};
+		if(chipAudio) {
+			((MdConsole*)emu.GetConsole().get())->GetApu()->SetChipObserver(nullptr);
+			ymFile.close();
+			psgFile.close();
+		}
+		if(!traceProfile.empty()) {
+			((MdConsole*)emu.GetConsole().get())->SetBusObserver(nullptr);
+			traceFile.close();
+			manifest["trace"] = { { "profile", traceProfile }, { "format", "mesen-md-bus-trace/1" }, { "events", traceEvents }, { "limit", traceLimit }, { "truncated", traceTruncated } };
+			if(traceTruncated) {
+				//A truncated trace is not a qualified capture
+				manifest["qualified"] = false;
+			}
+		}
 		if(scriptId >= 0) {
 			string log = emu.InternalGetDebugger()->GetScriptManager()->GetScriptLog(scriptId);
 			std::ofstream(outDir / "lua.log") << log;

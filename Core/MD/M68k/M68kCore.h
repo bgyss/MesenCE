@@ -40,6 +40,10 @@ public:
 	virtual uint16_t Peek(uint32_t address) = 0;
 	// Called during interrupt acknowledge; return the level's autovector (default) or a vector number.
 	virtual uint32_t AcknowledgeInterrupt(uint8_t level) { return ares::M68000::Vector::Level1 + level - 1; }
+	// Debugger hooks: before an instruction executes (not while stopped), and after an
+	// interrupt's exception processing has loaded the handler address.
+	virtual void OnInstructionStart() {}
+	virtual void OnInterruptTaken(uint32_t originalPc, uint32_t handlerPc) {}
 
 	void PowerOn();
 	// Fetches SSP and PC from vectors 0 and 1 and fills the prefetch queue.

@@ -92,7 +92,9 @@ void M68kCore::Step()
 				r.ir = r.irc = 0;
 			}
 			// exception() computes the stacked PC as r.pc - 4 (the next instruction's address).
+			uint32_t originalPc = (uint32_t)r.pc - 4;
 			interrupt(vector, level);
+			OnInterruptTaken(originalPc, (uint32_t)r.pc - 4);
 			return;
 		}
 		_instructionStart = (uint32_t)r.pc - 4;
@@ -100,9 +102,12 @@ void M68kCore::Step()
 		faultUpdate.pending = false;
 		lowWordFirst = false;
 		postIncFault = -1;
-		irLatch = r.ird;
+		irLatch = r.ir; // the opcode about to run (r.ird is loaded by instruction())
 		fetchFault = false;
 		_ccrAtStart = readCCR();
+		if(!r.stop) {
+			OnInstructionStart();
+		}
 		instruction();
 	} catch(const AddressErrorAbort& ae) {
 		try {
