@@ -19,6 +19,8 @@ class MdZ80;
 class MdVdp;
 class MdMemoryManager;
 class MdEventManager;
+class MdM68kTraceLogger;
+class MdZ80TraceLogger;
 class MdVdpTools;
 class IAssembler;
 
@@ -46,7 +48,10 @@ class MdDebugger final : public IDebugger
 	unique_ptr<CallstackManager> _callstackManager;
 	unique_ptr<CodeDataLogger> _codeDataLogger;
 	unique_ptr<BreakpointManager> _breakpointManager;
-	unique_ptr<ITraceLogger> _traceLogger;
+	//Concrete types: ITraceLogger has no virtual destructor, so deleting through it is undefined
+	unique_ptr<MdM68kTraceLogger> _m68kTraceLogger;
+	unique_ptr<MdZ80TraceLogger> _z80TraceLogger;
+	ITraceLogger* _traceLogger = nullptr; //the one in use for this CPU
 
 	MdM68kState _m68kState = {};
 

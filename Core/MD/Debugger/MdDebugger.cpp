@@ -44,9 +44,11 @@ MdDebugger::MdDebugger(Debugger* debugger, CpuType cpuType) : IDebugger(debugger
 	if(cpuType == CpuType::MdM68k) {
 		_cdlFile = _codeDataLogger->GetCdlFilePath(_emu->GetRomInfo().RomFile.GetFileName());
 		_codeDataLogger->LoadCdlFile(_cdlFile, _settings->GetDebugConfig().AutoResetCdl);
-		_traceLogger.reset(new MdM68kTraceLogger(debugger, this, _vdp));
+		_m68kTraceLogger.reset(new MdM68kTraceLogger(debugger, this, _vdp));
+		_traceLogger = _m68kTraceLogger.get();
 	} else {
-		_traceLogger.reset(new MdZ80TraceLogger(debugger, this, _vdp));
+		_z80TraceLogger.reset(new MdZ80TraceLogger(debugger, this, _vdp));
+		_traceLogger = _z80TraceLogger.get();
 	}
 
 	_stepBackManager.reset(new StepBackManager(_emu, this));
@@ -140,9 +142,9 @@ void MdDebugger::ProcessInstruction()
 		DisassemblyInfo disInfo = _disassembler->GetDisassemblyInfo(addressInfo, pc, 0, _cpuType);
 		if(_cpuType == CpuType::MdM68k) {
 			_m68kState = _m68k->GetState();
-			((MdM68kTraceLogger*)_traceLogger.get())->Log(_m68kState, disInfo, operation, addressInfo);
+			_m68kTraceLogger->Log(_m68kState, disInfo, operation, addressInfo);
 		} else {
-			((MdZ80TraceLogger*)_traceLogger.get())->Log(_z80->GetState(), disInfo, operation, addressInfo);
+			_z80TraceLogger->Log(_z80->GetState(), disInfo, operation, addressInfo);
 		}
 	}
 	_memoryAccessCounter->ProcessMemoryExec(addressInfo, _console->GetMasterClock());
@@ -172,9 +174,9 @@ void MdDebugger::ProcessRead(uint32_t addr, T value, MemoryOperationType type)
 	}
 	if(_traceLogger->IsEnabled()) {
 		if(_cpuType == CpuType::MdM68k) {
-			((MdM68kTraceLogger*)_traceLogger.get())->LogNonExec(operation, addressInfo);
+			_m68kTraceLogger->LogNonExec(operation, addressInfo);
 		} else {
-			((MdZ80TraceLogger*)_traceLogger.get())->LogNonExec(operation, addressInfo);
+			_z80TraceLogger->LogNonExec(operation, addressInfo);
 		}
 	}
 	if(type == MemoryOperationType::ExecOperand) {
@@ -204,9 +206,9 @@ void MdDebugger::ProcessWrite(uint32_t addr, T value, MemoryOperationType type)
 	}
 	if(_traceLogger->IsEnabled()) {
 		if(_cpuType == CpuType::MdM68k) {
-			((MdM68kTraceLogger*)_traceLogger.get())->LogNonExec(operation, addressInfo);
+			_m68kTraceLogger->LogNonExec(operation, addressInfo);
 		} else {
-			((MdZ80TraceLogger*)_traceLogger.get())->LogNonExec(operation, addressInfo);
+			_z80TraceLogger->LogNonExec(operation, addressInfo);
 		}
 	}
 	if(_cpuType == CpuType::MdM68k && (addr & 0xE700E0) == 0xC00000) {
@@ -355,7 +357,7 @@ BreakpointManager* MdDebugger::GetBreakpointManager()
 
 ITraceLogger* MdDebugger::GetTraceLogger()
 {
-	return _traceLogger.get();
+	return _traceLogger;
 }
 
 ISerializable* MdDebugger::GetSerializableCpu()

@@ -35,7 +35,16 @@ namespace AresCompat
 	struct Natural
 	{
 		using utype = NaturalStorage<Bits>;
-		static constexpr utype Mask = Bits >= 64 ? (utype)~0ull : (utype)((1ull << Bits) - 1);
+		//if constexpr: the 64-bit case must not instantiate a 64-bit shift (MSVC C4293/C4310 under /WX)
+		static constexpr utype MakeMask()
+		{
+			if constexpr(Bits >= 64) {
+				return (utype)~0ull;
+			} else {
+				return (utype)((1ull << Bits) - 1);
+			}
+		}
+		static constexpr utype Mask = MakeMask();
 
 		utype data = 0;
 
