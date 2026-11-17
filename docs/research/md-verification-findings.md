@@ -103,10 +103,25 @@ trace and NMDH decomp-hook fields, with the MesenCE component that supplies each
   initialising it; the full suite is UBSan-clean with the same counts. The whole console is
   UBSan-clean too: a `-fsanitize=undefined -fno-sanitize-recover=all` build of `mesen-headless`
   ran all 60 synthetic cartridges with `--trace bus --chip-audio` without a report.
-- ASan: **not supported on this host.** The ASan runtime hangs in `InitializeShadowMemory`
-  before `main` on Darwin 27, even for a four-line test program, with both the Nix clang 21 and
-  Apple's clang; the Docker daemon (for a Linux run) is not running here. ASan remains to be run
-  on Linux.
+- ASan does not start on the macOS development host (the runtime hangs in
+  `InitializeShadowMemory` before `main` on Darwin 27, even for a four-line program, with both
+  the Nix clang 21 and Apple's clang), so it runs on Linux in CI:
+  `.github/workflows/md-sanitizers.yml` (GitHub Actions `ubuntu-24.04`, x86-64, clang 18,
+  `-fsanitize=address,undefined -fno-sanitize-recover=all`).
+  - 68000 suite under ASan + UBSan: 317,242 pass, 258 known, 0 fail, no reports. (The first run
+    overflowed the stack in the harness: three ~2 MiB `TestCpu` objects, each holding ares'
+    65,536-entry dispatch table, inlined into `main`'s frame; now heap-allocated.)
+  - Whole console (`mesen-headless`, all 61 synthetic cartridges, `--trace bus --chip-audio`, 6
+    frames each, including save-state and PNG writing): 0 failures, no reports (run 44138254070).
+    One exemption, UBSan's alignment check for `Utilities/miniz.cpp` only
+    (`.github/sanitizers/ubsan-ignorelist.txt`): vendored miniz deliberately loads unaligned
+    words on x86 (`MINIZ_USE_UNALIGNED_LOADS_AND_STORES`). It was the only report, raised when
+    writing the final PNG, and not Mega Drive code.
+  - The CI runs also exposed two portability problems, now fixed: `MdDebugger` deleted its trace
+    logger through `ITraceLogger`, which has no virtual destructor (undefined behaviour; a
+    `-Werror` failure on Linux), and the Windows (MSVC `/W4 /WX`) build lacked the MD sources in
+    `Core.vcxproj` and rejected shadowing names and the vendored ares code. The `Run tests`
+    workflow (Windows, MesenTests) passes since `00d3f613`.
 
 ### C2. Reset, interrupts and STOP (`test:m68k-cpu`, `--scenarios`)
 
@@ -125,10 +140,12 @@ synchronisation with E) keeps ares' Mega Drive approximation (hardware-unverifie
 |---|---|---|
 | arm64 (native) | 43.1 / 45.3 / 45.4 | 77-81 |
 | x86-64, native (GitHub Actions `ubuntu-24.04`, AMD EPYC 9V45, clang -O2) | 69.3 / 67.4 / 67.6 | 120-124 |
+| x86-64, native (GitHub Actions `ubuntu-24.04`, AMD EPYC 7763, clang -O2) | 31.0 / 38.2 / 38.2 | 55-68 |
 | x86-64 (`clang++ -arch x86_64`, run under Rosetta 2 on the M1 Max) | 24.7 / 21.4 / 26.0 | 38-46 |
 
 The native x86-64 run is the `md-sanitizers` workflow (`.github/workflows/md-sanitizers.yml`);
-the Rosetta row only shows translation overhead. The x86-64 build passes the full suite with the
+GitHub assigns different CPUs per run, hence the two native rows; the Rosetta row only shows
+translation overhead. The x86-64 build passes the full suite with the
 same counts (317,242 pass, 258 known). Dispatch uses ares'
 `std::function` table; a tighter dispatch is deferred until the console's own cost profile is
 known.

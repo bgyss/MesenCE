@@ -367,9 +367,10 @@ approximations and reference disagreements are in
 under nativekit's masked comparison; audio 16/17 plus one open KNOWN case,
 `sound_ym_envelope_key_on_off`), `test:md-replay` (61/61 incl. audio phase and a mid-handshake
 pad save), `test:md-viewers`, `test:md-xarch` (arm64 vs x86-64, 61/61) and `test:ci` (incl. 10
-MD recorded tests). Open items: that audio case; ASan (the runtime does not start on this
-macOS host; needs a Linux run); x86-64 performance measured only under Rosetta 2; cheats (not in
-the M5 list). No commercial-game compatibility is claimed.
+MD recorded tests). ASan + UBSan and the native x86-64 benchmark run in CI
+(`md-sanitizers` workflow): clean, 67-69 M 68000 instructions/s on an EPYC 9V45. Open items: the
+note-length difference in `sound_ym_envelope_key_on_off` (ymfm vs Nuked-OPN2; BlastEm's silence
+there is a reference error); cheats (not in the M5 list). No commercial-game compatibility is claimed.
 
 ### M0: freeze the evidence and headless contract
 
