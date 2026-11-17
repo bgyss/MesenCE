@@ -14,6 +14,7 @@ namespace Mesen.Interop
 				ConsoleType.Sms => CpuType.Sms,
 				ConsoleType.Gba => CpuType.Gba,
 				ConsoleType.Ws => CpuType.Ws,
+				ConsoleType.Md => CpuType.MdM68k,
 				_ => throw new Exception("Invalid type")
 			};
 		}

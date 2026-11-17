@@ -1,0 +1,82 @@
+<UserControl
+	xmlns="https://github.com/avaloniaui"
+	xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+	xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+	xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+	xmlns:vm="using:Mesen.ViewModels"
+	xmlns:c="using:Mesen.Controls"
+	xmlns:v="using:Mesen.Views"
+	xmlns:l="using:Mesen.Localization"
+	mc:Ignorable="d" d:DesignWidth="450" d:DesignHeight="350"
+	VerticalAlignment="Stretch"
+	HorizontalAlignment="Stretch"
+	x:DataType="vm:MdConfigViewModel"
+	x:Class="Mesen.Views.MdConfigView"
+>
+	<Design.DataContext>
+		<vm:MdConfigViewModel />
+	</Design.DataContext>
+
+	<TabControl TabStripPlacement="Top" SelectedIndex="{Binding SelectedTab}">
+		<TabItem Header="{l:Translate tpgGeneral}">
+			<ScrollViewer AllowAutoHide="False" HorizontalScrollBarVisibility="Auto" Padding="0 0 2 0">
+				<StackPanel>
+					<Grid ColumnDefinitions="Auto,Auto,*" RowDefinitions="Auto,Auto,Auto">
+						<TextBlock Text="{l:Translate lblMdRegion}" />
+						<c:EnumComboBox
+							SelectedItem="{Binding Config.Region}"
+							Grid.Column="1"
+							MinWidth="150"
+							AvailableValues="{Binding AvailableRegions}"
+						/>
+						<TextBlock Grid.Row="1" Text="{l:Translate lblMdModel}" />
+						<c:EnumComboBox SelectedItem="{Binding Config.Model}" Grid.Row="1" Grid.Column="1" MinWidth="150" />
+						<TextBlock Grid.Row="2" Text="{l:Translate lblRamPowerOnState}" />
+						<c:EnumComboBox SelectedItem="{Binding Config.RamPowerOnState}" Grid.Row="2" Grid.Column="1" MinWidth="150" />
+					</Grid>
+					<TextBlock Margin="0 10 0 0" TextWrapping="Wrap" Text="{l:Translate lblMdPowerCycleNote}" />
+				</StackPanel>
+			</ScrollViewer>
+		</TabItem>
+
+		<TabItem Header="{l:Translate tpgAudio}">
+			<ScrollViewer AllowAutoHide="False" HorizontalScrollBarVisibility="Auto" Padding="0 0 2 0">
+				<StackPanel>
+					<c:GroupBox Header="{l:Translate grpVolume}" HorizontalAlignment="Left">
+						<StackPanel Orientation="Horizontal" Height="150">
+							<StackPanel.Styles>
+								<Style Selector="c|MesenSlider">
+									<Setter Property="Minimum" Value="0" />
+									<Setter Property="Maximum" Value="100" />
+									<Setter Property="Orientation" Value="Vertical" />
+									<Setter Property="Margin" Value="5 0" />
+								</Style>
+							</StackPanel.Styles>
+							<c:MesenSlider Text="{l:Translate lblMdFmVolume}" Value="{Binding Config.FmVolume}" />
+							<c:MesenSlider Text="{l:Translate lblMdPsgVolume}" Value="{Binding Config.PsgVolume}" />
+						</StackPanel>
+					</c:GroupBox>
+				</StackPanel>
+			</ScrollViewer>
+		</TabItem>
+
+		<TabItem Header="{l:Translate tpgInput}">
+			<v:MdInputConfigView DataContext="{Binding Input}" />
+		</TabItem>
+
+		<TabItem Header="{l:Translate tpgVideo}">
+			<ScrollViewer AllowAutoHide="False" HorizontalScrollBarVisibility="Auto" Padding="0 0 2 0">
+				<StackPanel>
+					<v:VideoConfigOverrideView DataContext="{Binding Config.ConfigOverrides}" Header="{l:Translate lblMdOverrides}" />
+					<c:OptionSection Header="{l:Translate lblMiscSettings}">
+						<CheckBox IsChecked="{Binding Config.RemoveSpriteLimit}" Content="{l:Translate chkRemoveSpriteLimit}" />
+						<c:CheckBoxWarning IsChecked="{Binding Config.HidePlaneA}" Text="{l:Translate chkMdHidePlaneA}" />
+						<c:CheckBoxWarning IsChecked="{Binding Config.HidePlaneB}" Text="{l:Translate chkMdHidePlaneB}" />
+						<c:CheckBoxWarning IsChecked="{Binding Config.HideWindow}" Text="{l:Translate chkMdHideWindow}" />
+						<c:CheckBoxWarning IsChecked="{Binding Config.DisableSprites}" Text="{l:Translate chkDisableSprites}" />
+					</c:OptionSection>
+				</StackPanel>
+			</ScrollViewer>
+		</TabItem>
+	</TabControl>
+</UserControl>

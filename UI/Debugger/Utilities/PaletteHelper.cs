@@ -52,6 +52,12 @@ namespace Mesen.Debugger.Utilities
 				entries.AddEntry("R", "$" + ((rawPalette[index] >> 8) & 0x0F).ToString());
 				entries.AddEntry("G", "$" + ((rawPalette[index] >> 4) & 0x0F).ToString());
 				entries.AddEntry("B", "$" + (rawPalette[index] & 0x0F).ToString());
+			} else if(format == RawPaletteFormat.MdCram) {
+				//Mega Drive: 0000BBB0GGG0RRR0
+				entries.AddEntry("Value", "$" + rawPalette[index].ToString("X4"));
+				entries.AddEntry("R", ((rawPalette[index] >> 1) & 0x07).ToString());
+				entries.AddEntry("G", ((rawPalette[index] >> 5) & 0x07).ToString());
+				entries.AddEntry("B", ((rawPalette[index] >> 9) & 0x07).ToString());
 			} else {
 				//NES/GB
 				entries.AddEntry("Value", "$" + rawPalette[index].ToString("X2"));

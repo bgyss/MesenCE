@@ -639,6 +639,48 @@
 			<Control ID="lblController2">Port 2:</Control>
 		</Form>
 		
+		<Form ID="MdConfigView">
+			<Control ID="tpgGeneral">General</Control>
+			<Control ID="lblMdRegion">Region:</Control>
+			<Control ID="lblMdModel">Console model:</Control>
+			<Control ID="lblRamPowerOnState">Default power on state for RAM: </Control>
+			<Control ID="lblMdPowerCycleNote">Region, model, RAM state and FM core changes take effect at the next power cycle (Game → Power Cycle). Auto picks the region from the cartridge header.</Control>
+
+			<Control ID="tpgAudio">Audio</Control>
+			<Control ID="grpVolume">Volume</Control>
+			<Control ID="lblMdFmVolume">FM</Control>
+			<Control ID="lblMdPsgVolume">PSG</Control>
+
+			<Control ID="tpgInput">Input</Control>
+
+			<Control ID="tpgVideo">Video</Control>
+			<Control ID="lblMdOverrides">Mega Drive - Global Config Overrides</Control>
+			<Control ID="lblMiscSettings">Miscellaneous Settings</Control>
+			<Control ID="chkRemoveSpriteLimit">Remove sprite limit</Control>
+			<Control ID="chkMdHidePlaneA">Hide plane A</Control>
+			<Control ID="chkMdHidePlaneB">Hide plane B</Control>
+			<Control ID="chkMdHideWindow">Hide window plane</Control>
+			<Control ID="chkDisableSprites">Disable sprites</Control>
+		</Form>
+
+		<Form ID="MdInputConfigView">
+			<Control ID="grpControllers">Controllers</Control>
+			<Control ID="btnSetup">Setup</Control>
+			<Control ID="lblController1">Port 1:</Control>
+			<Control ID="lblController2">Port 2:</Control>
+			<Control ID="lblMdPadNote">Most games work with the 6-button pad. A few older games misread it; choose the 3-button pad for those.</Control>
+			<Control ID="grpTeamPlayer">Team Player</Control>
+			<Control ID="lblTeamPlayer1A">Port A:</Control>
+			<Control ID="lblTeamPlayer1B">Port B:</Control>
+			<Control ID="lblTeamPlayer1C">Port C:</Control>
+			<Control ID="lblTeamPlayer1D">Port D:</Control>
+			<Control ID="lblTeamPlayer2A">Port A:</Control>
+			<Control ID="lblTeamPlayer2B">Port B:</Control>
+			<Control ID="lblTeamPlayer2C">Port C:</Control>
+			<Control ID="lblTeamPlayer2D">Port D:</Control>
+			<Control ID="lblMdAccessoryNote">Light guns are aimed with the mouse and are normally plugged into port 2. Menacer and Justifier games may ask you to calibrate the gun. The mouse is captured while a Sega Mouse is connected.</Control>
+		</Form>
+
 		<Form ID="WsConfigView">
 			<Control ID="tpgGeneral">General</Control>
 			<Control ID="lblModel">Model:</Control>
@@ -701,6 +743,7 @@
 			<Control ID="tabPcEngine">PC Engine</Control>
 			<Control ID="tabSms">SMS</Control>
 			<Control ID="tabWs">WonderSwan</Control>
+			<Control ID="tabMd">Mega Drive</Control>
 			<Control ID="tabOtherConsoles">Other systems</Control>
 			<Control ID="tabPreferences">Preferences</Control>
 
@@ -1077,6 +1120,7 @@
 			<Control ID="lblPcEngine">PC Engine</Control>
 			<Control ID="lblSms">SMS</Control>
 			<Control ID="lblWs">WonderSwan</Control>
+			<Control ID="lblMd">Mega Drive</Control>
 		</Form>
 		
 		<Form ID="AudioPlayerView">
@@ -2066,6 +2110,12 @@ E
 
 			<Value ID="SmsController">SMS Controller</Value>
 			<Value ID="SmsLightPhaser">Light Phaser</Value>
+			<Value ID="MdController3Buttons">Mega Drive 3-button pad</Value>
+			<Value ID="MdController6Buttons">Mega Drive 6-button pad</Value>
+			<Value ID="MdTeamPlayer">Sega Team Player</Value>
+			<Value ID="MdMouse">Sega Mouse</Value>
+			<Value ID="MdMenacer">Sega Menacer</Value>
+			<Value ID="MdJustifier">Konami Justifier</Value>
 			<Value ID="ColecoVisionController">ColecoVision Controller</Value>
 		</Enum>
 		<Enum ID="NesJissenMahjongButtons">
@@ -2139,6 +2189,22 @@ E
 			<Value ID="Cubic">Cubic</Value>
 			<Value ID="Sinc">Sinc</Value>
 			<Value ID="None">None</Value>
+		</Enum>
+		<Enum ID="MdMouseButtons">
+			<Value ID="Left">Left button</Value>
+			<Value ID="Right">Right button</Value>
+			<Value ID="Middle">Middle button</Value>
+			<Value ID="Start">Start</Value>
+		</Enum>
+		<Enum ID="MdMenacerButtons">
+			<Value ID="Trigger">Trigger (B)</Value>
+			<Value ID="Start">Start</Value>
+			<Value ID="A">A</Value>
+			<Value ID="C">C</Value>
+		</Enum>
+		<Enum ID="MdJustifierButtons">
+			<Value ID="Trigger">Trigger</Value>
+			<Value ID="Start">Start</Value>
 		</Enum>
 		<Enum ID="SnesSuperScopeButtons">
 			<Value ID="Fire">Fire</Value>
@@ -2616,6 +2682,8 @@ E
 			<Value ID="PceAddress">Physical Address (AAAAAA:VV)</Value>
 			<Value ID="SmsGameGenie">Game Genie (e.g A1B-2C3-D4E)</Value>
 			<Value ID="SmsProActionReplay">Pro Action Replay (e.g 00AAAAVV)</Value>
+			<Value ID="MdGameGenie">Mega Drive - Game Genie (e.g ABCD-EFGH)</Value>
+			<Value ID="MdProActionReplay">Mega Drive - Pro Action Replay (AAAAAA:VVVV)</Value>
 		</Enum>
 		<Enum ID="VideoLayer">
 			<Value ID="Bg1">BG layer 1</Value>
@@ -2625,6 +2693,12 @@ E
 			<Value ID="Sprite1">Sprite layer 1</Value>
 			<Value ID="Sprite2">Sprite layer 2</Value>
 		</Enum>
+
+		<Enum ID="MdModel">
+			<Value ID="Md1Va3">Model 1 (VA0-VA5, no TMSS)</Value>
+			<Value ID="Md1Va6">Model 1 VA6+ (TMSS)</Value>
+		</Enum>
+
 
 		<Enum ID="SmsRevision">
 			<Value ID="Compatibility">Compatibility (default)</Value>
@@ -2865,6 +2939,8 @@ E
 			<Value ID="Sms">SMS</Value>
 			<Value ID="Gba">GBA</Value>
 			<Value ID="Ws">WS</Value>
+			<Value ID="MdM68k">68000</Value>
+			<Value ID="MdZ80">Z80 (MD)</Value>
 		</Enum>
 		
 		<Enum ID="MemoryType">
@@ -2966,6 +3042,17 @@ E
 			<Value ID="WsBootRom">Boot ROM</Value>
 			<Value ID="WsInternalEeprom">IEEPROM (Internal)</Value>
 			<Value ID="WsPort">I/O Port</Value>
+
+			<Value ID="MdMemory">68000 Memory</Value>
+			<Value ID="MdZ80Memory">Z80 Memory</Value>
+			<Value ID="MdPrgRom">ROM</Value>
+			<Value ID="MdWorkRam">Work RAM</Value>
+			<Value ID="MdZ80Ram">Z80 RAM</Value>
+			<Value ID="MdSaveRam">Save RAM</Value>
+			<Value ID="MdVideoRam">Video RAM</Value>
+			<Value ID="MdPaletteRam">Color RAM (CRAM)</Value>
+			<Value ID="MdVScrollRam">VScroll RAM (VSRAM)</Value>
+			<Value ID="MdTmssRom">TMSS ROM</Value>
 
 			<Value ID="None">None</Value>
 		</Enum>
@@ -3624,6 +3711,7 @@ E
 			<Value ID="OpenAssembler">Assembler</Value>
 			<Value ID="OpenDebugger">Debugger</Value>
 			<Value ID="OpenSpcDebugger">SPC Debugger</Value>
+			<Value ID="OpenMdZ80Debugger">Z80 Debugger</Value>
 			<Value ID="OpenSa1Debugger">SA-1 Debugger</Value>
 			<Value ID="OpenSt018Debugger">ST018 Debugger</Value>
 			<Value ID="OpenGsuDebugger">GSU Debugger</Value>
@@ -3703,6 +3791,7 @@ E
 			<Value ID="PcEngine">PC Engine</Value>
 			<Value ID="Sms">SMS</Value>
 			<Value ID="Ws">WonderSwan</Value>
+			<Value ID="Md">Mega Drive</Value>
 			<Value ID="OtherConsoles">Other systems</Value>
 
 			<Value ID="Resume">Resume</Value>

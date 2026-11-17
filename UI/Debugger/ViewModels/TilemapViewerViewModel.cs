@@ -397,6 +397,14 @@ namespace Mesen.Debugger.ViewModels
 					break;
 				}
 
+				case CpuType.MdM68k:
+					Tabs = new() {
+						new() { Title = "Plane A", Layer = 0 },
+						new() { Title = "Plane B", Layer = 1 },
+						new() { Title = "Window", Layer = 2 }
+					};
+					break;
+
 				case CpuType.Ws:
 					Tabs = new() {
 						new() { Title = "BG0", Layer = 0 },
