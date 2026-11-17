@@ -245,6 +245,7 @@
     <ClInclude Include="Scale2x\scalebit.h" />
     <ClInclude Include="Serializer.h" />
     <ClInclude Include="sha1.h" />
+    <ClInclude Include="Sha256.h" />
     <ClInclude Include="spng.h" />
     <ClInclude Include="StaticFor.h" />
     <ClInclude Include="StringUtilities.h" />

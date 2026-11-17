@@ -119,6 +119,31 @@
     <ClInclude Include="SMS\SmsConsole.h" />
     <ClInclude Include="SMS\SmsControlManager.h" />
     <ClInclude Include="SMS\SmsCpu.h" />
+    <ClInclude Include="MD\Debugger\MdDebugger.h" />
+    <ClInclude Include="MD\Debugger\MdDisUtils.h" />
+    <ClInclude Include="MD\Debugger\MdEventManager.h" />
+    <ClInclude Include="MD\Debugger\MdTraceLogger.h" />
+    <ClInclude Include="MD\Debugger\MdVdpTools.h" />
+    <ClInclude Include="MD\Input\MdController.h" />
+    <ClInclude Include="MD\Input\MdLightGun.h" />
+    <ClInclude Include="MD\Input\MdMouse.h" />
+    <ClInclude Include="MD\Input\MdPortDevice.h" />
+    <ClInclude Include="MD\Input\MdTeamPlayer.h" />
+    <ClInclude Include="MD\M68k\AresCompat.h" />
+    <ClInclude Include="MD\M68k\M68kCore.h" />
+    <ClInclude Include="MD\M68k\ares\m68000.h" />
+    <ClInclude Include="MD\MdApu.h" />
+    <ClInclude Include="MD\MdConsole.h" />
+    <ClInclude Include="MD\MdControlManager.h" />
+    <ClInclude Include="MD\MdEeprom.h" />
+    <ClInclude Include="MD\MdDefaultVideoFilter.h" />
+    <ClInclude Include="MD\MdM68k.h" />
+    <ClInclude Include="MD\MdMemoryManager.h" />
+    <ClInclude Include="MD\MdTypes.h" />
+    <ClInclude Include="MD\MdVdp.h" />
+    <ClInclude Include="MD\MdZ80.h" />
+    <ClInclude Include="Shared\Audio\Sn76489.h" />
+    <ClInclude Include="Shared\Processors\Z80\Z80Engine.h" />
     <ClInclude Include="SMS\SmsDefaultVideoFilter.h" />
     <ClInclude Include="SMS\SmsFmAudio.h" />
     <ClInclude Include="SMS\SmsMemoryManager.h" />
@@ -963,6 +988,28 @@
     <ClCompile Include="SMS\SmsConsole.cpp" />
     <ClCompile Include="SMS\SmsControlManager.cpp" />
     <ClCompile Include="SMS\SmsCpu.cpp" />
+    <ClCompile Include="Debugger\ExpressionEvaluator.Md.cpp" />
+    <ClCompile Include="MD\Debugger\MdDebugger.cpp" />
+    <ClCompile Include="MD\Debugger\MdDisUtils.cpp" />
+    <ClCompile Include="MD\Debugger\MdEventManager.cpp" />
+    <ClCompile Include="MD\Debugger\MdTraceLogger.cpp" />
+    <ClCompile Include="MD\Debugger\MdVdpTools.cpp" />
+    <ClCompile Include="MD\MdApu.cpp" />
+    <ClCompile Include="MD\MdConsole.cpp" />
+    <ClCompile Include="MD\MdControlManager.cpp" />
+    <ClCompile Include="MD\MdEeprom.cpp" />
+    <ClCompile Include="MD\MdM68k.cpp" />
+    <ClCompile Include="MD\MdMemoryManager.cpp" />
+    <ClCompile Include="MD\MdVdp.cpp" />
+    <ClCompile Include="MD\MdZ80.cpp" />
+    <!-- The ares 68000 port (MD\M68k\ares\*.inc) is compiled through this file; it does not use the PCH -->
+    <ClCompile Include="MD\M68k\M68kCore.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='PGO Profile|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='PGO Optimize|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <None Include="Shared\Processors\Z80\Z80Engine.inl" />
     <ClCompile Include="SMS\SmsFmAudio.cpp" />
     <ClCompile Include="SMS\SmsMemoryManager.cpp" />
     <ClCompile Include="SMS\SmsNtscFilter.cpp" />

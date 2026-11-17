@@ -137,7 +137,8 @@ void SmsDisUtils::GetDisassembly(DisassemblyInfo& info, string& out, uint32_t me
 {
 	FastString str(settings->GetDebugConfig().UseLowerCaseDisassembly);
 
-	AddressInfo addrInfo { 0, MemoryType::SmsMemory };
+	//The Mega Drive's Z80 shares this disassembler; labels live in its own address space
+	AddressInfo addrInfo { 0, info.GetCpuType() == CpuType::MdZ80 ? MemoryType::MdZ80Memory : MemoryType::SmsMemory };
 	auto getOperand = [&str, &addrInfo, labelManager](uint16_t addr) {
 		addrInfo.Address = addr;
 		string label = labelManager ? labelManager->GetLabel(addrInfo) : "";

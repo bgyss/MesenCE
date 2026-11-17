@@ -93,6 +93,7 @@ void Disassembler::ResetPrgCache()
 	InitSource(MemoryType::SmsPrgRom);
 	InitSource(MemoryType::GbaPrgRom);
 	InitSource(MemoryType::WsPrgRom);
+	InitSource(MemoryType::MdPrgRom);
 }
 
 void Disassembler::InvalidateCache(AddressInfo addrInfo, CpuType type)
@@ -604,6 +605,18 @@ void Disassembler::GetLineData(DisassemblyResult& row, CpuType type, MemoryType 
 					if(showMemoryValues && data.EffectiveAddress.ValueSize >= 0) {
 						data.Value = disInfo.GetMemoryValue(data.EffectiveAddress, _memoryDumper, memType);
 					}
+					break;
+				}
+
+				case CpuType::MdM68k:
+				case CpuType::MdZ80: {
+					CodeDataLogger* cdl = cdlManager->GetCodeDataLogger(row.Address.Type);
+					if(!disInfo.IsInitialized()) {
+						disInfo = DisassemblyInfo(row.Address.Address, 0, lineCpuType, row.Address.Type, _memoryDumper);
+					} else {
+						data.Flags |= (!cdl || cdl->IsCode(data.AbsoluteAddress.Address)) ? LineFlags::VerifiedCode : LineFlags::UnexecutedCode;
+					}
+					data.OpSize = disInfo.GetOpSize();
 					break;
 				}
 			}
