@@ -202,7 +202,7 @@ void MdMemoryManager::WriteEeprom(uint32_t addr, uint8_t value)
 
 uint8_t MdMemoryManager::ReadCartByte(uint32_t addr)
 {
-	if(_hasCartSave) [[unlikely]] {
+	if(_hasCartSave) {
 		if(_eeprom && addr == _eepromReadAddr) {
 			//Only the SDA bit is driven (MAME returns the other bits as 0)
 			return (_eeprom->ReadSda() ? 1 : 0) << _eepromReadBit;
