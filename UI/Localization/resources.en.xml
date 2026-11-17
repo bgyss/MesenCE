@@ -2066,6 +2066,8 @@ E
 
 			<Value ID="SmsController">SMS Controller</Value>
 			<Value ID="SmsLightPhaser">Light Phaser</Value>
+			<Value ID="MdController3Buttons">Mega Drive 3-button pad</Value>
+			<Value ID="MdController6Buttons">Mega Drive 6-button pad</Value>
 			<Value ID="ColecoVisionController">ColecoVision Controller</Value>
 		</Enum>
 		<Enum ID="NesJissenMahjongButtons">
@@ -2865,6 +2867,8 @@ E
 			<Value ID="Sms">SMS</Value>
 			<Value ID="Gba">GBA</Value>
 			<Value ID="Ws">WS</Value>
+			<Value ID="MdM68k">68000</Value>
+			<Value ID="MdZ80">Z80 (MD)</Value>
 		</Enum>
 		
 		<Enum ID="MemoryType">
@@ -2966,6 +2970,17 @@ E
 			<Value ID="WsBootRom">Boot ROM</Value>
 			<Value ID="WsInternalEeprom">IEEPROM (Internal)</Value>
 			<Value ID="WsPort">I/O Port</Value>
+
+			<Value ID="MdMemory">68000 Memory</Value>
+			<Value ID="MdZ80Memory">Z80 Memory</Value>
+			<Value ID="MdPrgRom">ROM</Value>
+			<Value ID="MdWorkRam">Work RAM</Value>
+			<Value ID="MdZ80Ram">Z80 RAM</Value>
+			<Value ID="MdSaveRam">Save RAM</Value>
+			<Value ID="MdVideoRam">Video RAM</Value>
+			<Value ID="MdPaletteRam">Color RAM (CRAM)</Value>
+			<Value ID="MdVScrollRam">VScroll RAM (VSRAM)</Value>
+			<Value ID="MdTmssRom">TMSS ROM</Value>
 
 			<Value ID="None">None</Value>
 		</Enum>
@@ -3624,6 +3639,7 @@ E
 			<Value ID="OpenAssembler">Assembler</Value>
 			<Value ID="OpenDebugger">Debugger</Value>
 			<Value ID="OpenSpcDebugger">SPC Debugger</Value>
+			<Value ID="OpenMdZ80Debugger">Z80 Debugger</Value>
 			<Value ID="OpenSa1Debugger">SA-1 Debugger</Value>
 			<Value ID="OpenSt018Debugger">ST018 Debugger</Value>
 			<Value ID="OpenGsuDebugger">GSU Debugger</Value>
@@ -3703,6 +3719,7 @@ E
 			<Value ID="PcEngine">PC Engine</Value>
 			<Value ID="Sms">SMS</Value>
 			<Value ID="Ws">WonderSwan</Value>
+			<Value ID="Md">Mega Drive</Value>
 			<Value ID="OtherConsoles">Other systems</Value>
 
 			<Value ID="Resume">Resume</Value>

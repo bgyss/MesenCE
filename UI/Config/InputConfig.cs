@@ -447,6 +447,8 @@ namespace Mesen.Config
 				case ControllerType.Pcv2Controller:
 				case ControllerType.Pachinko:
 				case ControllerType.FcnsController:
+				case ControllerType.MdController3Buttons:
+				case ControllerType.MdController6Buttons:
 					return true;
 			}
 
@@ -475,6 +477,8 @@ namespace Mesen.Config
 				case ControllerType.WsController:
 				case ControllerType.WsControllerVertical:
 				case ControllerType.Pcv2Controller:
+				case ControllerType.MdController3Buttons:
+				case ControllerType.MdController6Buttons:
 					return true;
 			}
 
@@ -525,6 +529,8 @@ namespace Mesen.Config
 				case ControllerType.WsController:
 				case ControllerType.WsControllerVertical:
 				case ControllerType.Pcv2Controller:
+				case ControllerType.MdController3Buttons:
+				case ControllerType.MdController6Buttons:
 					return true;
 			}
 

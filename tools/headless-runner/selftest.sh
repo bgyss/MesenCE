@@ -50,8 +50,16 @@ if grep -q '"dirty": true' "$work/nes-a/manifest.json"; then
   check "a dirty build refuses a qualified capture" '[ $dcode -ne 0 ]'
 fi
 
+# Mega Drive: Lua frame callbacks and the 68000 state table (the VDP raises EndFrame/StartFrame)
+python3 tests/MD/synthetic/gen.py "$work/md" >/dev/null
+set +e
+"$bin" run --rom "$work/md/render_h40.md" --frames 60 --out "$work/md-lua" --lua tests/headless/md_ui_smoke.lua --allow-dirty
+mdcode=$?
+set -e
+check "MD: Lua endFrame callbacks fire and the 68000 state is readable" '[ $mdcode -eq 0 ] && grep -q "\"stop_code\": 0" "$work/md-lua/manifest.json" && grep -q "pc=" "$work/md-lua/lua.log"'
+
 mkdir -p "$work/compat/home"
-cat > "$work/compat/stop.lua" <<'EOF'
+cat >"$work/compat/stop.lua" <<'EOF'
 local n = 0
 emu.addEventCallback(function() n = n + 1; if n == 30 then emu.stop(0) end end, emu.eventType.endFrame)
 EOF

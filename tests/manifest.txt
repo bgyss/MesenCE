@@ -2,3 +2,13 @@
 # Re-record all of them with `mise run test:record-fork` (rebuilds the ROMs first).
 SMS/z80_timing.mtp z80_timing.sms 120
 SNES/sa1_timing.mtp sa1_timing.sfc 120
+MD/recorded/render_h40.mtp md/render_h40.md 120
+MD/recorded/render_h32_v30.mtp md/render_h32_v30.md 120
+MD/recorded/render_interlace2.mtp md/render_interlace2.md 120
+MD/recorded/render_shadow_operator.mtp md/render_shadow_operator.md 120
+MD/recorded/render_sprite_link_priority.mtp md/render_sprite_link_priority.md 120
+MD/recorded/render_midline_register.mtp md/render_midline_register.md 120
+MD/recorded/dma_memory_vram.mtp md/dma_memory_vram.md 120
+MD/recorded/dma_fill.mtp md/dma_fill.md 120
+MD/recorded/z80_bank_window.mtp md/z80_bank_window.md 120
+MD/recorded/io_pad6_sequence.mtp md/io_pad6_sequence.md 120

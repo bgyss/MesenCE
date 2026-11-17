@@ -125,6 +125,20 @@ namespace Mesen.Interop
 				case MemoryType.WsPort:
 					return CpuType.Ws;
 
+				case MemoryType.MdMemory:
+				case MemoryType.MdPrgRom:
+				case MemoryType.MdWorkRam:
+				case MemoryType.MdSaveRam:
+				case MemoryType.MdVideoRam:
+				case MemoryType.MdPaletteRam:
+				case MemoryType.MdVScrollRam:
+				case MemoryType.MdTmssRom:
+					return CpuType.MdM68k;
+
+				case MemoryType.MdZ80Memory:
+				case MemoryType.MdZ80Ram:
+					return CpuType.MdZ80;
+
 				default:
 					throw new NotImplementedException("Unsupported cpu type");
 			}
@@ -158,6 +172,11 @@ namespace Mesen.Interop
 
 				case MemoryType.SmsVideoRam:
 				case MemoryType.SmsPaletteRam:
+					return true;
+
+				case MemoryType.MdVideoRam:
+				case MemoryType.MdPaletteRam:
+				case MemoryType.MdVScrollRam:
 					return true;
 
 				case MemoryType.GbaVideoRam:
@@ -237,6 +256,8 @@ namespace Mesen.Interop
 				case MemoryType.SmsMemory:
 				case MemoryType.GbaMemory:
 				case MemoryType.WsMemory:
+				case MemoryType.MdMemory:
+				case MemoryType.MdZ80Memory:
 					return true;
 			}
 			return false;
@@ -263,6 +284,8 @@ namespace Mesen.Interop
 				case MemoryType.GbaPrgRom:
 				case MemoryType.GbaBootRom:
 				case MemoryType.WsPrgRom:
+				case MemoryType.MdPrgRom:
+				case MemoryType.MdTmssRom:
 					return true;
 			}
 			return false;
@@ -339,6 +362,12 @@ namespace Mesen.Interop
 				case MemoryType.WsCartRam:
 				case MemoryType.WsBootRom:
 				case MemoryType.WsPort:
+				case MemoryType.MdMemory:
+				case MemoryType.MdZ80Memory:
+				case MemoryType.MdPrgRom:
+				case MemoryType.MdWorkRam:
+				case MemoryType.MdZ80Ram:
+				case MemoryType.MdSaveRam:
 					return true;
 			}
 
@@ -361,6 +390,8 @@ namespace Mesen.Interop
 				case MemoryType.SmsMemory:
 				case MemoryType.GbaMemory:
 				case MemoryType.WsMemory:
+				case MemoryType.MdMemory:
+				case MemoryType.MdZ80Memory:
 					return true;
 			}
 
@@ -394,6 +425,8 @@ namespace Mesen.Interop
 
 				case MemoryType.WsMemory:
 				case MemoryType.WsPrgRom:
+				case MemoryType.MdMemory:
+				case MemoryType.MdPrgRom:
 					return true;
 
 				case MemoryType.NesPpuMemory:
@@ -548,6 +581,17 @@ namespace Mesen.Interop
 				MemoryType.WsBootRom => "BOOT",
 				MemoryType.WsInternalEeprom => "IEEPROM",
 				MemoryType.WsPort => "PORT",
+
+				MemoryType.MdMemory => "CPU",
+				MemoryType.MdZ80Memory => "Z80",
+				MemoryType.MdPrgRom => "ROM",
+				MemoryType.MdWorkRam => "WRAM",
+				MemoryType.MdZ80Ram => "ZRAM",
+				MemoryType.MdSaveRam => "SRAM",
+				MemoryType.MdVideoRam => "VRAM",
+				MemoryType.MdPaletteRam => "CRAM",
+				MemoryType.MdVScrollRam => "VSRAM",
+				MemoryType.MdTmssRom => "TMSS",
 
 				MemoryType.None => "n/a",
 

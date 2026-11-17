@@ -467,3 +467,13 @@ export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
 bin/savestate-roundtrip --warmup 0 --frames 6 bin/md-synthetic
 bin/savestate-roundtrip --warmup 1 --frames 6 bin/md-synthetic
 '''
+
+[tasks."test:md-xarch"]
+description = "Mega Drive: byte-identical captures and cross-loadable states between this build and another (e.g. x86-64) runner: mise run test:md-xarch -- <other mesen-headless>"
+depends = ["headless"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python3 tests/MD/synthetic/gen.py bin/md-synthetic
+python3 tests/MD/synthetic/xarch_compare.py bin/md-synthetic "$@"
+'''

@@ -20,6 +20,8 @@ namespace Mesen.Interop
 				CpuType.Sms => MemoryType.SmsMemory,
 				CpuType.Gba => MemoryType.GbaMemory,
 				CpuType.Ws => MemoryType.WsMemory,
+				CpuType.MdM68k => MemoryType.MdMemory,
+				CpuType.MdZ80 => MemoryType.MdZ80Memory,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -34,6 +36,7 @@ namespace Mesen.Interop
 				CpuType.Sms => MemoryType.SmsVideoRam,
 				CpuType.Gba => MemoryType.GbaVideoRam,
 				CpuType.Ws => MemoryType.WsWorkRam,
+				CpuType.MdM68k or CpuType.MdZ80 => MemoryType.MdVideoRam,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -48,6 +51,7 @@ namespace Mesen.Interop
 				CpuType.Sms => MemoryType.None,
 				CpuType.Gba => MemoryType.GbaSpriteRam,
 				CpuType.Ws => MemoryType.None,
+				CpuType.MdM68k or CpuType.MdZ80 => MemoryType.None,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -68,6 +72,7 @@ namespace Mesen.Interop
 				CpuType.Sms => MemoryType.SmsPrgRom,
 				CpuType.Gba => MemoryType.GbaPrgRom,
 				CpuType.Ws => MemoryType.WsPrgRom,
+				CpuType.MdM68k or CpuType.MdZ80 => MemoryType.MdPrgRom,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -88,6 +93,8 @@ namespace Mesen.Interop
 				CpuType.Sms => MemoryType.SmsWorkRam,
 				CpuType.Gba => MemoryType.GbaIntWorkRam,
 				CpuType.Ws => MemoryType.WsWorkRam,
+				CpuType.MdM68k => MemoryType.MdWorkRam,
+				CpuType.MdZ80 => MemoryType.MdZ80Ram,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -108,6 +115,8 @@ namespace Mesen.Interop
 				CpuType.Sms => 4,
 				CpuType.Gba => 7,
 				CpuType.Ws => 5,
+				CpuType.MdM68k => 6,
+				CpuType.MdZ80 => 4,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -128,6 +137,8 @@ namespace Mesen.Interop
 				CpuType.Sms => 4,
 				CpuType.Gba => 4,
 				CpuType.Ws => 4,
+				CpuType.MdM68k => 6,
+				CpuType.MdZ80 => 4,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -170,6 +181,8 @@ namespace Mesen.Interop
 				CpuType.Sms => DebuggerFlags.SmsDebuggerEnabled,
 				CpuType.Gba => DebuggerFlags.GbaDebuggerEnabled,
 				CpuType.Ws => DebuggerFlags.WsDebuggerEnabled,
+				CpuType.MdM68k => DebuggerFlags.MdM68kDebuggerEnabled,
+				CpuType.MdZ80 => DebuggerFlags.MdZ80DebuggerEnabled,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -190,6 +203,7 @@ namespace Mesen.Interop
 				CpuType.Sms => ConsoleType.Sms,
 				CpuType.Gba => ConsoleType.Gba,
 				CpuType.Ws => ConsoleType.Ws,
+				CpuType.MdM68k or CpuType.MdZ80 => ConsoleType.Md,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -221,6 +235,8 @@ namespace Mesen.Interop
 				case CpuType.Sms:
 				case CpuType.Gba:
 				case CpuType.Ws:
+				case CpuType.MdM68k:
+				case CpuType.MdZ80:
 					return true;
 
 				default:
@@ -267,6 +283,7 @@ namespace Mesen.Interop
 				CpuType.Sms => 0x00,
 				//TODOGBA - assembler support
 				CpuType.Ws => 0x90,
+				CpuType.MdZ80 => 0x00,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -285,6 +302,13 @@ namespace Mesen.Interop
 
 				case MemoryType.GsuWorkRam:
 					return cpuType == CpuType.Snes || cpuType == CpuType.Gsu;
+
+				case MemoryType.MdPrgRom:
+				case MemoryType.MdWorkRam:
+				case MemoryType.MdZ80Ram:
+				case MemoryType.MdSaveRam:
+					//Both Mega Drive CPUs reach these (the Z80 through its bank window)
+					return cpuType == CpuType.MdM68k || cpuType == CpuType.MdZ80;
 
 				default:
 					//All other types are specific to a single CPU type

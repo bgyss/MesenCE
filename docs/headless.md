@@ -11,6 +11,9 @@ mise run test:headless                  # self-test (determinism, validation, Lu
 
 mesen-headless run --rom ROM --frames N --out NEW_DIR [--input INPUT.json] [--lua SCRIPT.lua]
                    [--region auto|ntsc|ntsc-j|pal] [--timeout SECONDS] [--allow-dirty]
+                   [--load-state STATE.mss]
+                   [--trace bus] [--trace-limit EVENTS] [--chip-audio]     # Mega Drive only
+                   [--md-model md1va3|md1va6] [--md-pads 6,6]              # Mega Drive only
 mesen-headless validate OUT_DIR
 mesen-headless doctor
 mesen-headless nnes-compat ROM HOME LUA RESULT WAV   # nativekit NES capture host contract
@@ -30,6 +33,11 @@ mesen-headless nnes-compat ROM HOME LUA RESULT WAV   # nativekit NES capture hos
   manifest says `"complete": false, "reason": "timeout"`, `limits.truncated` is true, the exit
   code is 3 and `validate` rejects the directory. A truncated capture is never presented as a
   qualified one.
+- `--load-state` loads a save state (from a previous run's `final.mss`) after the ROM and before
+  the first frame; `--frames` then counts from that point.
+- Builds use `-ffp-contract=off` (no fused multiply-add), so floating-point host code (audio
+  resampler, filters) rounds identically on arm64 and x86-64 and captures are byte-identical
+  across those hosts (`mise run test:md-xarch`).
 - A build from a dirty tree (or without a known commit) refuses to run unless `--allow-dirty`
   is given; the manifest then records `"qualified": false`.
 
@@ -65,6 +73,15 @@ Frame numbers are 1-based (entry `"1"` applies to the first emulated frame); por
 | `final.mss` | a save state at the end of the run |
 | `memory/<MemoryType>.bin` | every registered RAM-like memory (ROM and register views excluded) |
 | `lua.log` | the script log, when `--lua` is given |
+| `trace.txt` | Mega Drive bus trace (`--trace bus`), below |
+| `ym2612.raw`, `psg.raw` | Mega Drive per-chip audio before mixing (`--chip-audio`): s16le stereo at the YM2612 sample rate (master clock / 1008); the manifest's `chip_audio` gives format and rate |
+
+`trace.txt` (`mesen-md-bus-trace/1`) has one event per line,
+`<master clock> <device> <op> <width> <address> <value>` in hex, with device 1 = 68000,
+2 = Z80, 3 = VDP, 4 = YM2612, 5 = PSG and op 1 = fetch, 2 = read, 3 = write. At most
+`--trace-limit` events are written (default 5,000,000); the manifest's `trace` record gives
+the event count, the limit and `truncated`, and a truncated trace makes the capture
+`"qualified": false`.
 
 The manifest binds: schema version; emulator commit and dirty flag; `qualified`; the exact
 command; ROM SHA-256 and size (the ROM is not copied); input and Lua SHA-256; console and

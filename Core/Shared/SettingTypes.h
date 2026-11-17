@@ -877,7 +877,9 @@ struct MdConfig
 
 	bool RemoveSpriteLimit = false;
 	bool DisableSprites = false;
-	bool HideBgLayers[3] = {};
+	bool HidePlaneA = false;
+	bool HidePlaneB = false;
+	bool HideWindow = false;
 
 	uint32_t FmVolume = 100;
 	uint32_t PsgVolume = 100;

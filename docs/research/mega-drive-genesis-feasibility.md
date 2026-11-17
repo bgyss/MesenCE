@@ -360,6 +360,14 @@ directory.
 
 ## Implementation milestones
 
+**Status (2026-11-16): M0-M5 implemented on branch `md-support`; M6 not started.** Evidence and
+every approximation or reference disagreement are in
+[`md-verification-findings.md`](md-verification-findings.md). Checks: `test:m68k-cpu`,
+`test:z80-cpu`, `test:z80-irq`, `test:headless`, `test:md-synthetic` (54 pass, 6 known),
+`test:md-replay`, `test:md-xarch` (arm64 vs x86-64) and `test:ci` (incl. 10 MD recorded tests).
+The PPU viewers (tile/tilemap/sprite/palette/register/event) and cheats are not implemented for
+the Mega Drive yet; no commercial-game compatibility is claimed.
+
 ### M0: freeze the evidence and headless contract
 
 - Reproduce nativekit's current artifact schema and 59 generated synthetic MD cases without

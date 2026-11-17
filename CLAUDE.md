@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-MesenCE is a community fork of Mesen2: a multi-system emulator (NES, SNES, GB/SGB/GBC, GBA, PC Engine, SMS/Game Gear, WonderSwan) with a C++17 emulation core and a C#/.NET 10 Avalonia UI.
+MesenCE is a community fork of Mesen2: a multi-system emulator (NES, SNES, GB/SGB/GBC, GBA, PC Engine, SMS/Game Gear, WonderSwan, and in this fork Mega Drive/Genesis) with a C++17 emulation core and a C#/.NET 10 Avalonia UI.
 
 **This repository is an independent fork of MesenCE.** It's run as its own project, as an example of LLM-assisted development backed by testing and formal verification. Fixes are applied here directly, and nothing is prepared for or submitted upstream.
 
@@ -48,7 +48,12 @@ This fork's addition, not upstream.
   - `mise run test:gb-irq`: Game Boy interrupt/HALT/EI scenarios on the real `GbCpu`, checked against Pan Docs rules. Known bugs are reported but don't fail the run.
   - `mise run test:nes-dma`: NES OAM-DMA regression test. It builds the self-checking ROM `docs/research/tla/rom/dmc_oam_overlap.s` with cc65 and runs it with the DMC duplication glitch on.
   - `mise run test:savestate -- <roms|dir>`: save state → fresh console → per-frame state comparison, for NES, GB/GBC, SNES, SMS/GG/SG, PCE and WS ROMs. It finds emulation state missing from `Serialize`. `mise run test:savestate-all` runs it on every ROM embedded in MesenTests and `tests/` (about 5 minutes).
-  - Findings from these tools are logged in `docs/research/{nes,gb,snes,sms,gba,pce}-verification-findings.md`.
+  - Mega Drive (`Core/MD`, plan in `docs/research/mega-drive-genesis-feasibility.md`):
+    - `mise run test:m68k-cpu`: the ares-derived 68000 (`Core/MD/M68k`) vs SingleStepTests `m68000` (plus `--scenarios` for reset/IRQ/STOP, `--bench`).
+    - `mise run headless` / `test:headless`: the native runner `bin/mesen-headless` (no UI/SDL; contract in `docs/headless.md`) and its self-test.
+    - `mise run test:md-synthetic`: 60 synthetic cartridges (`tests/MD/synthetic`) vs the recorded BlastEm reference (reads, frames, per-chip audio); reviewed differences live in `tests/MD/synthetic/KNOWN`.
+    - `mise run test:md-replay`: save-state replay must reproduce the bus trace; `mise run test:md-xarch -- <other runner>`: byte-identical captures across builds/architectures.
+  - Findings from these tools are logged in `docs/research/{nes,gb,snes,sms,gba,pce,md}-verification-findings.md`.
   - The makefile doesn't track `#include` dependencies. The dummy CPUs (`Debugger/Dummy*.cpp`) `#include` the real CPU `.cpp` files, so `touch` them after editing a CPU, or the debugger keeps stale code. **If you change a class layout in a header** (add or remove a member), touch every `.cpp` that includes it (e.g. `find Core/SMS -name '*.cpp' -exec touch {} +`). Otherwise objects compiled against the old layout corrupt memory: a stale `SmsCpu.h` made `test:ci` hang in `SmsPsg::Run`.
   - `mise run test:snes-irq` / `mise run test:z80-irq`: interrupt scenarios for the 65816 (SNES CPU and SA-1) and the Z80, on the real CPU sources against a flat test bus.
   - The harnesses drive consoles without the emulation thread. They set `Emulator::_isRunAheadFrame` (so frames aren't sent to the video decoder) and register the console as `Emulator::_console` (some hardware, e.g. the MBC3 RTC, reads `Emulator::GetMasterClock()`).
@@ -88,7 +93,7 @@ There is no unit-test suite. Testing is ROM-based:
 
 - **Headless Lua test runner:** `Mesen --testRunner script.lua rom.nes [--timeout=N]`.
   - Runs at max speed with no UI.
-  - The process exit code is whatever the script passes to `emu.exit(code)`.
+  - The process exit code is whatever the script passes to `emu.stop(code)`.
   - Implemented in `UI/Utilities/TestRunner.cs`.
 - **Recorded ROM tests (`.mtp`):** these record per-frame hashes and replay them to detect regressions.
   - Run them from the UI's debug/test menus.

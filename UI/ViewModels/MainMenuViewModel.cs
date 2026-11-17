@@ -614,7 +614,7 @@ namespace Mesen.ViewModels
 
 					return region switch {
 						ConsoleRegion.Ntsc => true,
-						ConsoleRegion.NtscJapan => MainWindow.RomInfo.Format == RomFormat.GameGear,
+						ConsoleRegion.NtscJapan => MainWindow.RomInfo.Format == RomFormat.GameGear || MainWindow.RomInfo.ConsoleType == ConsoleType.Md,
 						ConsoleRegion.Pal => MainWindow.RomInfo.Format != RomFormat.GameGear,
 						ConsoleRegion.Dendy => MainWindow.RomInfo.ConsoleType == ConsoleType.Nes,
 						ConsoleRegion.Auto or _ => true
@@ -623,6 +623,7 @@ namespace Mesen.ViewModels
 				IsSelected = () => MainWindow.RomInfo.ConsoleType switch {
 					ConsoleType.Snes => ConfigManager.Config.Snes.Region == region,
 					ConsoleType.Nes => ConfigManager.Config.Nes.Region == region,
+					ConsoleType.Md => ConfigManager.Config.Md.Region == region,
 					ConsoleType.Sms => (
 						MainWindow.RomInfo.Format switch {
 							RomFormat.ColecoVision => ConfigManager.Config.Cv.Region,
@@ -642,6 +643,12 @@ namespace Mesen.ViewModels
 						case ConsoleType.Nes:
 							ConfigManager.Config.Nes.Region = region;
 							ConfigManager.Config.Nes.ApplyConfig();
+							break;
+
+						case ConsoleType.Md:
+							//The region is picked when the cartridge loads; it takes effect on the next power cycle
+							ConfigManager.Config.Md.Region = region;
+							ConfigManager.Config.Md.ApplyConfig();
 							break;
 
 						case ConsoleType.Sms:
@@ -1023,6 +1030,11 @@ namespace Mesen.ViewModels
 					OnClick = () => DebuggerWindow.GetOrOpenWindow(CpuType.St018)
 				},
 				new ContextMenuAction() {
+					ActionType = ActionType.OpenMdZ80Debugger,
+					IsVisible = () => MainWindow.RomInfo.CpuTypes.Contains(CpuType.MdZ80),
+					OnClick = () => DebuggerWindow.GetOrOpenWindow(CpuType.MdZ80)
+				},
+				new ContextMenuAction() {
 					ActionType = ActionType.OpenGameboyDebugger,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenGameboyDebugger),
 					IsVisible = () => MainWindow.RomInfo.ConsoleType == ConsoleType.Snes && MainWindow.RomInfo.CpuTypes.Contains(CpuType.Gameboy),
@@ -1032,7 +1044,7 @@ namespace Mesen.ViewModels
 				new ContextMenuAction() {
 					ActionType = ActionType.OpenEventViewer,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenEventViewer),
-					IsEnabled = () => IsGameRunning,
+					IsEnabled = () => IsGameRunning && MainWindow.RomInfo.ConsoleType.SupportsPpuTools(),
 					OnClick = () => EventViewerWindow.GetOrOpenWindow(MainWindow.RomInfo.ConsoleType.GetMainCpuType())
 				},
 				new ContextMenuAction() {
@@ -1044,7 +1056,7 @@ namespace Mesen.ViewModels
 				new ContextMenuAction() {
 					ActionType = ActionType.OpenRegisterViewer,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenRegisterViewer),
-					IsEnabled = () => IsGameRunning,
+					IsEnabled = () => IsGameRunning && MainWindow.RomInfo.ConsoleType.SupportsPpuTools(),
 					OnClick = () => DebugWindowManager.OpenDebugWindow(() => new RegisterViewerWindow(new RegisterViewerWindowViewModel()))
 				},
 				new ContextMenuAction() {
@@ -1057,25 +1069,25 @@ namespace Mesen.ViewModels
 				new ContextMenuAction() {
 					ActionType = ActionType.OpenTilemapViewer,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenTilemapViewer),
-					IsEnabled = () => IsGameRunning,
+					IsEnabled = () => IsGameRunning && MainWindow.RomInfo.ConsoleType.SupportsPpuTools(),
 					OnClick = () => DebugWindowManager.OpenDebugWindow(() => new TilemapViewerWindow(MainWindow.RomInfo.ConsoleType.GetMainCpuType()))
 				},
 				new ContextMenuAction() {
 					ActionType = ActionType.OpenTileViewer,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenTileViewer),
-					IsEnabled = () => IsGameRunning,
+					IsEnabled = () => IsGameRunning && MainWindow.RomInfo.ConsoleType.SupportsPpuTools(),
 					OnClick = () => DebugWindowManager.OpenDebugWindow(() => new TileViewerWindow(MainWindow.RomInfo.ConsoleType.GetMainCpuType()))
 				},
 				new ContextMenuAction() {
 					ActionType = ActionType.OpenSpriteViewer,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenSpriteViewer),
-					IsEnabled = () => IsGameRunning,
+					IsEnabled = () => IsGameRunning && MainWindow.RomInfo.ConsoleType.SupportsPpuTools(),
 					OnClick = () => DebugWindowManager.OpenDebugWindow(() => new SpriteViewerWindow(MainWindow.RomInfo.ConsoleType.GetMainCpuType()))
 				},
 				new ContextMenuAction() {
 					ActionType = ActionType.OpenPaletteViewer,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenPaletteViewer),
-					IsEnabled = () => IsGameRunning,
+					IsEnabled = () => IsGameRunning && MainWindow.RomInfo.ConsoleType.SupportsPpuTools(),
 					OnClick = () => DebugWindowManager.OpenDebugWindow(() => new PaletteViewerWindow(MainWindow.RomInfo.ConsoleType.GetMainCpuType()))
 				},
 				new ContextMenuSeparator(),

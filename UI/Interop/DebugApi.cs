@@ -122,6 +122,7 @@ namespace Mesen.Interop
 				CpuType.Sms => GetPpuState<SmsVdpState>(cpuType),
 				CpuType.Gba => GetPpuState<GbaPpuState>(cpuType),
 				CpuType.Ws => GetPpuState<WsPpuState>(cpuType),
+				CpuType.MdM68k or CpuType.MdZ80 => GetPpuState<MdVdpState>(cpuType),
 				_ => throw new Exception("Unsupported cpu type")
 			};
 		}
@@ -144,6 +145,7 @@ namespace Mesen.Interop
 				CpuType.Sms => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
 				CpuType.Gba => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
 				CpuType.Ws => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
+				CpuType.MdM68k or CpuType.MdZ80 => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
 				_ => throw new Exception("Unsupported cpu type")
 			};
 		}
@@ -557,6 +559,8 @@ namespace Mesen.Interop
 				CpuType.Sms => state is SmsCpuState,
 				CpuType.Gba => state is GbaCpuState,
 				CpuType.Ws => state is WsCpuState,
+				CpuType.MdM68k => state is MdM68kState,
+				CpuType.MdZ80 => state is SmsCpuState,
 				_ => false
 			};
 		}
@@ -571,6 +575,7 @@ namespace Mesen.Interop
 				ConsoleType.Sms => state is SmsVdpState,
 				ConsoleType.Gba => state is GbaPpuState,
 				ConsoleType.Ws => state is WsPpuState,
+				ConsoleType.Md => state is MdVdpState,
 				_ => false
 			};
 		}

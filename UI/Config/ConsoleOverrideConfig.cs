@@ -47,6 +47,7 @@ public partial class ConsoleOverrideConfig : BaseConfig<GameConfig>
 				}
 			case ConsoleType.Gba: return ConfigManager.Config.Gba.ConfigOverrides;
 			case ConsoleType.Ws: return ConfigManager.Config.Ws.ConfigOverrides;
+			case ConsoleType.Md: return ConfigManager.Config.Md.ConfigOverrides;
 		}
 
 		return null;

@@ -8,6 +8,7 @@
 #include "Shared/RewindManager.h"
 #include "Shared/Video/VideoDecoder.h"
 #include "Shared/NotificationManager.h"
+#include "Shared/EventType.h"
 #include "Shared/RenderedFrame.h"
 #include "Shared/BaseControlManager.h"
 #include "Utilities/Serializer.h"
@@ -262,6 +263,11 @@ void MdVdp::EndFrame()
 		_state.OddFrame = false;
 	}
 
+	//Frame events for the debugger and Lua (emu.eventType.endFrame/startFrame) and the UI's frame
+	//notification. MesenCE's MD frame boundary is the wrap to line 0, so both events fire here.
+	_emu->ProcessEvent(EventType::EndFrame, CpuType::MdM68k);
+	_emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::PpuFrameDone);
+
 	bool rewinding = _emu->GetRewindManager()->IsRewinding();
 	RenderedFrame frame(_currentBuffer, _lastFrameWidth, _lastFrameHeight, 1.0, _state.FrameCount, _console->GetControlManager()->GetPortStates());
 	_emu->GetVideoDecoder()->UpdateFrame(frame, rewinding, rewinding);
@@ -270,6 +276,7 @@ void MdVdp::EndFrame()
 	_console->ProcessEndOfFrame();
 
 	_currentBuffer = _currentBuffer == _outputBuffers[0] ? _outputBuffers[1] : _outputBuffers[0];
+	_emu->ProcessEvent(EventType::StartFrame, CpuType::MdM68k);
 }
 
 uint8_t MdVdp::GetM68kInterruptLevel()
@@ -745,7 +752,7 @@ void MdVdp::RenderLine(uint16_t line)
 
 		uint8_t colorB = 0;
 		bool priB = false;
-		if(!cfg.HideBgLayers[1]) {
+		if(!cfg.HidePlaneB) {
 			fetchPixel(planeBBase, planeW, planeH, (x - hscrollB) & (planeW * 8 - 1), (y + vscrollB) & (planeH * cellHeight - 1), colorB, priB);
 		}
 
@@ -753,11 +760,11 @@ void MdVdp::RenderLine(uint16_t line)
 		bool priA = false;
 		bool inWindow = lineInWindow || (winRight ? (x >= winH * 16u) : (x < winH * 16u));
 		if(inWindow) {
-			if(!cfg.HideBgLayers[2]) {
+			if(!cfg.HideWindow) {
 				uint32_t ww = h40 ? 64 : 32;
 				fetchPixel(windowBase, ww, 32, x, y, colorA, priA);
 			}
-		} else if(!cfg.HideBgLayers[0]) {
+		} else if(!cfg.HidePlaneA) {
 			fetchPixel(planeABase, planeW, planeH, (x - hscrollA) & (planeW * 8 - 1), (y + vscrollA) & (planeH * cellHeight - 1), colorA, priA);
 		}
 
