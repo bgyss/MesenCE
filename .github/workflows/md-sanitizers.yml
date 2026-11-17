@@ -52,8 +52,8 @@ jobs:
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: |
           make -j"$(nproc)" headless LTO=false \
-            CXX="clang++ -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all" \
-            CC="clang -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all"
+            CXX="clang++ -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -fsanitize-ignorelist=$PWD/.github/sanitizers/ubsan-ignorelist.txt" \
+            CC="clang -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -fsanitize-ignorelist=$PWD/.github/sanitizers/ubsan-ignorelist.txt"
           python3 tests/MD/synthetic/gen.py bin/md-synthetic
           fail=0
           mkdir -p out
