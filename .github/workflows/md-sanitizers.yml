@@ -1,0 +1,67 @@
+name: Mega Drive sanitizers and x86-64 benchmark
+
+# M1 evidence that cannot be produced on the macOS development host (its ASan runtime does not
+# start): ASan+UBSan on the 68000 suite and on the whole console (61 synthetic cartridges), and
+# the 68000 benchmark on a native x86-64 runner. See docs/research/md-verification-findings.md.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Core/MD/**'
+      - 'tests/MD/**'
+      - 'tools/m68k-cpu-singlestep/**'
+      - '.github/workflows/md-sanitizers.yml'
+
+jobs:
+  md-sanitizers:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang python3
+          clang++ --version
+          uname -m
+
+      - name: 68000 suite data (SingleStepTests/m68000)
+        run: git clone --depth 1 https://github.com/SingleStepTests/m68000.git bin/SingleStepTests-m68000
+
+      - name: 68000 benchmark (native x86-64, -O2)
+        run: |
+          mkdir -p bin
+          clang++ -std=c++17 -O2 -Wall -Werror -ICore tools/m68k-cpu-singlestep/singlestep.cpp Core/MD/M68k/M68kCore.cpp -o bin/m68k-bench
+          grep -m1 'model name' /proc/cpuinfo
+          for i in 1 2 3; do bin/m68k-bench --bench; done
+
+      - name: 68000 suite under ASan + UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          clang++ -std=c++17 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -ICore tools/m68k-cpu-singlestep/singlestep.cpp Core/MD/M68k/M68kCore.cpp -o bin/m68k-asan
+          bin/m68k-asan --scenarios
+          bin/m68k-asan bin/SingleStepTests-m68000/v1
+
+      - name: Whole console under ASan + UBSan (mesen-headless, 61 synthetic cartridges)
+        env:
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          make -j"$(nproc)" headless LTO=false \
+            CXX="clang++ -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all" \
+            CC="clang -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all"
+          python3 tests/MD/synthetic/gen.py bin/md-synthetic
+          fail=0
+          mkdir -p out
+          for rom in bin/md-synthetic/*.md; do
+            name=$(basename "$rom" .md)
+            if ! bin/mesen-headless run --rom "$rom" --frames 6 --out "out/$name" --trace bus --chip-audio --allow-dirty > "out-$name.log" 2>&1; then
+              echo "FAIL $name"; tail -40 "out-$name.log"; fail=1
+            fi
+          done
+          echo "61 cartridges run under ASan+UBSan, failures: $fail"
+          exit $fail
