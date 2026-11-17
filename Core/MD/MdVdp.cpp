@@ -9,6 +9,8 @@
 #include "Shared/Video/VideoDecoder.h"
 #include "Shared/NotificationManager.h"
 #include "Shared/EventType.h"
+#include "Debugger/Debugger.h"
+#include "Debugger/PpuTools.h"
 #include "Shared/RenderedFrame.h"
 #include "Shared/BaseControlManager.h"
 #include "Utilities/Serializer.h"
@@ -232,6 +234,13 @@ void MdVdp::ProcessLineStart()
 {
 	_lineRendered = false;
 	uint16_t line = _state.Scanline;
+	if(_emu->IsDebugging()) {
+		//Debugger viewers set to refresh at this line
+		PpuTools* tools = _emu->InternalGetDebugger()->GetPpuTools(CpuType::MdM68k);
+		if(tools && tools->HasOpenedViewer()) {
+			tools->UpdateViewers(line, 0);
+		}
+	}
 	if(line == 0) {
 		_vintRaisedThisFrame = false;
 		_frameWidth = IsH40() ? 320 : 256;
@@ -496,7 +505,7 @@ void MdVdp::RunDma68k()
 	uint64_t done = ConsumeSlots(std::max(now, _fifoLastCompletion), length * slotsPerWord);
 	_state.DmaBusyUntil = done;
 	_fifoLastCompletion = done;
-	_memoryManager->AddM68kStall(done - now);
+	_memoryManager->AddM68kStall(done - now, true);
 }
 
 void MdVdp::RunDmaFill(uint16_t value)

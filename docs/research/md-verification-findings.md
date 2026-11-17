@@ -100,8 +100,13 @@ trace and NMDH decomp-hook fields, with the MesenCE component that supplies each
   ares' `b1` (nall `Boolean`) default-initialises to false, but the compatibility header mapped
   it to plain `bool`, leaving `EffectiveAddress::valid` uninitialised in the instruction table
   (a stale "already computed" flag could skip an effective-address calculation). Fixed by
-  initialising it; the full suite is UBSan-clean with the same counts. ASan: not assessed on
-  this host — the ASan runtime hangs in `InitializeShadowMemory` before `main` on Darwin 27.
+  initialising it; the full suite is UBSan-clean with the same counts. The whole console is
+  UBSan-clean too: a `-fsanitize=undefined -fno-sanitize-recover=all` build of `mesen-headless`
+  ran all 60 synthetic cartridges with `--trace bus --chip-audio` without a report.
+- ASan: **not supported on this host.** The ASan runtime hangs in `InitializeShadowMemory`
+  before `main` on Darwin 27, even for a four-line test program, with both the Nix clang 21 and
+  Apple's clang; the Docker daemon (for a Linux run) is not running here. ASan remains to be run
+  on Linux.
 
 ### C2. Reset, interrupts and STOP (`test:m68k-cpu`, `--scenarios`)
 
@@ -114,10 +119,18 @@ synchronisation with E) keeps ares' Mega Drive approximation (hardware-unverifie
 
 ### C3. Performance
 
-`bin/m68k-cpu-singlestep --bench` (arm64, Apple silicon): 44.8 M instructions/s, about
-80 times a 7.67 MHz 68000 on a flat bus. Dispatch uses ares' `std::function` table; a
-tighter dispatch is deferred until the console's own cost profile is known. x86-64: not
-assessed on this host.
+`bin/m68k-cpu-singlestep --bench` on an Apple M1 Max, three runs each:
+
+| Build | M instructions/s | × a 7.67 MHz 68000 |
+|---|---|---|
+| arm64 (native) | 43.1 / 45.3 / 45.4 | 77-81 |
+| x86-64 (`clang++ -arch x86_64`, run under Rosetta 2) | 24.7 / 21.4 / 26.0 | 38-46 |
+
+The x86-64 figures include Rosetta's translation overhead, so they are a lower bound for a
+native x86-64 host, not a measurement of one (no x86-64 machine available here). The x86-64
+build passes the full suite with the same counts (317,242 pass, 258 known). Dispatch uses ares'
+`std::function` table; a tighter dispatch is deferred until the console's own cost profile is
+known.
 
 ## M2 — shared Z80 engine
 
@@ -172,8 +185,17 @@ assessed on this host.
   (model/region/expansion), I/O ports with TH-driven pad protocol, Z80 BUSREQ/RESET, bank
   register, Z80 RAM and YM/PSG access from the 68000, TMSS (`io_tmss_unlock`), `TAS` (write
   completes; `tas_write`).
+- DRAM refresh (`MdMemoryManager::ApplyRefresh`): the 68000 loses 2 cycles every 128 68000
+  cycles; the counter runs during VDP waits without adding delay and restarts after a
+  68000-to-VDP DMA. Model and figures are BlastEm's (`genesis.c`, `refresh_advance`,
+  `REFRESH_INTERVAL 128`, `REFRESH_DELAY 2`, in nativekit's pinned build 305189429e81); they are
+  the transitional reference's, not hardware-measured. The delay loop feeds the stolen time back
+  into the counter, so the result does not depend on how often it is applied. Effect on the
+  synthetic corpus: all reads still match, and the total poll-count deviation from BlastEm
+  (timing, reported by `compare.py --verbose`) drops from 370 to 38 iterations over the 7
+  polls that differ.
 - Approximations, not modelled (judgment calls, recorded here so they are not mistaken for
-  verified behaviour): DRAM refresh stalls; the 68000 stall while the Z80 uses the bank window;
+  verified behaviour): the 68000 stall while the Z80 uses the bank window;
   the VDP's position at power-on (MesenCE starts at line 0, H 0); VDP access through the bank
   window (returns $FF instead of locking up).
 - Evidence: `bus_map`, `io_*`, `z80_bank_window`, `tas_write` match BlastEm's read values
@@ -186,18 +208,27 @@ assessed on this host.
   trace(A) = trace(B) + trace(C) event for event (clock, device, op, address, value) and
   identical final picture and memories. Run with (W,N) = (1,4) and (2,5).
 - `bin/savestate-roundtrip` (save → fresh console → per-frame state comparison) on all 60.
-- Result: 60/60 replay identical for both splits; round trip 60/60 consistent.
+- The runs also use `--chip-audio`: A's YM2612 and PSG streams must equal B's followed by C's
+  sample for sample (audio phase across the state), and cases with scripted pad input get it in
+  all three runs (input frame numbers are absolute, so they continue across the load).
+- Result: 61/61 replay identical for both splits (60 nativekit cases plus `io_pad6_across_frame`,
+  R2); round trip consistent.
 
 ## M4 — VDP and video
 
 ### V1. Synthetic VDP/render cases vs BlastEm (`mise run test:md-synthetic`)
 
-- `tests/MD/synthetic/compare.py` checks the 68000 read values of every READ step (exact
-  address, width, value), that every POLL step terminates, and for render cases the final frame
+- `tests/MD/synthetic/compare.py` checks the 68000 read values of every READ step, that every
+  POLL step terminates, and for render cases the final frame
   up to a colour relabelling (BlastEm and MesenCE use different DAC levels) after locating the
   active area inside BlastEm's bordered frame; interlace mode 2 is compared per field.
-- Result: **54 pass, 6 KNOWN, 0 fail** of 60. KNOWN cases are listed with reasons in
-  `tests/MD/synthetic/KNOWN` (S3 below).
+- Read values are compared the way nativekit's own runner accepts them
+  (`consoles/md/tests/rom/run.py`, `_compare`): a READ that carries a `compare_mask` in
+  `cases.py` must equal the case's expected value under that mask, and MesenCE and the reference
+  are compared under the same mask; a READ without a mask is compared in full. Earlier versions
+  of `compare.py` compared every read in full, which is stricter than the accepted method and
+  produced five KNOWN entries for bits the cases do not assert (S3).
+- Result: **60 pass, 0 KNOWN, 0 fail** of 60.
 
 ### V2. Decisions made while matching the reference
 
@@ -215,16 +246,26 @@ assessed on this host.
   poll iteration counts are reported by `--verbose` but not compared (they are timing, and
   BlastEm's slot model is not a hardware reference).
 
-### S3. KNOWN reference disagreements (`tests/MD/synthetic/KNOWN`)
+### S3. Differences from BlastEm outside the asserted bits, and the remaining audio KNOWN
 
+Informational (not failures under the accepted comparison, V1):
 - `sprite_collision_status`, `sprite_overflow_status_h32/h40`,
-  `sprite_overflow_status_reread_h32`: open-bus status bits 15-10 only (V2).
-- `vdp_port_timing`: the same open-bus bits, plus the H-blank bit of the first status read
-  after reset, which depends on the VDP's power-on position (unmodelled in both emulators).
-- `sound_ym_ports`: YM2612 busy duration after a data write: ymfm 32×6 YM clocks
-  (1344 MCLK), BlastEm about 900 MCLK longer. No hardware measurement available.
-- `sound_ym_envelope_key_on_off` (audio): key-off follows key-on by far less than one YM
-  sample; ymfm plays the attack and release, BlastEm produces nothing. Hardware-unverified.
+  `sprite_overflow_status_reread_h32`, `vdp_port_timing`: VDP status bits 15-10 (open bus,
+  V2) differ; the cases assert only the collision/overflow/PAL bits. `vdp_port_timing`'s first
+  status read also differs in the H-blank bit, which depends on the unmodelled power-on position.
+- `sound_ym_ports`: the busy bit (7) after a data write differs (ymfm holds it 32×6 YM clocks =
+  1344 MCLK, BlastEm about 900 MCLK longer); the case asserts only the timer flags (mask $03).
+
+Still KNOWN (audio, `tests/MD/synthetic/KNOWN`): `sound_ym_envelope_key_on_off`. The key-on
+pulse lasts 3136 master clocks (~58 µs, about 3 YM samples) because the display is off and the
+VBlank poll ends at once; the channel's attack rate (AR 28 plus key scaling) gives an instant
+attack, so ymfm plays a note that then releases. BlastEm's stream holds only a start-up
+transient followed by a constant level (rms 2.4 after removing DC): no note. (The previous KNOWN
+text said "well under one YM sample" and "BlastEm produces no note"; the first was wrong and is
+corrected here.) nativekit's own model (`src/sound/ym2612.c`, `keyon_write`) also starts the
+attack on the key-on write. An independent die-level reference (Nuked-OPN2, replaying the same
+YM writes from our bus trace) was prepared to settle this; running it was stopped by the
+session's permission policy, so the question is open and the case stays KNOWN.
 
 ## M5 — audio, controllers, debugger, determinism
 
@@ -236,7 +277,7 @@ assessed on this host.
   requires the same activity, stereo placement and dominant frequency (1.5% or one FFT bin;
   broadband output, e.g. full-depth modulation in algorithms 2/3, compares spectral centroid
   and peak within 20%). Levels are not compared (different gain/DAC tables).
-- Result: 17 audio cases, 16 agree + 1 KNOWN (`sound_ym_envelope_key_on_off`).
+- Result: 17 audio cases, 16 agree + 1 KNOWN (`sound_ym_envelope_key_on_off`, S3).
 
 ### A2. 3- and 6-button pads (`Core/MD/Input/MdController.h`)
 
@@ -258,9 +299,24 @@ assessed on this host.
   parameterised by CPU type); "Z80 Debugger" menu entry; MD ROM extensions in the open dialog
   and folder scan. The C#/C++ layouts of `MdM68kState`, `MdVdpState`, `MdState` and `MdConfig`
   were checked field by field (`Marshal.SizeOf`/`OffsetOf` vs `sizeof`/`offsetof`: identical).
-- Not implemented (the menu items are disabled for MD rather than broken): tile, tilemap,
-  sprite, palette, register and event viewers (`ConsoleType.SupportsPpuTools`); cheats; OS file
-  associations for `.md/.gen`.
+- Viewers (`Core/MD/Debugger/MdVdpTools.{h,cpp}` + C#): tile viewer (VRAM preset; Mega Drive
+  cells use the existing packed-4bpp `WsBpp4Packed` format), tilemap viewer (Plane A, Plane B,
+  Window; interlace-2 cells are 8×16), sprite viewer (80/64 sprites, 512×512 coordinate space,
+  visible area at 128,128, sprites outside the link chain marked disabled), palette viewer (64
+  CRAM colours, new `RawPaletteFormat.MdCram`, editable), register viewer (`MdRegisterViewer`:
+  VDP state and all 24 registers decoded; Z80 bus, bank, SRAM, TMSS, I/O ports), event viewer
+  (`MdEventViewerConfig`, VDP port reads/writes, IRQ/NMI, breakpoints; one column per 4 master
+  clocks). Viewers refresh at the start of the selected line (the renderer works per line).
+- Regression (`mise run test:md-viewers`, `tools/md-vdp-tools-check`): on all 20 render
+  cartridges every rendered pixel is one of the palette viewer's colours; composing the Plane A
+  and B tilemap views over the backdrop reproduces the rendered frame pixel for pixel on the 8
+  single-scroll plane cases (57,344-76,800 pixels each); the sprite viewer's opaque screen
+  pixels equal the rendered pixels on the 3 non-overflow sprite cases. (The two overflow cases
+  are excluded on purpose: the viewer lists every linked sprite, while the frame drops the one
+  past the per-line limit.)
+- Not implemented: cheats (the M5 list does not include them; a Mega Drive Action Replay/Game
+  Genie format needs 16-bit codes, while `InternalCheatCode` holds one byte); "Save ROM" from the
+  debugger (`Debugger::SaveRomToDisk` has no MD case); OS file associations for `.md/.gen`.
 
 ### D2. Lua frame callbacks never fired on the Mega Drive (fixed)
 
@@ -271,6 +327,29 @@ assessed on this host.
   hot-path cost). Regression: `test:headless` "MD: Lua endFrame callbacks fire and the 68000
   state is readable".
 - Related doc fix: the Lua stop function is `emu.stop(code)` (CLAUDE.md said `emu.exit`).
+
+### D3. Debugger returned no VDP state for the Mega Drive (fixed)
+
+- Repro: `tools/md-vdp-tools-check` saw an all-zero `MdVdpState` (display off, no shadow mode)
+  on cartridges that render: `Debugger::GetPpuState`/`SetPpuState` had no `MdM68k`/`MdZ80`
+  case, so every caller (status views' scanline, viewers, `DebugApi.GetPpuState`) got an
+  untouched struct. Fix: both switches forward to `MdDebugger`. Regression: `test:md-viewers`
+  (it fails without the fix, since the tilemap and sprite checks need the real state).
+
+### R2. Pad handshake state was missing from save states (fixed)
+
+- Repro: `io_pad6_across_frame` (`tests/MD/synthetic/extra_cases.py`, MesenCE's own case) runs
+  `io_pad6_sequence`'s TH toggles and expected reads, but starts on NTSC line 254 and spaces the
+  toggles with work-RAM reads (each gap far below the 1.5 ms phase timeout), so a save at the end
+  of frame 1 falls after the first TH edge. `replay_check.py` (warmup 1): the restored run read
+  $33 where the uninterrupted run read the 6-button ID $30. Cause: `MdControlManager::Serialize`
+  stored only the base poll counter and never the pad devices (phase counter, TH level, time of
+  the last TH change). The original `io_pad6_sequence` cannot show this: its handshake finishes
+  in frame 1, before any save point.
+- Fix: serialize the devices, as the SMS/NES/PCE control managers do. Regression:
+  `test:md-replay` (61/61). Negative control: with the fix in place, removing only
+  `SV(_phase)` from `MdController::Serialize` makes the case fail at the same read; restoring it
+  passes.
 
 ### R1. Recorded-ROM tests (`tests/MD/recorded`, `mise run test:ci`)
 
@@ -290,6 +369,8 @@ assessed on this host.
   miniz's x86-specific deflate path (different but equivalent compressed bytes).
 - `tests/MD/synthetic/xarch_compare.py` requires every artifact to be byte-identical and
   cross-loads the states (each build continues from the other's `final.mss`).
-- Result: 60/60 identical, including cross-loaded continuations. `test:ci` passes with the flag.
+- Result: 61/61 identical, including cross-loaded continuations, re-run after the refresh
+  model and the pad serialization fix (x86-64 runner built from the same tree under
+  `clang++ -arch x86_64`, run via Rosetta 2). `test:ci` passes with the flag.
 - Speed (not a hardware claim): `render_h40` (idle 68000 loop, display on, audio) runs 3000
   frames in 3.9 s on arm64 (~770 fps). Commercial-game performance is M6 work.

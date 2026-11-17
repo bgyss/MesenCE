@@ -52,7 +52,8 @@ This fork's addition, not upstream.
     - `mise run test:m68k-cpu`: the ares-derived 68000 (`Core/MD/M68k`) vs SingleStepTests `m68000` (plus `--scenarios` for reset/IRQ/STOP, `--bench`).
     - `mise run headless` / `test:headless`: the native runner `bin/mesen-headless` (no UI/SDL; contract in `docs/headless.md`) and its self-test.
     - `mise run test:md-synthetic`: 60 synthetic cartridges (`tests/MD/synthetic`) vs the recorded BlastEm reference (reads, frames, per-chip audio); reviewed differences live in `tests/MD/synthetic/KNOWN`.
-    - `mise run test:md-replay`: save-state replay must reproduce the bus trace; `mise run test:md-xarch -- <other runner>`: byte-identical captures across builds/architectures.
+    - `mise run test:md-replay`: save-state replay must reproduce the bus trace and chip audio; `mise run test:md-xarch -- <other runner>`: byte-identical captures across builds/architectures.
+    - `mise run test:md-viewers`: the debugger's palette/tilemap/sprite viewers (`MdVdpTools`) must decode VRAM/CRAM exactly as the VDP renders.
   - Findings from these tools are logged in `docs/research/{nes,gb,snes,sms,gba,pce,md}-verification-findings.md`.
   - The makefile doesn't track `#include` dependencies. The dummy CPUs (`Debugger/Dummy*.cpp`) `#include` the real CPU `.cpp` files, so `touch` them after editing a CPU, or the debugger keeps stale code. **If you change a class layout in a header** (add or remove a member), touch every `.cpp` that includes it (e.g. `find Core/SMS -name '*.cpp' -exec touch {} +`). Otherwise objects compiled against the old layout corrupt memory: a stale `SmsCpu.h` made `test:ci` hang in `SmsPsg::Run`.
   - `mise run test:snes-irq` / `mise run test:z80-irq`: interrupt scenarios for the 65816 (SNES CPU and SA-1) and the Z80, on the real CPU sources against a flat test bus.

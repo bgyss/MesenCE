@@ -249,6 +249,7 @@ namespace Mesen.Debugger.ViewModels
 				CpuType.Sms => Config.SmsConfig,
 				CpuType.Gba => Config.GbaConfig,
 				CpuType.Ws => Config.WsConfig,
+				CpuType.MdM68k => Config.MdConfig,
 				_ => throw new Exception("Invalid cpu type")
 			};
 		}
@@ -320,6 +321,7 @@ namespace Mesen.Debugger.ViewModels
 				CpuType.Sms => new PixelPoint(evt.Cycle * 2, evt.Scanline * 2),
 				CpuType.Gba => new PixelPoint(evt.Cycle, evt.Scanline * 4),
 				CpuType.Ws => new PixelPoint(evt.Cycle * 2, evt.Scanline * 2),
+				CpuType.MdM68k => new PixelPoint(evt.Cycle / 4, evt.Scanline * 2),
 				_ => throw new Exception("Invalid cpu type")
 			};
 		}
@@ -382,6 +384,13 @@ namespace Mesen.Debugger.ViewModels
 					yPos = result.Y / 2;
 					break;
 
+				case CpuType.MdM68k:
+					//One column per 4 master clocks; shown in master clocks into the line
+					result.X = p.X;
+					xPos = result.X * 4;
+					yPos = result.Y / 2;
+					break;
+
 				default:
 					throw new Exception("Invalid cpu type");
 			}
@@ -407,6 +416,8 @@ namespace Mesen.Debugger.ViewModels
 				DebugApi.SetEventViewerConfig(CpuType, smsCfg.ToInterop());
 			} else if(ConsoleConfig is WsEventViewerConfig wsCfg) {
 				DebugApi.SetEventViewerConfig(CpuType, wsCfg.ToInterop());
+			} else if(ConsoleConfig is MdEventViewerConfig mdCfg) {
+				DebugApi.SetEventViewerConfig(CpuType, mdCfg.ToInterop());
 			}
 		}
 

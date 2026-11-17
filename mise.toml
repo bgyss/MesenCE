@@ -468,6 +468,20 @@ bin/savestate-roundtrip --warmup 0 --frames 6 bin/md-synthetic
 bin/savestate-roundtrip --warmup 1 --frames 6 bin/md-synthetic
 '''
 
+[tasks."test:md-viewers"]
+description = "Mega Drive: the debugger's palette, tilemap and sprite viewers (MdVdpTools) decode VRAM/CRAM exactly as the VDP renders the synthetic render cartridges"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python3 tests/MD/synthetic/gen.py bin/md-synthetic
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/md-vdp-tools-check/check.cpp "$lib" -pthread -o bin/md-vdp-tools-check
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+bin/md-vdp-tools-check --frames 6 bin/md-synthetic/render_*.md
+'''
+
 [tasks."test:md-xarch"]
 description = "Mega Drive: byte-identical captures and cross-loadable states between this build and another (e.g. x86-64) runner: mise run test:md-xarch -- <other mesen-headless>"
 depends = ["headless"]

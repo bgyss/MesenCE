@@ -98,8 +98,21 @@ void MdMemoryManager::SyncZ80()
 	_z80->Run(_masterClock, IsZ80Held());
 }
 
+void MdMemoryManager::AddM68kStall(uint64_t masterClocks, bool dma)
+{
+	ApplyRefresh();
+	_masterClock += masterClocks;
+	if(dma) {
+		_refreshCounter = 0;
+	} else {
+		_refreshCounter = (uint32_t)((_refreshCounter + masterClocks) % (128 * MdTiming::M68kDivider));
+	}
+	_refreshSyncClock = _masterClock;
+}
+
 void MdMemoryManager::SyncAfterM68kInstruction()
 {
+	ApplyRefresh();
 	_vdp->Run(_masterClock);
 	_z80->Run(_masterClock, IsZ80Held());
 	_m68k->SetInterruptLevel(_vdp->GetM68kInterruptLevel());
@@ -657,6 +670,8 @@ void MdMemoryManager::Serialize(Serializer& s)
 		SVArray(_saveRam, _saveRamSize);
 	}
 	SV(_masterClock);
+	SV(_refreshCounter);
+	SV(_refreshSyncClock);
 	SV(_state.Z80Bank);
 	SV(_state.Z80BusRequested);
 	SV(_state.Z80Reset);

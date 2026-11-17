@@ -19,12 +19,6 @@ namespace Mesen.Interop
 			};
 		}
 
-		//Tile/tilemap/sprite/palette/register/event viewers (not implemented for the Mega Drive yet)
-		public static bool SupportsPpuTools(this ConsoleType type)
-		{
-			return type != ConsoleType.Md;
-		}
-
 		public static bool SupportsCheats(this ConsoleType type)
 		{
 			return type switch {

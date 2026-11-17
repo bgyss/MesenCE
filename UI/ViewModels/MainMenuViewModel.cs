@@ -1044,7 +1044,7 @@ namespace Mesen.ViewModels
 				new ContextMenuAction() {
 					ActionType = ActionType.OpenEventViewer,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenEventViewer),
-					IsEnabled = () => IsGameRunning && MainWindow.RomInfo.ConsoleType.SupportsPpuTools(),
+					IsEnabled = () => IsGameRunning,
 					OnClick = () => EventViewerWindow.GetOrOpenWindow(MainWindow.RomInfo.ConsoleType.GetMainCpuType())
 				},
 				new ContextMenuAction() {
@@ -1056,7 +1056,7 @@ namespace Mesen.ViewModels
 				new ContextMenuAction() {
 					ActionType = ActionType.OpenRegisterViewer,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenRegisterViewer),
-					IsEnabled = () => IsGameRunning && MainWindow.RomInfo.ConsoleType.SupportsPpuTools(),
+					IsEnabled = () => IsGameRunning,
 					OnClick = () => DebugWindowManager.OpenDebugWindow(() => new RegisterViewerWindow(new RegisterViewerWindowViewModel()))
 				},
 				new ContextMenuAction() {
@@ -1069,25 +1069,25 @@ namespace Mesen.ViewModels
 				new ContextMenuAction() {
 					ActionType = ActionType.OpenTilemapViewer,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenTilemapViewer),
-					IsEnabled = () => IsGameRunning && MainWindow.RomInfo.ConsoleType.SupportsPpuTools(),
+					IsEnabled = () => IsGameRunning,
 					OnClick = () => DebugWindowManager.OpenDebugWindow(() => new TilemapViewerWindow(MainWindow.RomInfo.ConsoleType.GetMainCpuType()))
 				},
 				new ContextMenuAction() {
 					ActionType = ActionType.OpenTileViewer,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenTileViewer),
-					IsEnabled = () => IsGameRunning && MainWindow.RomInfo.ConsoleType.SupportsPpuTools(),
+					IsEnabled = () => IsGameRunning,
 					OnClick = () => DebugWindowManager.OpenDebugWindow(() => new TileViewerWindow(MainWindow.RomInfo.ConsoleType.GetMainCpuType()))
 				},
 				new ContextMenuAction() {
 					ActionType = ActionType.OpenSpriteViewer,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenSpriteViewer),
-					IsEnabled = () => IsGameRunning && MainWindow.RomInfo.ConsoleType.SupportsPpuTools(),
+					IsEnabled = () => IsGameRunning,
 					OnClick = () => DebugWindowManager.OpenDebugWindow(() => new SpriteViewerWindow(MainWindow.RomInfo.ConsoleType.GetMainCpuType()))
 				},
 				new ContextMenuAction() {
 					ActionType = ActionType.OpenPaletteViewer,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenPaletteViewer),
-					IsEnabled = () => IsGameRunning && MainWindow.RomInfo.ConsoleType.SupportsPpuTools(),
+					IsEnabled = () => IsGameRunning,
 					OnClick = () => DebugWindowManager.OpenDebugWindow(() => new PaletteViewerWindow(MainWindow.RomInfo.ConsoleType.GetMainCpuType()))
 				},
 				new ContextMenuSeparator(),

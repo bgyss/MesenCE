@@ -360,13 +360,16 @@ directory.
 
 ## Implementation milestones
 
-**Status (2026-11-16): M0-M5 implemented on branch `md-support`; M6 not started.** Evidence and
-every approximation or reference disagreement are in
+**Status (2026-11-16): M0-M5 implemented on branch `md-support`; M6 not started.** Evidence,
+approximations and reference disagreements are in
 [`md-verification-findings.md`](md-verification-findings.md). Checks: `test:m68k-cpu`,
-`test:z80-cpu`, `test:z80-irq`, `test:headless`, `test:md-synthetic` (54 pass, 6 known),
-`test:md-replay`, `test:md-xarch` (arm64 vs x86-64) and `test:ci` (incl. 10 MD recorded tests).
-The PPU viewers (tile/tilemap/sprite/palette/register/event) and cheats are not implemented for
-the Mega Drive yet; no commercial-game compatibility is claimed.
+`test:z80-cpu`, `test:z80-irq`, `test:headless`, `test:md-synthetic` (60/60 reads and frames
+under nativekit's masked comparison; audio 16/17 plus one open KNOWN case,
+`sound_ym_envelope_key_on_off`), `test:md-replay` (61/61 incl. audio phase and a mid-handshake
+pad save), `test:md-viewers`, `test:md-xarch` (arm64 vs x86-64, 61/61) and `test:ci` (incl. 10
+MD recorded tests). Open items: that audio case; ASan (the runtime does not start on this
+macOS host; needs a Linux run); x86-64 performance measured only under Rosetta 2; cheats (not in
+the M5 list). No commercial-game compatibility is claimed.
 
 ### M0: freeze the evidence and headless contract
 

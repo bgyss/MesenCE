@@ -969,6 +969,12 @@ void Debugger::GetPpuState(BaseState& state, CpuType cpuType)
 			GetDebugger<CpuType::Ws, WsDebugger>()->GetPpuState(state);
 			break;
 		}
+
+		case CpuType::MdM68k:
+		case CpuType::MdZ80: {
+			GetDebugger<CpuType::MdM68k, MdDebugger>()->GetPpuState(state);
+			break;
+		}
 	}
 }
 
@@ -1014,6 +1020,12 @@ void Debugger::SetPpuState(BaseState& state, CpuType cpuType)
 
 		case CpuType::Ws: {
 			GetDebugger<CpuType::Ws, WsDebugger>()->SetPpuState(state);
+			break;
+		}
+
+		case CpuType::MdM68k:
+		case CpuType::MdZ80: {
+			GetDebugger<CpuType::MdM68k, MdDebugger>()->SetPpuState(state);
 			break;
 		}
 	}

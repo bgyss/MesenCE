@@ -19,6 +19,7 @@ class MdZ80;
 class MdVdp;
 class MdMemoryManager;
 class MdEventManager;
+class MdVdpTools;
 class IAssembler;
 
 enum class MemoryOperationType;
@@ -41,6 +42,7 @@ class MdDebugger final : public IDebugger
 	MemoryAccessCounter* _memoryAccessCounter;
 
 	unique_ptr<MdEventManager> _eventManager;
+	unique_ptr<MdVdpTools> _ppuTools;
 	unique_ptr<CallstackManager> _callstackManager;
 	unique_ptr<CodeDataLogger> _codeDataLogger;
 	unique_ptr<BreakpointManager> _breakpointManager;
@@ -88,6 +90,7 @@ public:
 	DebuggerFeatures GetSupportedFeatures() override;
 
 	BaseEventManager* GetEventManager() override;
+	PpuTools* GetPpuTools() override;
 	IAssembler* GetAssembler() override { return nullptr; }
 	CallstackManager* GetCallstackManager() override;
 	BreakpointManager* GetBreakpointManager() override;

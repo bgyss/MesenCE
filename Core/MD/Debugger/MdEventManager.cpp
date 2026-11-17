@@ -64,8 +64,9 @@ uint32_t MdEventManager::TakeEventSnapshot(bool forAutoRefresh)
 DebugEventInfo MdEventManager::GetEvent(uint16_t y, uint16_t x)
 {
 	auto lock = _lock.AcquireSafe();
+	int scanline = y / 2;
 	for(DebugEventInfo& evt : _sentEvents) {
-		if(evt.Scanline == y && std::abs((int)evt.Cycle / 4 - (int)x) <= 1) {
+		if(evt.Scanline == scanline && std::abs((int)evt.Cycle / 4 - (int)x) <= 1) {
 			return evt;
 		}
 	}
@@ -78,6 +79,6 @@ FrameInfo MdEventManager::GetDisplayBufferSize()
 {
 	FrameInfo size;
 	size.Width = ScanlineWidth;
-	size.Height = _scanlineCount;
+	size.Height = _scanlineCount * 2;
 	return size;
 }

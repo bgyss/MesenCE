@@ -5,8 +5,10 @@
 
 For every case it runs the cartridge with `--trace bus` and checks, against
 reference/baseline.json:
-  reads   the 68000 data reads of each READ step (exact address, width and value) and that every
-          POLL step terminates; poll iteration counts are timing and are reported, not compared;
+  reads   the 68000 data reads of each READ step: exact address and width, the value under the
+          case's compare_mask (equal to the case's expected value and to the reference, as nativekit's
+          run.py does; full width when the case gives no mask), and that every POLL step
+          terminates; poll iteration counts are timing and are reported, not compared;
   frame   render cases: the final frame, compared up to a relabelling of colours (BlastEm and
           MesenCE use different DAC levels) after locating the active area in BlastEm's bordered
           frame;
@@ -203,8 +205,17 @@ def main():
                     problems.append("MesenCE: " + our_err)
                 if not ref_err and not our_err:
                     for (idx, a), (_, b) in zip(ref_vals, our_vals):
-                        if a != b:
-                            problems.append("step %d read %s, reference %s" % (idx, ["$%06X/%d=%X" % tuple(r) for r in b], ["$%06X/%d=%X" % tuple(r) for r in a]))
+                        #nativekit's accepted comparison (consoles/md/tests/rom/run.py, _compare): a READ with
+                        #a compare_mask must equal the case's expected value under that mask, and the two
+                        #emulators are compared under the same mask; a READ without one is compared in full.
+                        op = ops[idx]
+                        mask = op.compare_mask or 0xFFFFFFFF
+                        if op.compare_mask:
+                            got = b[0][2] if op.width != 4 else (b[0][2] << 16) | b[1][2]
+                            if (got & mask) != (op.value & mask):
+                                problems.append("step %d read $%X, case expects $%X under mask $%X" % (idx, got, op.value, mask))
+                        if [(r[0], r[1], r[2] & mask) for r in a] != [(r[0], r[1], r[2] & mask) for r in b]:
+                            problems.append("step %d read %s, reference %s (mask $%X)" % (idx, ["$%06X/%d=%X" % tuple(r) for r in b], ["$%06X/%d=%X" % tuple(r) for r in a], mask))
                     if args.verbose:
                         for (idx, a), (_, b) in zip(ref_polls, our_polls):
                             if a != b:

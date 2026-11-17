@@ -51,6 +51,11 @@ private:
 	bool _hasTmss = false;
 
 	uint64_t _masterClock = 0;
+
+	//DRAM refresh (see ApplyRefresh): master clocks counted towards the next refresh, and the
+	//master clock up to which the counter has been advanced
+	uint32_t _refreshCounter = 0;
+	uint64_t _refreshSyncClock = 0;
 	MdMemoryManagerState _state = {};
 
 	void SyncZ80();
@@ -79,8 +84,32 @@ public:
 	uint64_t GetMasterClock() { return _masterClock; }
 
 	__forceinline void AdvanceM68k(uint32_t m68kClocks) { _masterClock += m68kClocks * MdTiming::M68kDivider; }
-	void AddM68kStall(uint64_t masterClocks) { _masterClock += masterClocks; }
+	//The 68000 waits for the VDP (FIFO full or 68000-to-VDP DMA). Refresh delays due before the wait
+	//are applied first; refresh during the wait costs nothing extra, and a DMA restarts the counter.
+	void AddM68kStall(uint64_t masterClocks, bool dma = false);
 	void SyncAfterM68kInstruction();
+
+	// DRAM refresh steals 2 68000 cycles every 128 68000 cycles. Model and figures are BlastEm's
+	// (genesis.c, refresh_advance: REFRESH_INTERVAL 128, REFRESH_DELAY 2), the transitional
+	// reference; hardware-unverified. The delay itself is time the counter keeps running in, so the
+	// result does not depend on how often it is applied.
+	__forceinline void ApplyRefresh()
+	{
+		constexpr uint32_t interval = 128 * MdTiming::M68kDivider;
+		constexpr uint32_t delay = 2 * MdTiming::M68kDivider;
+		uint64_t elapsed = _masterClock - _refreshSyncClock;
+		if(_refreshCounter + elapsed >= interval) {
+			uint64_t counter = _refreshCounter + elapsed;
+			while(counter >= interval) {
+				counter -= interval - delay;
+				_masterClock += delay;
+			}
+			_refreshCounter = (uint32_t)counter;
+		} else {
+			_refreshCounter += (uint32_t)elapsed;
+		}
+		_refreshSyncClock = _masterClock;
+	}
 	void AcknowledgeM68kInterrupt(uint8_t level);
 
 	uint16_t M68kRead(bool upper, bool lower, uint32_t addr, M68kAccess access);

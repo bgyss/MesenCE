@@ -203,7 +203,8 @@ enum class RawPaletteFormat
 	Rgb333,
 	Rgb222,
 	Rgb444,
-	Bgr444
+	Bgr444,
+	MdCram //Mega Drive CRAM word: 0000BBB0GGG0RRR0
 };
 
 struct DebugPaletteInfo

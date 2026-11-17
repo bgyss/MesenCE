@@ -2,6 +2,7 @@
 #include "MD/Debugger/MdDebugger.h"
 #include "MD/Debugger/MdDisUtils.h"
 #include "MD/Debugger/MdEventManager.h"
+#include "MD/Debugger/MdVdpTools.h"
 #include "MD/Debugger/MdTraceLogger.h"
 #include "MD/MdConsole.h"
 #include "MD/MdM68k.h"
@@ -50,6 +51,7 @@ MdDebugger::MdDebugger(Debugger* debugger, CpuType cpuType) : IDebugger(debugger
 
 	_stepBackManager.reset(new StepBackManager(_emu, this));
 	_eventManager.reset(new MdEventManager(debugger, _vdp, cpuType));
+	_ppuTools.reset(new MdVdpTools(debugger, debugger->GetEmulator(), _vdp));
 	_callstackManager.reset(new CallstackManager(debugger, this));
 	_breakpointManager.reset(new BreakpointManager(debugger, this, cpuType, _eventManager.get()));
 	_step.reset(new StepRequest());
@@ -334,6 +336,11 @@ DebuggerFeatures MdDebugger::GetSupportedFeatures()
 BaseEventManager* MdDebugger::GetEventManager()
 {
 	return _eventManager.get();
+}
+
+PpuTools* MdDebugger::GetPpuTools()
+{
+	return _ppuTools.get();
 }
 
 CallstackManager* MdDebugger::GetCallstackManager()

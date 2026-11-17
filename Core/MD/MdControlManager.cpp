@@ -61,4 +61,13 @@ void MdControlManager::OnThChange(uint8_t port, bool th, uint64_t masterClock)
 void MdControlManager::Serialize(Serializer& s)
 {
 	BaseControlManager::Serialize(s);
+
+	//The pads hold handshake state (6-button phase counter, TH level, time of the last TH change),
+	//as the SMS/NES/PCE control managers do for their devices
+	if(!s.IsSaving()) {
+		UpdateControlDevices();
+	}
+	for(uint8_t i = 0; i < _controlDevices.size(); i++) {
+		SVI(_controlDevices[i]);
+	}
 }

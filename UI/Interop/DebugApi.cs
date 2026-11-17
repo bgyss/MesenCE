@@ -412,6 +412,7 @@ namespace Mesen.Interop
 		[DllImport(DllPath)] public static extern void SetEventViewerConfig(CpuType cpuType, InteropPceEventViewerConfig config);
 		[DllImport(DllPath)] public static extern void SetEventViewerConfig(CpuType cpuType, InteropSmsEventViewerConfig config);
 		[DllImport(DllPath)] public static extern void SetEventViewerConfig(CpuType cpuType, InteropWsEventViewerConfig config);
+		[DllImport(DllPath)] public static extern void SetEventViewerConfig(CpuType cpuType, InteropMdEventViewerConfig config);
 
 		[DllImport(DllPath, EntryPoint = "GetEventViewerEvent")] private static extern DebugEventInfo GetEventViewerEventWrapper(CpuType cpuType, UInt16 scanline, UInt16 cycle);
 		public static DebugEventInfo? GetEventViewerEvent(CpuType cpuType, UInt16 scanline, UInt16 cycle)
@@ -1032,6 +1033,18 @@ namespace Mesen.Interop
 		[MarshalAs(UnmanagedType.I1)] public bool ShowPreviousFrameEvents;
 	}
 
+	//Mirrors MdEventViewerConfig in Core/MD/Debugger/MdEventManager.h
+	[StructLayout(LayoutKind.Sequential)]
+	public class InteropMdEventViewerConfig
+	{
+		public InteropEventViewerCategoryCfg Irq;
+		public InteropEventViewerCategoryCfg Nmi;
+		public InteropEventViewerCategoryCfg MarkedBreakpoints;
+		public InteropEventViewerCategoryCfg VdpWrite;
+		public InteropEventViewerCategoryCfg VdpRead;
+		[MarshalAs(UnmanagedType.I1)] public bool ShowPreviousFrameEvents;
+	}
+
 	[StructLayout(LayoutKind.Sequential)]
 	public class InteropWsEventViewerConfig
 	{
@@ -1349,6 +1362,7 @@ namespace Mesen.Interop
 		Rgb222,
 		Rgb444,
 		Bgr444,
+		MdCram, //Mega Drive CRAM word: 0000BBB0GGG0RRR0
 	}
 
 	public unsafe struct DebugPaletteInfo

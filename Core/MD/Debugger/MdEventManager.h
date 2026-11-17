@@ -17,7 +17,7 @@ struct MdEventViewerConfig : public BaseEventViewerConfig
 };
 
 // Event list for both Mega Drive CPUs (interrupts, breakpoints, VDP port accesses). The event
-// viewer grid is one row per scanline and one column per 2 master clocks.
+// viewer grid is two rows per scanline and one column per 4 master clocks.
 class MdEventManager final : public BaseEventManager
 {
 private:
@@ -31,7 +31,11 @@ private:
 
 protected:
 	bool ShowPreviousFrameEvents() override { return _config.ShowPreviousFrameEvents; }
-	void ConvertScanlineCycleToRowColumn(int32_t& x, int32_t& y) override { x /= 4; }
+	void ConvertScanlineCycleToRowColumn(int32_t& x, int32_t& y) override
+	{
+		x /= 4;
+		y *= 2;
+	}
 	void DrawScreen(uint32_t* buffer) override {}
 
 public:

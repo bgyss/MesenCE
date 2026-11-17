@@ -280,7 +280,8 @@ def main():
         del args[i:i + 2]
     out = pathlib.Path(args[0])
     out.mkdir(parents=True, exist_ok=True)
-    all_cases = cases.all_cases()
+    import extra_cases  # MesenCE's own cases (no BlastEm reference)
+    all_cases = cases.all_cases() + extra_cases.all_cases()
     for case in all_cases:
         (out / (case.name + ".md")).write_bytes(build(case))
         (out / (case.name + ".json")).write_text(json.dumps(run_spec(case), indent=1) + "\n")
