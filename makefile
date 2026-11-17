@@ -42,6 +42,11 @@ endif
 
 MESENFLAGS += -m64
 
+# No fused multiply-add contraction: arm64 compilers contract a*b+c by default, x86-64 baseline
+# code cannot, so floating-point audio/video filters would round differently per architecture.
+# Headless captures must be bit-identical across hosts (docs/headless.md).
+MESENFLAGS += -ffp-contract=off
+
 MACHINE := $(shell uname -m)
 ifeq ($(MACHINE),x86_64)
 	MESENPLATFORM := $(MESENOS)-x64
