@@ -57,6 +57,7 @@ This fork's addition, not upstream.
     - Feature parity with other Mega Drive emulators: `docs/research/md-feature-parity.md`.
     - `mise run test:md-viewers`: the debugger's palette/tilemap/sprite viewers (`MdVdpTools`) must decode VRAM/CRAM exactly as the VDP renders.
   - Findings from these tools are logged in `docs/research/{nes,gb,snes,sms,gba,pce,md}-verification-findings.md`.
+  - Sega CD (planned, not implemented): plan in `docs/research/sega-cd-feasibility.md`, findings in `docs/research/mcd-verification-findings.md`.
   - The makefile doesn't track `#include` dependencies. The dummy CPUs (`Debugger/Dummy*.cpp`) `#include` the real CPU `.cpp` files, so `touch` them after editing a CPU, or the debugger keeps stale code. **If you change a class layout in a header** (add or remove a member), touch every `.cpp` that includes it (e.g. `find Core/SMS -name '*.cpp' -exec touch {} +`). Otherwise objects compiled against the old layout corrupt memory: a stale `SmsCpu.h` made `test:ci` hang in `SmsPsg::Run`.
   - `mise run test:snes-irq` / `mise run test:z80-irq`: interrupt scenarios for the 65816 (SNES CPU and SA-1) and the Z80, on the real CPU sources against a flat test bus.
   - The harnesses drive consoles without the emulation thread. They set `Emulator::_isRunAheadFrame` (so frames aren't sent to the video decoder) and register the console as `Emulator::_console` (some hardware, e.g. the MBC3 RTC, reads `Emulator::GetMasterClock()`).

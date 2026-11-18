@@ -2,6 +2,13 @@
 
 Snapshot: branch `md-support` at `a8453071`, 2026-11-18. Status: proposal; nothing implemented.
 
+**Status (2026-11-18): S0 done, except reading the Mega-CD hardware manual** (it couldn't be
+downloaded automatically). Results are in [`mcd-verification-findings.md`](mcd-verification-findings.md):
+- the figures below are checked against the BIOS manual, the LC8951 manual, ares and MAME (F1);
+- Mode 1 testing without the BIOS is supported by two sources (F2);
+- timebase: master clocks plus an exact remainder for the sub CPU (F3);
+- a second 68000 measured at +28% frame time (F4).
+
 ## Decision
 
 This is an engineering judgment from reading this repository and the sources listed at the end,
@@ -38,7 +45,7 @@ copies could not be fetched automatically when this was written.
 | Part | What it is | Notes |
 |---|---|---|
 | Sub CPU | 68000 at 12.5 MHz (its own crystal, unrelated to the Mega Drive's 53.69 MHz) | Reuse `M68kCore` |
-| Program RAM | 512 KiB, sub CPU's main memory | Main CPU sees a 128 KiB window, bank-selected; write protection register |
+| Program RAM | 512 KiB, sub CPU's main memory (its vectors are at `$000000`) | Main CPU sees a 128 KiB window, bank-selected, only while it holds the sub CPU's bus; write protection in 512-byte units |
 | Word RAM | 256 KiB shared between the CPUs | 2M mode: one CPU owns all of it, ownership swapped by handshake. 1M mode: two 128 KiB banks, one per CPU, plus a "cell image" view for the main CPU |
 | Gate array | Registers at `$A12000` (main) and `$FF8000` (sub): reset/bus request of the sub CPU, word RAM mode and ownership, 8+8 communication words and flags, interrupts | Main CPU gets a level 2 interrupt from the sub CPU |
 | Sub CPU interrupts | 1 graphics, 2 from main CPU, 3 timer, 4 CD drive, 5 CD controller, 6 subcode | Order matches ares' IRQ sources |
@@ -59,8 +66,9 @@ copies could not be fetched automatically when this was written.
 - **Scheduler: the biggest change.** `MdConsole::RunFrame` steps the main 68000 and everything
   else catches up to it on one master clock. The sub CPU runs from a separate 50 MHz crystal (/4),
   so the two clocks have no small integer ratio.
-  - Proposal: keep `uint64_t` positions in one timebase. Either use master clocks with a fixed-point
-    fraction for the sub CPU, or use a common unit that both rates divide.
+  - Decided in S0 (findings F3): keep master clocks everywhere. The sub CPU converts its cycles
+    with an exact remainder. A common unit would overflow `uint64_t` after about 190 hours and
+    would change every existing component.
   - Synchronise only on accesses the other side can see: gate array registers, word RAM, program
     RAM, and the interrupt lines.
   - ares synchronises at every bus wait and uses `double` for its CD-audio sample counter. MesenCE
@@ -124,7 +132,7 @@ progress according to the gendev thread above.
 
 ## Milestones
 
-**S0: sources and design**
+**S0: sources and design** (done 2026-11-18, except the hardware manual; findings S0)
 - Read the Mega-CD hardware and BIOS manuals and the LC8951 and RF5C164 datasheets. Correct the
   table above where they differ.
 - Pin an ares revision for reference.
