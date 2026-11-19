@@ -431,6 +431,25 @@ if [ $havePath -eq 0 ]; then set -- "$@" "$data/v1"; fi
 exec bin/m68k-cpu-singlestep "$@"
 '''
 
+[tasks."test:sh2-cpu"]
+description = "32X SH-2 vs the shared encodings of SingleStepTests sh4, plus exception/interrupt/peripheral scenarios (mise run test:sh2-cpu -- [--details N] [files...])"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+data="$PWD/bin/SingleStepTests-sh4"
+if [ ! -d "$data" ]; then
+  git clone --depth 1 https://github.com/SingleStepTests/sh4.git "$data"
+fi
+mkdir -p bin
+# The harness compiles Core/MD/Sh2/Sh2Core.cpp itself (flat test bus, no area decoding).
+clang++ -std=c++17 -O2 -Wall -Wextra -Werror -ICore tools/sh2-cpu-singlestep/singlestep.cpp Core/MD/Sh2/Sh2Core.cpp Core/MD/Sh2/Sh2Disassembler.cpp -o bin/sh2-cpu-singlestep
+bin/sh2-cpu-singlestep --scenarios
+havePath=0
+for a in "$@"; do [ -e "$a" ] && havePath=1; done
+if [ $havePath -eq 0 ]; then set -- "$@" "$data"; fi
+exec bin/sh2-cpu-singlestep "$@"
+'''
+
 [tasks.headless]
 description = "Build the native headless runner bin/mesen-headless (no UI, SDL or display)"
 run = "make -j$(getconf _NPROCESSORS_ONLN) headless"
