@@ -16,6 +16,7 @@
 #include "Shared/FirmwareHelper.h"
 #include "Utilities/VirtualFile.h"
 #include "Utilities/Serializer.h"
+#include "Utilities/CRC32.h"
 
 MdConsole::MdConsole(Emulator* emu)
 {
@@ -83,6 +84,29 @@ ConsoleRegion MdConsole::PickRegion(ConsoleRegion setting)
 	return ConsoleRegion::Pal;
 }
 
+//The region a Sega CD disc boots in: the boot program at $200 of the first sector starts with
+//the region's security code, which the BIOS compares against its own copy before booting the
+//disc. The block describes its own length (lea; jsr; bra.w past the logo data: $0A + the
+//displacement). Fingerprints (CRC32) taken from every local BIOS dump: Americas $584 bytes
+//(Sega CD 1/2, LaserActive), Europe $56E bytes (Mega-CD 1/2, Multi-Mega). Japanese BIOSes don't
+//hold a plain copy, so other discs keep the header field (findings S5: Snatcher (U) says "J").
+const char* MdConsole::GetSecurityCodeRegion(vector<uint8_t>& sector)
+{
+	constexpr uint32_t ip = 0x200;
+	if(sector.size() < ip + 0x0C || sector[ip + 8] != 0x60 || sector[ip + 9] != 0x00) {
+		return nullptr;
+	}
+	uint32_t length = 0x0A + ((sector[ip + 10] << 8) | sector[ip + 11]);
+	if(ip + length > sector.size()) {
+		return nullptr;
+	}
+	switch(CRC32::GetCRC(sector.data() + ip, length)) {
+		case 0xF361AB57: return "U  ";
+		case 0x6FFB4732: return "E  ";
+		default: return nullptr;
+	}
+}
+
 bool MdConsole::IsSegaCdDisc(DiscInfo& disc)
 {
 	if(disc.Tracks.empty() || disc.Tracks[0].Format == TrackFormat::Audio) {
@@ -112,6 +136,9 @@ LoadRomResult MdConsole::LoadRom(VirtualFile& romFile)
 		vector<uint8_t> header;
 		disc->ReadDataSector(disc->Tracks[0].FirstSector, header);
 		_headerRegions = string((char*)&header[0x1F0], 3);
+		if(const char* securityRegion = GetSecurityCodeRegion(header)) {
+			_headerRegions = securityRegion;
+		}
 		MdConfig& discCfg = _emu->GetSettings()->GetMdConfig();
 		if(!FirmwareHelper::LoadMcdBios(_emu, PickRegion(discCfg.Region), bios)) {
 			return LoadRomResult::Failure;

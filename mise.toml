@@ -453,6 +453,7 @@ python3 tests/MD/synthetic/audio_compare.py bin/md-synthetic --fm-core nuked
 python3 tests/MD/synthetic/compare.py bin/md-synthetic --fm-core nuked
 python3 tests/MD/midline/check_midline.py bin/md-synthetic
 python3 tests/MD/mcd/debugger_check.py bin/md-synthetic
+python3 tests/MD/mcd/swap_race.py
 '''
 
 [tasks."test:md-replay"]
@@ -474,12 +475,13 @@ bin/savestate-roundtrip --warmup 1 --frames 6 bin/md-synthetic
 '''
 
 [tasks."test:mcd-bios"]
-description = "Sega CD: boot the synthetic disc with each known BIOS found locally (MESEN_MCD_BIOS_DIR, default ~/mame/roms/segacd); intro music, CD player, track 2 audio; Mode 1 with the BIOS (Flux cartridge, MESEN_FLUX_ROM). Skips without a BIOS."
+description = "Sega CD: boot the synthetic disc with each known BIOS found locally (MESEN_MCD_BIOS_DIR, default ~/mame/roms/segacd); intro music, CD player, track 2 audio; disc region from the security code (US/EU blocks from the BIOS dumps); Mode 1 with the BIOS (Flux cartridge, MESEN_FLUX_ROM). Skips without a BIOS."
 depends = ["headless"]
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 python3 tests/MD/mcd/bios_boot.py
+python3 tests/MD/mcd/disc_region.py
 python3 tests/MD/mcd/mode1_flux.py
 '''
 

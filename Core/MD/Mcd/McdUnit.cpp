@@ -229,8 +229,26 @@ void McdUnit::SubAcknowledgeInterrupt(uint8_t level)
 	UpdateInterruptLevel();
 }
 
+void McdUnit::ApplyDeferredWrites(uint64_t masterClock)
+{
+	uint8_t kept = 0;
+	for(uint8_t i = 0; i < _deferredCount; i++) {
+		DeferredWrite& w = _deferred[i];
+		if(w.Clock <= masterClock) {
+			WriteSubRegister(w.Reg, w.Upper, w.Lower, w.Value);
+		} else {
+			_deferred[kept++] = w;
+		}
+	}
+	_deferredCount = kept;
+}
+
 void McdUnit::Run(uint64_t masterClock)
 {
+	_catchUpTarget = masterClock;
+	if(_deferredCount) {
+		ApplyDeferredWrites(masterClock);
+	}
 	while(_subClock < masterClock) {
 		if(IsHalted()) {
 			//Reset or bus request: the CPU is stopped, the gate array (timer, stopwatch) keeps running
@@ -672,6 +690,9 @@ void McdUnit::SubWrite(bool upper, bool lower, uint32_t address, uint16_t value)
 		uint32_t reg = address & 0x1FE;
 		if(reg >= 0x4C && reg < 0x68) {
 			WriteGraphicsRegister(reg, upper, lower, value);
+		} else if(reg < 0x30 && _subClock > _catchUpTarget && _deferredCount < MaxDeferredWrites) {
+			//Past the main CPU's position: applied when the main CPU gets there (Run)
+			_deferred[_deferredCount++] = { _subClock, (uint16_t)reg, value, upper, lower };
 		} else {
 			WriteSubRegister(reg, upper, lower, value);
 		}
@@ -821,6 +842,15 @@ void McdUnit::Serialize(Serializer& s)
 	SV(_subClock);
 	SV(_subRemainder);
 	SV(_subCycles);
+	SV(_catchUpTarget);
+	SV(_deferredCount);
+	for(uint8_t i = 0; i < MaxDeferredWrites; i++) {
+		SVI(_deferred[i].Clock);
+		SVI(_deferred[i].Reg);
+		SVI(_deferred[i].Value);
+		SVI(_deferred[i].Upper);
+		SVI(_deferred[i].Lower);
+	}
 	SV(_tickDivider);
 	SV(_run);
 	SV(_busRequest);

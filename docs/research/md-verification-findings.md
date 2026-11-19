@@ -591,3 +591,16 @@ pulse covers exactly one envelope step. (Earlier KNOWN texts said "well under on
   `clang++ -arch x86_64`, run via Rosetta 2). `test:ci` passes with the flag.
 - Speed (not a hardware claim): `render_h40` (idle 68000 loop, display on, audio) runs 3000
   frames in 3.9 s on arm64 (~770 fps). Commercial-game performance is M6 work.
+
+## Z80 BUSACK while the Z80 is held in reset (2026-11-19)
+
+- **Bug:** `$A11100` bit 8 read 0 (bus granted) whenever the 68000 requested the bus, even with
+  the Z80 held in reset.
+- **Behaviour on other emulators:** BlastEm (nativekit's oracle, measured) and MAME
+  (`megadriv.cpp`, `z80_is_reset`) read 1 in that case.
+- **Found with:** The Terminator (Sega CD), which waits for the 1. Details in
+  `mcd-verification-findings.md` S5.
+- **Fix:** `MdMemoryManager::ReadControlRegister` and `DebugRead`.
+- **Test:** `z80_busack_reset` (`extra_cases.py`, `test:md-synthetic`).
+- **Judgment call:** reset re-asserted after a grant follows MAME (reads 1); BlastEm keeps the
+  grant.

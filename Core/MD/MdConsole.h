@@ -41,6 +41,7 @@ public:
 	static vector<string> GetSupportedExtensions() { return { ".md", ".gen", ".smd", ".bin", ".cue" }; }
 	//A Sega CD / Mega-CD disc: "SEGADISCSYSTEM" at the start of the first data sector
 	static bool IsSegaCdDisc(DiscInfo& disc);
+	static const char* GetSecurityCodeRegion(vector<uint8_t>& sector);
 	static vector<string> GetSupportedSignatures() { return {}; }
 
 	MdConsole(Emulator* emu);

@@ -212,8 +212,9 @@ Read: system modes (p. 5), bus construction (pp. 6-10), mapping (pp. 12-17), reg
 - **Correction to the plan:** nothing in the gate array interrupts the main CPU. `$A12000`'s IFL2
   raises level 2 on the *sub* CPU (Hardware Manual p. 56, ares). The plan had it the other way
   round, and has been corrected.
-- **1M swap request:** ares sets the request flag when the main CPU writes DMNA = 0. The manual
-  says writing 1 requests a swap. Implemented as ares; no test depends on it. Open.
+- **1M swap request:** ares sets the request flag when the main CPU writes DMNA = 0. p. 24 seemed
+  to say writing 1. Implemented as ares. **Resolved in S5:** p. 57, the main CPU's register page,
+  says "When MODE=1 ... in the Write mode '0' = swap request", and MegaRace depends on it.
 - **Power-on program RAM access:** ares lets the main CPU into program RAM only after a write to
   `$A12001`; the manual says SRES = 0 is enough. Implemented as the manual; the tests write
   `$A12001` first, so they hold either way.
@@ -624,17 +625,13 @@ seek landing (LBA −8 here, −5 in MAME), so it is left as a known reference d
   This is a judgment call: the main Sega CD use is booting discs.
 - **The RAM cartridge is still missing** (see S3).
 
-## S5: commercial software (2026-11-18, partial)
+## S5: commercial software (2026-11-18 Flux; 2026-11-19 discs)
 
 ### What was available
 
-No Sega CD disc images exist on this machine. I searched the home folder, `/Volumes` and Spotlight
-for `.cue`, `.chd`, `.iso`, `.ccd` and `.mds`. The only Sega CD folders hold screenshots and a DAT
-file. The GoodGen set has three Mega-CD-related cartridges:
-- **Flux (Virgin, 1994):** a cartridge that plays audio CDs through the Mega-CD in Mode 1 with
-  visuals.
-- **Sega-CD BIOS:** BIOS dumps.
-- **"Visual Scene Sega-CD Image":** a bad dump (`[b1]`), not used.
+- **2026-11-18:** no disc images. Flux (a Mode 1 cartridge) and the BIOS dumps only.
+- **2026-11-19:** the user supplied 31 US disc images (`~/Games/ROMs/Sega CD`, BIN/CUE). They are
+  not in the repository and the tests below don't need them.
 
 ### Flux: Mode 1 with the BIOS
 
@@ -656,14 +653,125 @@ file. The GoodGen set has three Mega-CD-related cartridges:
 - **Judgment:** the start time and the track change match the disc layout. I have no hardware or
   MAME recording of Flux to compare the 1.51 s start against.
 
-### Not qualified (no images)
+### Method
 
-S5's list needs disc images, and none were available:
-- word RAM 1M streaming (FMV games);
-- the graphics chip (Batman Returns, Silpheed);
-- PCM-heavy audio;
-- Sonic CD's CD audio;
-- backup RAM saves in a game.
+- **Runs:** `mesen-headless` with the US Model 1 v1.10 BIOS, START pressed every 5 s from 10 s,
+  4500 frames per disc.
+  - Outputs: screenshots (the new `--snap-every N`, findings below), and per-chip audio peaks per
+    second (`--chip-audio`: PCM, CD audio, YM2612, PSG).
+  - CPUs and gate array state were read through Lua (`emu.getState`, memory callbacks on both
+    CPUs) when something stalled.
+  - 68000 code was disassembled from the `memory/*.bin` dumps (capstone, outside the repository).
+- **Backup RAM:** formatted by the BIOS itself: control panel, OPTION, FORMAT, YES. The result
+  ends in the BIOS's own `SEGA_CD_ROM`/`RAM_CARTRIDGE` signature, and every run starts from it
+  (`--battery`).
 
-Those components are covered by the synthetic cases (S1-S3) and by the BIOS boots (7 versions),
-but not by a commercial game. **S5 stays open until disc images are supplied.**
+### Results by S5 item
+
+| Item | Game | Result |
+|---|---|---|
+| FMV / word RAM streaming | Mighty Morphin Power Rangers, Surgical Strike, Space Ace, The Terminator, Novastorm, Soul Star | Video plays and moves frame to frame (screenshots 0.5 s apart), with PCM or CD audio |
+| Graphics chip | Batman Returns, Silpheed | Batman: Batmobile stage, scaled road, 25,162 operations started in 60 s. Silpheed: polygon intro and Stage 1 with enemies, 944 operations |
+| PCM | 27 of 31 discs have PCM output, e.g. Silpheed, Road Rash, Power Rangers, Final Fight CD | Present; no reference recording to compare against |
+| CD audio | Sonic CD (title, Palmtree Panic), Final Fight CD, Lords of Thunder, Keio, Jaguar XJ220, Ecco | Plays at the right times |
+| Backup RAM saves | Sonic CD | The game writes its file through the BIOS (410 bytes changed). The BIOS's own data manager then lists it: 1 item, `SONICCD____`, 11 blocks, 114 free |
+
+Every one of the 31 discs reaches its title screen, gameplay or FMV:
+- **Gameplay:** Sonic CD, Final Fight CD, Ecco 1 and 2, Robo Aleste, Lords of Thunder, Keio,
+  Silpheed, Sol-Feace, Soul Star, Road Rash, Ultraverse Prime, Eternal Champions, Spider-Man,
+  AX-101 and Batman Returns.
+- **Menus or attract mode:** the others.
+- **Fixed during S5:** Snatcher, MegaRace and The Terminator. Each failed first, and each failure
+  was an emulator bug (below).
+
+### Bug 1: disc region from the header field (Snatcher)
+
+- **Symptom:** Snatcher (U) stopped on "This is an NTSC-compatible Sega CD for use in NTSC regions
+  other than Japan and Southeast Asia".
+- **Cause:** its header region field (`$1F0`) says "J". Auto region picked Japan, so the version
+  register said domestic and the game's own check refused to run.
+- **Source:** the BIOS decides which discs boot. It compares the start of the boot program
+  (sector 0, `$200`) with its own copy of the region's security code. That block describes its
+  own length (`lea`; `jsr`; `bra.w` past the logo data: `$0A` + displacement):
+  - US BIOS: `$584` bytes. The copy in the US v1.10 BIOS matches every one of the 31 US discs byte
+    for byte.
+  - EU BIOS: `$56E` bytes.
+- **Fix:** `MdConsole::GetSecurityCodeRegion`. CRC32 fingerprints of the two blocks, taken from
+  every local BIOS dump: US Model 1/2 and the LaserActive (`$F361AB57`); EU Model 1/2 and the
+  Multi-Mega (`$6FFB4732`). The fingerprints carry no Sega bytes. A recognised block overrides the
+  header field. The Japanese BIOSes hold no plain copy, so other discs keep the header field
+  (open).
+- **Header fields among the 31 discs:** 29 "U", Snatcher "J", Surgical Strike "4" (a hex digit,
+  already handled).
+- **Test:** `tests/MD/mcd/disc_region.py` (`test:mcd-bios`; local only, it takes the blocks from
+  the BIOS dumps). The synthetic disc gets a "J" header with the US block, then the EU block, then
+  no block. Expected version register: `$80`, `$C0`, `$00`. Without the fix the first two read
+  `$00`.
+
+### Bug 2: sub CPU writes applied ahead of time (MegaRace)
+
+- **Symptom:** MegaRace froze on the SEGA logo. The main CPU had taken an illegal-instruction
+  exception at `$20000A` and sat in the BIOS's fatal handler. The sub CPU waited for DMNA.
+- **Cause:**
+  - The game's main CPU requests a 1M swap with `bclr #1,$A12003 / beq` (read-modify-write) and
+    waits for DMNA to read 0. It then jumps into its word RAM bank, in 1M mode.
+  - Its sub CPU answers once from a polling loop (`bclr #0,$8003.w` writes RET).
+  - The sub CPU's RET write came about 30 master clocks after the main CPU's second request write.
+    It was applied first: `McdUnit::Run(masterClock)` ran whole sub instructions, and an
+    instruction that started before the target completed its write after it.
+  - So the request was re-armed after the swap, and the main CPU waited until the sub CPU went
+    back to 2M mode 30 frames later.
+  - It then jumped into 2M word RAM, which held the two 1M banks interleaved by word. That is
+    illegal code.
+- **Sources:**
+  - Hardware Manual p. 57: in 1M mode, writing DMNA = 0 requests a swap. This resolves the S1
+    question in favour of ares; p. 24's OCR is unreadable at that point.
+  - p. 24: "Setting the RET bit also causes the DMNA bit to be set to 0".
+  - Timing: both CPUs' instruction sequences, below.
+- **Fix:** a sub CPU write to a register the main CPU sees (`$FF8000-$FF802F`) is held when it
+  falls after the current catch-up target, and applied when the main CPU reaches its time
+  (`McdUnit::_deferred`, saved in save states, at most 4). Sub CPU reads aren't held: a sub CPU
+  read can still see main CPU state up to one instruction late.
+- **Test:** `tests/MD/mcd/swap_race.py` (`test:md-synthetic`).
+  - Both CPUs run the game's exact sequences: main `$FF058E-$FF05A0` from work RAM, sub
+    `$6CA2-$6CD8`. The sub CPU answers one request per round.
+  - The main CPU's entry is swept over 64 phases.
+  - Old build: 60 of 64 phases never complete the swap. Fixed: 64 of 64 complete.
+- **Judgment call:** ordering only. Wait states on gate array accesses are still not modelled; the
+  manual gives no figures.
+
+### Bug 3: Z80 BUSACK while the Z80 is held in reset (The Terminator)
+
+- **Symptom:** after the Virgin logo the screen stayed black, with PCM music playing.
+- **Cause:** the game holds the Z80 in reset, requests its bus, then loops until `$A11100` bit 8
+  reads 1. MesenCE answered 0 (granted) whenever the bus was requested.
+- **Sources:**
+  - BlastEm (nativekit's oracle core), measured with an ad-hoc cartridge: 1 with the Z80 in reset
+    and the bus requested, 0 once reset is released.
+  - MAME `src/mame/sega/megadriv.cpp` (BSD-3-Clause), `megadriv_68k_check_z80_bus`: 1 when
+    `z80_has_bus || z80_is_reset`.
+- **Fix:** `MdMemoryManager` reads the bus as granted only when it is requested and the Z80 is out
+  of reset.
+- **Judgment call:** reset re-asserted after a grant. MAME reads 1 (implemented); BlastEm keeps
+  the grant (0). Not tested.
+- **Test:** `z80_busack_reset` in `tests/MD/synthetic/extra_cases.py` (`test:md-synthetic`). The
+  old build fails steps 4-5 (`$60BE`, expected bit 8 = 1).
+- **Result:** The Terminator now plays the Virgin logo and its intro FMV (Los Angeles 2029,
+  scrolling text).
+
+### Tooling
+
+`mesen-headless run --snap-every N` writes `snaps/<frame>.png` during a run, through the same
+path as `final.png`. Checked in `test:headless`: snaps 20, 40 and 60, the last equal to
+`final.png`, and the output validates.
+
+### Not qualified or open
+
+- **No reference recordings:** no hardware or reference-emulator recording of any game to compare
+  frames or audio against. "Plays" means it looks and sounds right in screenshots and per-chip
+  peaks, nothing stricter.
+- **Japanese and European discs:** none available. The Japanese security code region is open.
+- **Input coverage:** MegaRace's subtitle menu doesn't take START (the runs only pressed START).
+  The other games were only driven with START presses.
+- **Mode 1 + disc in the UI:** a Mode 1 cartridge with a disc in the drive still needs the
+  headless hook (S4 limitation).

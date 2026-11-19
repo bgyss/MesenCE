@@ -30,6 +30,10 @@ check "SNES output validates" '"$bin" validate "$work/snes" >/dev/null 2>&1'
 "$bin" run --rom "$sms" --frames 60 --out "$work/sms" --allow-dirty
 check "SMS output validates" '"$bin" validate "$work/sms" >/dev/null 2>&1'
 
+"$bin" run --rom "$sms" --frames 60 --out "$work/snaps" --snap-every 20 --allow-dirty
+check "--snap-every 20 writes snaps 20, 40, 60; the last equals final.png; output validates" \
+  '[ "$(ls "$work/snaps/snaps" | tr "\n" " ")" = "000020.png 000040.png 000060.png " ] && cmp -s "$work/snaps/snaps/000060.png" "$work/snaps/final.png" && "$bin" validate "$work/snaps" >/dev/null 2>&1'
+
 echo tamper >> "$work/snes/final.png"
 check "validate rejects a modified artifact" '! "$bin" validate "$work/snes" >/dev/null 2>&1'
 

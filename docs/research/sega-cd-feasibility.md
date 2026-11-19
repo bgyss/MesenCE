@@ -176,7 +176,7 @@ Exit: each regional BIOS reaches its CD player, plays audio tracks, and boots a 
 Debugger views, settings (region, BIOS, RAM cartridge), Lua memory types, the headless runner
 (`--disc`, `--bios`), and the input and recording paths.
 
-**S5: games** (partial 2026-11-18: Flux, a Mode 1 cartridge, plays audio CDs; no disc images available for the rest; findings S5)
+**S5: games** (done 2026-11-19: 31 US discs reach their title screen, gameplay or FMV. FMV (Power Rangers, The Terminator), graphics chip (Batman Returns, Silpheed), PCM, CD audio (Sonic CD) and a backup RAM save (Sonic CD, read back by the BIOS) qualified. Three bugs fixed: disc region, sub/main write ordering, Z80 BUSACK in reset. Flux plays audio CDs in Mode 1; findings S5)
 Qualify a list of commercial titles chosen to cover:
 - word RAM 1M mode streaming (FMV games);
 - graphics chip (Batman Returns, Silpheed's intro);

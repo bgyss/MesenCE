@@ -52,7 +52,8 @@ public:
 // Timing: the sub CPU runs from its own 12.5 MHz crystal. Its position is kept in Mega Drive
 // master clocks plus an exact remainder (findings F3). It catches up to the main CPU after every
 // main instruction and before every main-CPU access to the unit, so the sub CPU can be up to one
-// of its instructions ahead of an access. Memory contention (refresh, CD DMA, the graphics chip)
+// of its instructions ahead of an access; its writes to registers the main CPU sees are held
+// until the main CPU reaches their time (findings S5). Memory contention (refresh, CD DMA, the graphics chip)
 // is not modelled: the manual describes uncontended accesses as wait-free and gives no figures.
 class McdUnit final : public ISerializable
 {
@@ -107,6 +108,22 @@ private:
 	uint64_t _subClock = 0;
 	uint64_t _subRemainder = 0;
 	uint64_t _subCycles = 0;
+	//Catch-up target of the current Run(). A sub instruction that starts before it can complete
+	//after it: its writes to registers the main CPU sees ($FF8000-$FF802F) are then held until
+	//the main CPU reaches that time, so both CPUs' accesses apply in time order (findings S5)
+	uint64_t _catchUpTarget = 0;
+	struct DeferredWrite
+	{
+		uint64_t Clock;
+		uint16_t Reg;
+		uint16_t Value;
+		bool Upper;
+		bool Lower;
+	};
+	static constexpr uint8_t MaxDeferredWrites = 4;
+	DeferredWrite _deferred[MaxDeferredWrites] = {};
+	uint8_t _deferredCount = 0;
+	void ApplyDeferredWrites(uint64_t masterClock);
 	//Sub cycles towards the next 30.72 us tick (384 sub cycles: timer and stopwatch)
 	uint32_t _tickDivider = 0;
 

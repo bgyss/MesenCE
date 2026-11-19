@@ -37,6 +37,8 @@
 #include "Shared/BaseControlDevice.h"
 #include "Shared/Interfaces/IInputProvider.h"
 #include "Shared/Interfaces/IConsole.h"
+#include "Shared/Interfaces/INotificationListener.h"
+#include "Shared/NotificationManager.h"
 #include "Shared/Audio/SoundMixer.h"
 #include "Shared/Video/BaseVideoFilter.h"
 #include "Shared/Video/VideoDecoder.h"
@@ -312,6 +314,42 @@ static void ConfigureDeterministic(EmuSettings* settings, ConsoleRegion region)
 	settings->GetAudioConfig().DisableDynamicSampleRate = true;
 }
 
+// The console's current frame buffer through the default filter, as PNG (no renderer involved)
+static string FramePng(Emulator& emu)
+{
+	PpuFrameInfo ppu = emu.GetPpuFrame();
+	unique_ptr<BaseVideoFilter> filter(emu.GetVideoFilter(true));
+	filter->SetBaseFrameInfo({ ppu.Width, ppu.Height });
+	filter->SendFrame((uint16_t*)ppu.FrameBuffer, ppu.FrameCount, 0, nullptr);
+	std::stringstream png;
+	filter->TakeScreenshot(VideoFilterType::None, "", &png);
+	return png.str();
+}
+
+// --snap-every N: snaps/<frame>.png every N frames, for looking at a run without replaying it
+class SnapListener : public INotificationListener
+{
+	Emulator& _emu;
+	fs::path _dir;
+	uint32_t _every;
+
+public:
+	SnapListener(Emulator& emu, fs::path dir, uint32_t every) : _emu(emu), _dir(dir), _every(every) {}
+
+	void ProcessNotification(ConsoleNotificationType type, void*) override
+	{
+		if(type != ConsoleNotificationType::PpuFrameDone) {
+			return;
+		}
+		uint32_t frame = _emu.GetFrameCount();
+		if(frame > 0 && frame % _every == 0) {
+			char name[32];
+			snprintf(name, sizeof(name), "%06u.png", frame);
+			std::ofstream(_dir / name, std::ios::binary) << FramePng(_emu);
+		}
+	}
+};
+
 static bool ParseRegion(const string& s, ConsoleRegion& out)
 {
 	if(s == "auto") {
@@ -333,6 +371,7 @@ static int Usage()
 	std::cerr << "usage:\n"
 					 "  mesen-headless run --rom ROM --frames N --out NEW_DIR [--input INPUT.json] [--lua SCRIPT.lua]\n"
 					 "                     [--region auto|ntsc|ntsc-j|pal] [--timeout SECONDS] [--allow-dirty]\n"
+					 "                     [--snap-every N]\n"
 					 "  mesen-headless validate OUT_DIR\n"
 					 "  mesen-headless doctor\n";
 	return ExitUsage;
@@ -349,6 +388,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 	string mdFmCore = "ymfm";
 	string mdEeprom;
 	uint32_t frames = 0;
+	uint32_t snapEvery = 0;
 	double timeout = 0;
 	bool allowDirty = false;
 	bool mdMcd = false;
@@ -396,6 +436,8 @@ static int Run(const vector<string>& args, const string& commandLine)
 			mdMcdDisc = next();
 		} else if(args[i] == "--md-mcd-bios") {
 			mdMcdBios = next();
+		} else if(args[i] == "--snap-every") {
+			snapEvery = (uint32_t)std::stoul(next());
 		} else if(args[i] == "--battery") {
 			batteryPaths.push_back(next());
 		} else if(args[i] == "--save-battery") {
@@ -683,6 +725,13 @@ static int Run(const vector<string>& args, const string& commandLine)
 			});
 		}
 
+		shared_ptr<SnapListener> snaps;
+		if(snapEvery > 0) {
+			fs::create_directories(outDir / "snaps");
+			snaps.reset(new SnapListener(emu, outDir / "snaps", snapEvery));
+			emu.GetNotificationManager()->RegisterNotificationListener(snaps);
+		}
+
 		fs::path wav = outDir / "audio.wav";
 		emu.GetSoundMixer()->StartRecording(wav.string());
 		auto start = std::chrono::steady_clock::now();
@@ -739,13 +788,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 		}
 
 		// Screenshot from the core's frame buffer (no renderer or display involved).
-		PpuFrameInfo ppu = emu.GetPpuFrame();
-		unique_ptr<BaseVideoFilter> filter(emu.GetVideoFilter(true));
-		filter->SetBaseFrameInfo({ ppu.Width, ppu.Height });
-		filter->SendFrame((uint16_t*)ppu.FrameBuffer, ppu.FrameCount, 0, nullptr);
-		std::stringstream png;
-		filter->TakeScreenshot(VideoFilterType::None, "", &png);
-		std::ofstream(outDir / "final.png", std::ios::binary) << png.str();
+		std::ofstream(outDir / "final.png", std::ios::binary) << FramePng(emu);
 
 		{
 			std::ofstream state(outDir / "final.mss", std::ios::binary);

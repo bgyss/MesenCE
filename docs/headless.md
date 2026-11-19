@@ -12,6 +12,7 @@ mise run test:headless                  # self-test (determinism, validation, Lu
 mesen-headless run --rom ROM --frames N --out NEW_DIR [--input INPUT.json] [--lua SCRIPT.lua]
                    [--region auto|ntsc|ntsc-j|pal] [--timeout SECONDS] [--allow-dirty]
                    [--load-state STATE.mss]
+                   [--snap-every N]           # snaps/<frame>.png every N frames
                    [--trace bus] [--trace-limit EVENTS] [--chip-audio]     # Mega Drive only
                    [--md-model md1va3|md1va6] [--md-pads 6,6]              # Mega Drive only
                    [--md-fm-core ymfm|nuked]                               # Mega Drive only
@@ -80,8 +81,10 @@ Frame numbers are 1-based (entry `"1"` applies to the first emulated frame); por
 | `final.mss` | a save state at the end of the run |
 | `memory/<MemoryType>.bin` | every registered RAM-like memory (ROM and register views excluded) |
 | `lua.log` | the script log, when `--lua` is given |
+| `snaps/<frame>.png` | the frame buffer every N frames (`--snap-every N`), as `final.png` |
 | `trace.txt` | Mega Drive bus trace (`--trace bus`), below |
 | `ym2612.raw`, `psg.raw` | Mega Drive per-chip audio before mixing (`--chip-audio`): s16le stereo at the YM2612 sample rate (master clock / 1008); the manifest's `chip_audio` gives format and rate |
+| `pcm.raw`, `cdda.raw` | Sega CD PCM (12.5 MHz / 384) and CD audio after the fader (44.1 kHz), with `--chip-audio` and the unit attached |
 
 `trace.txt` (`mesen-md-bus-trace/1`) has one event per line,
 `<master clock> <device> <op> <width> <address> <value>` in hex, with device 1 = 68000,

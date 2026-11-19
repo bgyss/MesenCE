@@ -545,9 +545,11 @@ void MdMemoryManager::WriteIo(uint32_t addr, uint8_t value)
 uint16_t MdMemoryManager::ReadControlRegister(uint32_t addr, uint16_t openBus)
 {
 	if(addr >= 0xA11100 && addr < 0xA11200) {
-		//BUSREQ: bit 8 (bit 0 of the even byte) reads 0 while the 68000 owns the Z80 bus
+		//BUSREQ: bit 8 (bit 0 of the even byte) reads 0 while the 68000 owns the Z80 bus. A Z80
+		//held in reset never acknowledges: the bit reads 1 (MAME megadriv.cpp, BlastEm; The
+		//Terminator (Sega CD) waits for it. Findings: md-verification, Sega CD S5)
 		SyncZ80();
-		return (openBus & 0xFEFF) | (_state.Z80BusRequested ? 0 : 0x0100);
+		return (openBus & 0xFEFF) | (_state.Z80BusRequested && !_state.Z80Reset ? 0 : 0x0100);
 	} else if(addr >= 0xA14000 && addr < 0xA14004 && _hasTmss) {
 		return (_state.Tmss[addr & 0x02] << 8) | _state.Tmss[(addr & 0x02) | 1];
 	}
@@ -704,7 +706,7 @@ uint8_t MdMemoryManager::DebugRead(uint32_t addr)
 		}
 		return 0xFF;
 	} else if(addr == 0xA11100) {
-		return _state.Z80BusRequested ? 0 : 1;
+		return _state.Z80BusRequested && !_state.Z80Reset ? 0 : 1;
 	}
 	return 0xFF;
 }

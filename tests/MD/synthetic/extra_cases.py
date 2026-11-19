@@ -52,6 +52,31 @@ def _bank_mapper():
     return Case("mapper_ssf2_banks", ops, rom_size=0x500000, rom_data=rom_data, capture_frames=2)
 
 
+def _z80_busack_reset():
+    """BUSREQ/BUSACK ($A11100 bit 8, 0 = the 68000 has the Z80 bus) with the Z80 held in reset.
+
+    A Z80 in reset doesn't acknowledge a bus request, so the bit reads 1; it reads 0 once reset is
+    released with the request held. Measured on BlastEm (nativekit's oracle core) and as MAME
+    (megadriv.cpp: z80_is_reset reads 1). The Terminator (Sega CD) requests the bus with the Z80 in
+    reset and waits for the bit to read 1 (findings: mcd-verification S5). Re-asserting reset
+    after the grant is not checked: MAME reads 1, BlastEm keeps the grant (0).
+    """
+    bit = 0x0100
+    ops = (
+        Operation(WRITE, 2, 0xA11200, 0x0000),                     # Z80 reset
+        Operation(WRITE, 2, 0xA11100, 0x0000),
+        Operation(READ, 2, 0xA11100, bit, compare_mask=bit),       # reset, no request: 1
+        Operation(WRITE, 2, 0xA11100, 0x0100),                     # bus request
+        Operation(READ, 2, 0xA11100, bit, compare_mask=bit),       # reset + request: 1
+        Operation(READ, 1, 0xA11100, 0x01, compare_mask=0x01),     # byte read: same
+        Operation(WRITE, 2, 0xA11200, 0x0100),                     # release reset
+        Operation(POLL, 2, 0xA11100, 0x0000, compare_mask=bit),    # granted
+        Operation(WRITE, 2, 0xA11100, 0x0000),                     # release the bus
+        Operation(READ, 2, 0xA11100, bit, compare_mask=bit),
+    )
+    return Case("z80_busack_reset", ops, capture_frames=2)
+
+
 class _I2c:
     """Bit-banged I2C on one of the cartridge EEPROM boards, as READ/WRITE steps.
 
@@ -323,5 +348,5 @@ def write_assets(out_dir):
 
 
 def all_cases():
-    return ([_pad6_across_frame(), _bank_mapper()] + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)] +
+    return ([_pad6_across_frame(), _bank_mapper(), _z80_busack_reset()] + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)] +
             _accessory_cases() + _mcd_cases())
