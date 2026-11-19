@@ -250,7 +250,10 @@ which confirms F2 in the emulator.
 - All 7 pass.
 - The rest of `test:md-synthetic` still passes: 60/60 BlastEm cases and every MesenCE case.
 - `test:md-replay`: 80/80 on both FM cores and both save points. `test:md-cheats`,
-  `test:md-viewers` and `test:headless` pass.
+  `test:md-viewers` and `test:headless` pass. `test:ci`: upstream MesenTests pass, fork 12/12.
+- `test:md-xarch` against an x86-64 runner of `6158504c` (`/usr/bin/clang++ -arch x86_64`, run
+  under Rosetta 2): 80/80 identical, including the mcd cases and states cross-loaded between the
+  two builds.
 
 **Negative controls**
 - Without `--md-mcd`, the six cases with expected values all fail: their polls never end.
