@@ -458,6 +458,12 @@ void McdCdd::Step75Hz()
 			break;
 
 		case Playing:
+			if(!TrackAt(_sector)) {
+				//Outside the disc (a seek past the last sector): the drive reports the lead-out
+				_driveStatus = _sector < 0 ? LeadIn : LeadOut;
+				_track = _sector < 0 ? 0 : 0xAA;
+				break;
+			}
 			FillSubcode();
 			if(IsDataTrack(_track)) {
 				uint8_t raw[2352];

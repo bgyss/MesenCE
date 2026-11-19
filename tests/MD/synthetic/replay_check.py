@@ -90,9 +90,12 @@ def main():
             spec = json.loads(sp.read_text())
             name, rom = spec["name"], sp.with_suffix(".md")
             a, b, c = tmp / (name + "-a"), tmp / (name + "-b"), tmp / (name + "-c")
-            run(args.runner, rom, spec, a, args.frames, ["--trace", "bus"])
-            run(args.runner, rom, spec, b, args.warmup, ["--trace", "bus"])
-            run(args.runner, rom, spec, c, args.frames - args.warmup, ["--trace", "bus", "--load-state", str(b / "final.mss")])
+            #A case can ask for a later save point (spec "replay_warmup"), e.g. once a CD seek is done
+            warmup = spec.get("replay_warmup", args.warmup)
+            frames = warmup + (args.frames - args.warmup)
+            run(args.runner, rom, spec, a, frames, ["--trace", "bus"])
+            run(args.runner, rom, spec, b, warmup, ["--trace", "bus"])
+            run(args.runner, rom, spec, c, frames - warmup, ["--trace", "bus", "--load-state", str(b / "final.mss")])
             #The uninterrupted run's event stream must be exactly B's events followed by C's
             ta = trace(a / "trace.txt")
             tc = trace(b / "trace.txt") + trace(c / "trace.txt")
@@ -101,9 +104,9 @@ def main():
                 first = next((i for i, (x, y) in enumerate(zip(ta, tc)) if x != y), min(len(ta), len(tc)))
                 problems.append("trace differs at event %d of %d/%d: %s vs %s" % (first, len(ta), len(tc), ta[first:first + 1], tc[first:first + 1]))
             #Audio phase: the per-chip streams of the uninterrupted run are B's followed by C's, sample for sample
-            for chip in ("ym2612.raw", "psg.raw", "pcm.raw"):
-                if chip == "pcm.raw" and not (a / chip).exists():
-                    continue  # Sega CD PCM: only with the unit attached
+            for chip in ("ym2612.raw", "psg.raw", "pcm.raw", "cdda.raw"):
+                if chip in ("pcm.raw", "cdda.raw") and not (a / chip).exists():
+                    continue  # Sega CD PCM and CD audio: only with the unit attached
                 if (a / chip).read_bytes() != (b / chip).read_bytes() + (c / chip).read_bytes():
                     problems.append(chip + " differs (audio not continuous across the state)")
             for f in ["final.png"] + sorted(p.relative_to(a).as_posix() for p in (a / "memory").iterdir()):

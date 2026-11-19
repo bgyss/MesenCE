@@ -53,6 +53,11 @@ class SubAsm(M68kAsm):
     def set_sub_flag(self, value):
         self.move_b_imm(value, SUB_REG + 0x0F)
 
+    def branch_w(self, cond, target):         # Bcc.w: 16-bit displacement from PC+2
+        def enc(pc, labels):
+            return struct.pack(">Hh", 0x6000 | (cond << 8), labels[target] - (pc + 2))
+        self.items.append((None, enc, 4))
+
     def halt(self, label="halt"):
         self.label(label)
         self.branch(BRA, label)
@@ -347,6 +352,9 @@ import pathlib
 import mcd_models
 
 MCD_DIR = pathlib.Path(__file__).resolve().parents[1] / "mcd"
+
+#Extra keys for the generated run spec (replay_check.py's save point), filled by _cd_replay_case
+SPEC_EXTRA = {}
 
 
 def _status_reads(expected, mask=0xFFFF, first=0):
@@ -797,6 +805,7 @@ def _cd_data():
        header 00:03:25 (mode 1); read the 2048 data bytes through $FF8008 (sub CPU read).
     3. The next sector (00:03:26) goes by DMA into 2M word RAM at 0, then RET returns word RAM.
     4. Seek and play track 2 (00:04:50): CD audio, checked in cdda.raw (DERIVED_CHECKS).
+    Also: during the TOC loop the level 4 interrupts are one 75 Hz step apart (DERIVED_CHECKS).
     The main CPU then holds the sub CPU's bus and reads the results from program RAM.
     """
     a = CdAsm(0x200)
@@ -811,6 +820,8 @@ def _cd_data():
     a.raw(0x0C00, 0x04)                       # paused: the TOC is read
     a.branch(BNE, "toc")
     a.save_status(RESULTS)
+    a.move_w_mem(CdAsm.COUNTER + 2, RESULTS + 0x20)  # stopwatch at the last two level 4 interrupts
+    a.move_w_mem(CdAsm.COUNTER + 4, RESULTS + 0x22)
     a.command((2, 0, 0, 5, 0, 2, 0, 0, 0), "start2")
     a.save_status(RESULTS + 0x0A)
     # CDC: reset, IFCTRL = DECIEN | DOUTEN, CTRL0 = DECEN | WRRQ, CTRL1 = 0
@@ -845,6 +856,8 @@ def _cd_data():
     a.set_sub_flag(0x01)
     a.halt()
     a.label("level4")
+    a.move_w_mem(CdAsm.COUNTER + 2, CdAsm.COUNTER + 4)   # previous stopwatch
+    a.move_w_mem(SUB_REG + 0x0C, CdAsm.COUNTER + 2)      # stopwatch at this interrupt
     a.raw(0x5279, 0, CdAsm.COUNTER)           # addq.w #1,(counter).l
     a.raw(0x4E73)
     a.assemble()
@@ -864,11 +877,121 @@ def _cd_data():
         ops.append(Operation(READ, 2, PRG_WINDOW + RESULTS + 0x100 + offset, (sector100[offset] << 8) | sector100[offset + 1], compare_mask=0xFFFF))
     for offset in list(range(0, 32, 2)) + [2046]:
         ops.append(Operation(READ, 2, WORD_RAM + offset, (sector101[offset] << 8) | sector101[offset + 1], compare_mask=0xFFFF))
+    ops += [Operation(READ, 2, PRG_WINDOW + RESULTS + 0x20, 0, compare_mask=0),
+            Operation(READ, 2, PRG_WINDOW + RESULTS + 0x22, 0, compare_mask=0)]
     ops.append(Operation(WRITE, 1, REG + 0x01, 0x01))        # release it: CD audio keeps playing
     return Case("mcd_cd_data", tuple(ops), capture_frames=260)
 
 
+def _cd_start(a):
+    """HOCK on, CDC reset, IFCTRL = DECIEN | DOUTEN, CTRL0 = DECEN | WRRQ."""
+    a.move_w_imm(0x0010, SUB_REG + 0x32)
+    a.raw(0x46FC, 0x2000)
+    a.snapshot()
+    a.move_b_imm(0x04, SUB_REG + 0x37)
+    a.wait_int4("hock")
+    a.cdc_reg(0x0F)
+    a.cdc_write(0x00)
+    a.cdc_reg(0x01)
+    a.cdc_write(0x22)
+    a.cdc_reg(0x0A)
+    a.cdc_write(0x84)
+    a.cdc_write(0x00)
+
+
+def _cd_replay_case(name, program, frames, warmup, status_read=False):
+    a = CdAsm(0x200)
+    _cd_start(a)
+    program(a)
+    a.label("level4")
+    a.raw(0x5279, 0, CdAsm.COUNTER)
+    a.raw(0x4E73)
+    a.assemble()
+    words = _sub_image(a, {0x70: 0x200 + _label_offset(a, "level4")})
+    ops = [cases._vdp_reg(1, 0x44), Operation(WRITE, 1, REG + 0x03, 0x02)] + _load_and_start(words) + [_poll_sub_flag(0x01)]
+    for _ in range(frames - 2):
+        ops += [Operation(POLL, 2, 0xC00004, 0x0000, compare_mask=0x0008),
+                Operation(POLL, 2, 0xC00004, 0x0008, compare_mask=0x0008),
+                Operation(READ, 2, REG + 0x0C, 0, compare_mask=0)]
+        if status_read:
+            ops.append(Operation(READ, 2, REG + 0x20, 0, compare_mask=0))
+    SPEC_EXTRA[name] = {"replay_warmup": warmup}
+    return Case(name, tuple(ops), capture_frames=frames)
+
+
+def _cd_busy():
+    """The CD controller busy across the save point (frame 20, for replay_check.py): the drive plays
+    the data track from LBA 10; the sub CPU leaves each decoded sector's interrupt pending for about
+    6 ms before taking it (read PT, STAT3), and DMAs the latest sector into 2M word RAM over and over,
+    so a decoder interrupt and a DMA are usually in progress. The main CPU reads the stopwatch at
+    each VBlank start. No values asserted; replay must reproduce them and the final state exactly."""
+    def program(a):
+        a.command((3, 0, 0, 0, 0, 2, 1, 0, 0), "seek")   # 00:02:10 = LBA 10
+        a.set_sub_flag(0x01)
+        a.label("loop")
+        a.cdc_reg(0x01)
+        a.read_cdc_to(0)
+        a.raw(0x0800, 5)                      # btst #5,d0: a decoded sector?
+        a.branch_w(BNE, "dma")
+        a.raw(0x323C, 8000)                   # move.w #8000,d1
+        a.label("delay")
+        a.dbf(1, "delay")                     # about 6 ms with DECI pending
+        a.cdc_reg(0x08)
+        a.read_cdc_to(7)
+        a.read_cdc_to(2)
+        a.cdc_reg(0x0F)
+        a.read_cdc_to(0)
+        a.raw(0xE14A)
+        a.raw(0x1407)
+        a.raw(0x5842)
+        a.raw(0x33C2, 0, CdAsm.COUNTER + 0x10)    # move.w d2,(source).l
+        a.label("dma")
+        a.raw(0x3439, 0, CdAsm.COUNTER + 0x10)    # move.w (source).l,d2
+        a.move_w_imm(0x0000, SUB_REG + 0x0A)
+        a.start_transfer(7)
+        a.label("dmawait")
+        a.move_w_to_d0(SUB_REG + 0x04)
+        a.raw(0x0800, 15)                     # btst #15,d0: EDT
+        a.branch(BEQ, "dmawait")
+        a.branch_w(BRA, "loop")
+    return _cd_replay_case("mcd_cd_busy", program, 26, 20)
+
+
+def _cd_seek_play(name, msf_nibbles, frames, warmup):
+    """Seek and play, then keep the drive reporting (a report request after every level 4). Each
+    round also publishes the CDC's IFSTAT in status 0 (read by the main CPU) and toggles the fader
+    between half volume and silence, so a fade is always in progress (512 steps of one sample)."""
+    def program(a):
+        a.command((3, 0) + msf_nibbles + (0,), "seek")
+        a.set_sub_flag(0x01)
+        a.label("loop")
+        a.command((2, 0, 0, 0, 0, 0, 0, 0, 0), "report")
+        a.cdc_reg(0x01)
+        a.read_cdc_to(0)
+        a.move_w_from_d0(SUB_REG + 0x20)
+        a.raw(0x0A79, 0x2000, 0, CdAsm.COUNTER + 0x12)   # eori.w #$2000,(fader).l: half volume / silence
+        a.move_w_mem(CdAsm.COUNTER + 0x12, SUB_REG + 0x34)
+        a.branch_w(BRA, "loop")
+    return _cd_replay_case(name, program, frames, warmup, status_read=True)
+
+
+def _cd_seeking():
+    """The save point (frame 5) falls inside a seek to track 2 (replay only)."""
+    return _cd_seek_play("mcd_cd_seeking", (0, 0, 0, 4, 5, 0), 9, 5)
+
+
+def _cd_audio():
+    """The save point (frame 20) falls while track 2 plays: CD audio continuity in cdda.raw (replay
+    only)."""
+    return _cd_seek_play("mcd_cd_audio", (0, 0, 0, 4, 5, 0), 26, 20)
+
+
 def _check_cdda(values, outdir):
+    # A command sent right after a level 4 interrupt is answered at the next 75 Hz step: 13.3 ms
+    # (BIOS Manual p. 5) = 434 stopwatch counts of 30.72 us (434 x 384 sub cycles)
+    period = (values[-2] - values[-1]) & 0xFFF
+    if period != 434:
+        return ["level 4 interrupts %d stopwatch counts apart, expected 434" % period]
     path = pathlib.Path(outdir) / "cdda.raw"
     if not path.exists():
         return ["no cdda.raw (run with --chip-audio)"]
@@ -888,9 +1011,13 @@ def _check_cdda(values, outdir):
 
 
 RUNNER_ARGS_MCD = ["--md-mcd"]
+
 RUNNER_ARGS_EXTRA = {"mcd_backup_ram": ["--save-battery"], "mcd_backup_ram_load": ["--battery", str(BACKUP_SEED)],
                      "mcd_pcm": ["--chip-audio"], "mcd_graphics_busy": ["--chip-audio"],
-                     "mcd_cd_data": ["--md-mcd-disc", "{roms}/mcd_disc.cue", "--chip-audio", "--trace-limit", "100000000"]}
+                     "mcd_cd_data": ["--md-mcd-disc", "{roms}/mcd_disc.cue", "--chip-audio", "--trace-limit", "100000000"],
+                     "mcd_cd_busy": ["--md-mcd-disc", "{roms}/mcd_disc.cue"],
+                     "mcd_cd_seeking": ["--md-mcd-disc", "{roms}/mcd_disc.cue"],
+                     "mcd_cd_audio": ["--md-mcd-disc", "{roms}/mcd_disc.cue", "--chip-audio"]}
 
 #Checks on several reads of a case (compare.py): name -> function(read values) -> problems
 DERIVED_CHECKS = {"mcd_timer": _check_stopwatch_frame, "mcd_backup_ram": _check_backup_file, "mcd_pcm": _check_pcm,
@@ -899,4 +1026,4 @@ DERIVED_CHECKS = {"mcd_timer": _check_stopwatch_frame, "mcd_backup_ram": _check_
 
 def all_cases():
     return [_boot_and_comm(), _int2(), _timer(), _word_ram_2m(), _word_ram_1m(), _prg_ram_protect_bank(), _busy(),
-            _font(), _dot_image(), _backup_ram(), _backup_ram_load(), _pcm(), _graphics(), _dma_word_ram(), _graphics_busy(), _cd_data()]
+            _font(), _dot_image(), _backup_ram(), _backup_ram_load(), _pcm(), _graphics(), _dma_word_ram(), _graphics_busy(), _cd_data(), _cd_busy(), _cd_seeking(), _cd_audio()]

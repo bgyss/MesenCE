@@ -294,6 +294,9 @@ def _accessory_cases():
 #Extra mesen-headless options per case (gen.py copies them into the run spec)
 RUNNER_ARGS = {}
 
+#Extra keys for the generated run spec (e.g. replay_warmup), by case
+SPEC_EXTRA = {}
+
 #Checks across several reads of one case (compare.py): name -> function(READ values) -> problems
 DERIVED_CHECKS = {}
 
@@ -309,6 +312,7 @@ def _mcd_cases():
     for case in found:
         RUNNER_ARGS[case.name] = list(mcd_cases.RUNNER_ARGS_MCD) + mcd_cases.RUNNER_ARGS_EXTRA.get(case.name, [])
     DERIVED_CHECKS.update(mcd_cases.DERIVED_CHECKS)
+    SPEC_EXTRA.update(mcd_cases.SPEC_EXTRA)
     return found
 
 

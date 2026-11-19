@@ -293,6 +293,7 @@ def main():
         spec = run_spec(case)
         #"{roms}" in runner options is this output directory (files written next to the cartridges)
         spec["runner_args"] = [a.replace("{roms}", str(out.resolve())) for a in spec["runner_args"]]
+        spec.update(extra_cases.SPEC_EXTRA.get(case.name, {}))
         (out / (case.name + ".json")).write_text(json.dumps(spec, indent=1) + "\n")
     extra_cases.write_assets(out)
     print(f"{len(all_cases)} cartridges in {out}")
