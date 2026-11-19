@@ -33,7 +33,6 @@ struct Sh2State
 
 	bool SlotPending; //the next instruction is a delay slot; PC moves to SlotTarget after it
 	uint32_t SlotTarget;
-	uint32_t SlotBranchPc; //address of the delayed branch instruction
 	bool NoInterrupt; //LDC/STC/LDS/STS were just executed: interrupts are not accepted before the next instruction
 	bool Sleeping;
 	uint8_t PendingReset; //0 = none, 1 = power-on (vectors 0/1), 2 = manual (vectors 2/3)
@@ -93,6 +92,7 @@ public:
 	{
 		DmaChannel Ch[2];
 		bool Dme, Nmif, Ae, Pr;
+		uint8_t RoundRobinFirst; //PR = 1: the channel with priority for the next request
 	};
 
 	struct DivuState
@@ -102,6 +102,7 @@ public:
 		uint32_t Dvdntl;
 		bool Ovf, Ovfie;
 		uint8_t Vector;
+		uint64_t BusyUntil; //cycle count at which the running division ends
 	};
 
 	struct FrtState
@@ -112,6 +113,7 @@ public:
 		uint8_t Cks;
 		bool Iedg;
 		bool Olvla, Olvlb, Ocrs;
+		uint8_t Temp; //TEMP: 16-bit registers are accessed a byte at a time through it
 		uint32_t Prescaler;
 	};
 
@@ -195,6 +197,7 @@ protected:
 	void WriteIo8(uint32_t addr, uint8_t value);
 	uint32_t ReadIo(uint32_t addr, int size);
 	void WriteIo(uint32_t addr, uint32_t value, int size);
+	void DivuWait(uint32_t addr);
 	void DivuStart32();
 	void DivuStart64();
 

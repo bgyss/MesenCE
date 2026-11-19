@@ -380,8 +380,18 @@ void Sh2Core::WriteLong(uint32_t addr, uint32_t value)
 // On-chip registers ($FFFFFE00-$FFFFFFFF), byte-addressed like ares
 // ---------------------------------------------------------------------------------------------
 
+void Sh2Core::DivuWait(uint32_t addr)
+{
+	//Any access to the DIVU while it divides waits for the end of the operation (SH7604
+	//hardware manual 10.4.1)
+	if(addr >= 0xFFFFFF00 && addr < 0xFFFFFF40 && _state.CycleCount < _divu.BusyUntil) {
+		AddCycles((uint32_t)(_divu.BusyUntil - _state.CycleCount));
+	}
+}
+
 uint32_t Sh2Core::ReadIo(uint32_t addr, int size)
 {
+	DivuWait(addr);
 	uint32_t v = 0;
 	for(int i = 0; i < size; i++) {
 		v = v << 8 | ReadIo8(addr + i);
@@ -391,6 +401,7 @@ uint32_t Sh2Core::ReadIo(uint32_t addr, int size)
 
 void Sh2Core::WriteIo(uint32_t addr, uint32_t value, int size)
 {
+	DivuWait(addr);
 	for(int i = 0; i < size; i++) {
 		WriteIo8(addr + i, (uint8_t)(value >> ((size - 1 - i) * 8)));
 	}
@@ -418,14 +429,24 @@ uint8_t Sh2Core::ReadIo8(uint32_t addr)
 
 		case 0xFFFFFE10: return (uint8_t)(_frt.Icie << 7 | _frt.Ociae << 3 | _frt.Ocibe << 2 | _frt.Ovie << 1 | 1);
 		case 0xFFFFFE11: return (uint8_t)(_frt.Icf << 7 | _frt.Ocfa << 3 | _frt.Ocfb << 2 | _frt.Ovf << 1 | _frt.Cclra);
-		case 0xFFFFFE12: return b(_frt.Frc, 1);
-		case 0xFFFFFE13: return b(_frt.Frc, 0);
-		case 0xFFFFFE14: return b(_frt.Ocrs ? _frt.Ocrb : _frt.Ocra, 1);
-		case 0xFFFFFE15: return b(_frt.Ocrs ? _frt.Ocrb : _frt.Ocra, 0);
+		//FRC, OCRA/B, FICR: reading the upper byte latches the lower one in TEMP (SH7604 11.3)
+		case 0xFFFFFE12:
+			_frt.Temp = b(_frt.Frc, 0);
+			return b(_frt.Frc, 1);
+		case 0xFFFFFE14: {
+			uint16_t ocr = _frt.Ocrs ? _frt.Ocrb : _frt.Ocra;
+			_frt.Temp = b(ocr, 0);
+			return b(ocr, 1);
+		}
+		case 0xFFFFFE18:
+			_frt.Temp = b(_frt.Ficr, 0);
+			return b(_frt.Ficr, 1);
+		case 0xFFFFFE13:
+		case 0xFFFFFE15:
+		case 0xFFFFFE19:
+			return _frt.Temp;
 		case 0xFFFFFE16: return (uint8_t)(_frt.Iedg << 7 | _frt.Cks);
 		case 0xFFFFFE17: return (uint8_t)(0xE0 | _frt.Ocrs << 4 | _frt.Olvla << 1 | _frt.Olvlb);
-		case 0xFFFFFE18: return b(_frt.Ficr, 1);
-		case 0xFFFFFE19: return b(_frt.Ficr, 0);
 
 		case 0xFFFFFE60: return (uint8_t)(_intc.SciIp << 4 | _intc.FrtIp);
 		case 0xFFFFFE62: return _intc.SciErrVec;
@@ -613,10 +634,11 @@ void Sh2Core::WriteIo8(uint32_t addr, uint8_t v)
 			_frt.Ocfa &= bit(3);
 			_frt.Icf &= bit(7);
 			return;
-		case 0xFFFFFE12: _frt.Frc = (uint16_t)((_frt.Frc & 0x00FF) | v << 8); return;
-		case 0xFFFFFE13: _frt.Frc = (uint16_t)((_frt.Frc & 0xFF00) | v); return;
-		case 0xFFFFFE14: setByte16(_frt.Ocrs ? _frt.Ocrb : _frt.Ocra, 1, v); return;
-		case 0xFFFFFE15: setByte16(_frt.Ocrs ? _frt.Ocrb : _frt.Ocra, 0, v); return;
+		//Writing the upper byte stores it in TEMP; the lower-byte write stores both (SH7604 11.3)
+		case 0xFFFFFE12:
+		case 0xFFFFFE14: _frt.Temp = v; return;
+		case 0xFFFFFE13: _frt.Frc = (uint16_t)(_frt.Temp << 8 | v); return;
+		case 0xFFFFFE15: (_frt.Ocrs ? _frt.Ocrb : _frt.Ocra) = (uint16_t)(_frt.Temp << 8 | v); return;
 		case 0xFFFFFE16:
 			//IEDG is bit 7 (ares writes it from bit 2; findings S1)
 			_frt.Cks = v & 3;
@@ -674,9 +696,7 @@ void Sh2Core::WriteIo8(uint32_t addr, uint8_t v)
 			_cache.DisableData = bit(2);
 			_cache.TwoWay = bit(3) ? 2 : 0;
 			_cache.WaySelect = v >> 6;
-			if(bit(3)) {
-				CachePurgeAll(2); //ways 0-1 become RAM (ares)
-			}
+			//TW: software must invalidate ways 0-1 itself (SH7604 8.4.5); ares purges them here
 			if(bit(4)) {
 				CachePurgeAll(4);
 			}
@@ -835,46 +855,43 @@ void Sh2Core::WriteIo8(uint32_t addr, uint8_t v)
 
 void Sh2Core::DivuStart32()
 {
-	//32/32 signed division. Results on overflow follow ares (saturated quotient); the SH7604
-	//manual's overflow cases are divide by zero and $80000000 / -1 (findings S1).
-	int32_t dividend = (int32_t)_divu.Dvdntl;
-	int32_t divisor = (int32_t)_divu.Dvsr;
-	if(divisor == 0 || (dividend == INT32_MIN && divisor == -1)) {
-		_divu.Dvdntl = dividend < 0 && divisor == 0 ? 0x80000000 : 0x7FFFFFFF;
-		_divu.Ovf = true;
-		return;
-	}
-	_divu.Dvdntl = (uint32_t)(dividend / divisor);
-	_divu.Dvdnth = (uint32_t)(dividend % divisor);
+	//Writing DVDNT also sets DVDNTL and sign-extends into DVDNTH (SH7604 10.2.2): a 32/32
+	//division is the 64/32 one on the sign-extended dividend
+	_divu.Dvdnth = (int32_t)_divu.Dvdntl < 0 ? 0xFFFFFFFF : 0;
+	DivuStart64();
 }
 
 void Sh2Core::DivuStart64()
 {
-	//64/32 signed division of DVDNTH:DVDNTL
+	//64/32 signed division of DVDNTH:DVDNTL: 39 cycles, or 6 on overflow (SH7604 10.3).
+	//Overflow: the quotient doesn't fit in signed 32 bits, or the divisor is 0. DVDNTL then
+	//holds $7FFFFFFF (positive overflow) or $80000000 (negative); DVDNTH and, with OVFIE set,
+	//DVDNTL hold the unit's intermediate result after 6 cycles, which isn't modelled (the
+	//remainder / saturated value is used instead; findings S1).
 	int64_t dividend = (int64_t)((uint64_t)_divu.Dvdnth << 32 | _divu.Dvdntl);
 	int64_t divisor = (int32_t)_divu.Dvsr;
+	bool overflow = false;
+	bool negative = false;
 	if(divisor == 0) {
-		_divu.Dvdntl = dividend < 0 ? 0x80000000 : 0x7FFFFFFF;
-		_divu.Ovf = true;
-		return;
-	}
-	if(dividend == INT64_MIN && divisor == -1) {
-		_divu.Dvdntl = 0x7FFFFFFF;
-		_divu.Ovf = true;
-		return;
-	}
-	int64_t quotient = dividend / divisor;
-	int64_t remainder = dividend % divisor;
-	_divu.Dvdnth = (uint32_t)remainder;
-	if(quotient > INT32_MAX) {
-		_divu.Dvdntl = 0x7FFFFFFF;
-		_divu.Ovf = true;
-	} else if(quotient < INT32_MIN) {
-		_divu.Dvdntl = 0x80000000;
-		_divu.Ovf = true;
+		overflow = true;
+		negative = dividend < 0;
+	} else if(dividend == INT64_MIN && divisor == -1) {
+		overflow = true;
 	} else {
-		_divu.Dvdntl = (uint32_t)quotient;
+		int64_t quotient = dividend / divisor;
+		_divu.Dvdnth = (uint32_t)(dividend % divisor);
+		if(quotient > INT32_MAX || quotient < INT32_MIN) {
+			overflow = true;
+			negative = quotient < 0;
+		} else {
+			_divu.Dvdntl = (uint32_t)quotient;
+		}
 	}
+	if(overflow) {
+		_divu.Dvdntl = negative ? 0x80000000 : 0x7FFFFFFF;
+		_divu.Ovf = true;
+	}
+	_divu.BusyUntil = _state.CycleCount + (overflow ? 6 : 39);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -928,9 +945,12 @@ void Sh2Core::RunPeripherals(uint32_t cycles)
 
 void Sh2Core::RunDma()
 {
-	//One transfer unit per CPU step (burst/cycle-steal timing is not modelled). Channel 0 has
-	//priority in fixed mode; a channel waiting for DREQ doesn't block the other (findings S1).
-	for(int ch = 0; ch < 2; ch++) {
+	//One transfer unit per CPU step (burst mode and bus timing are not modelled). Priority only
+	//decides between simultaneous requests: channel 0 first (PR = 0), or round-robin, where the
+	//channel that just transferred drops to low priority (PR = 1) (SH7604 9.3.3)
+	int first = _dmac.Pr ? _dmac.RoundRobinFirst : 0;
+	for(int i = 0; i < 2; i++) {
+		int ch = first ^ i;
 		if(!IsDmaActive(ch)) {
 			continue;
 		}
@@ -938,6 +958,7 @@ void Sh2Core::RunDma()
 		bool request = c.Ar || (c.Drcr == 0 && c.Dreq);
 		if(request) {
 			DmaTransfer(ch);
+			_dmac.RoundRobinFirst = (uint8_t)(ch ^ 1);
 			return;
 		}
 	}
@@ -1041,9 +1062,9 @@ void Sh2Core::IllegalInstruction()
 
 void Sh2Core::IllegalSlotInstruction()
 {
-	//Saved PC: the delayed branch instruction's address (SH7604 manual; ares saves the branch
-	//target instead; findings S1)
-	EnterException(6, _state.SlotBranchPc);
+	//Saved PC: the jump destination of the delayed branch (SH7604 hardware manual 4.5.3 and
+	//table 4.11)
+	EnterException(6, _curSlotTarget);
 }
 
 bool Sh2Core::CheckInterrupts()
@@ -1186,7 +1207,6 @@ void Sh2Core::DelayedBranch(uint32_t target)
 {
 	_state.SlotPending = true;
 	_state.SlotTarget = target;
-	_state.SlotBranchPc = _instPc;
 }
 
 uint32_t Sh2Core::PcRelBase()

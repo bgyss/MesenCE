@@ -236,8 +236,8 @@ namespace Scenarios
 			cpu.Step();
 			cpu.Step();
 			r.Eq("PC", s.PC, 0x3000);
-			//Saved PC: the delayed branch's address (core's choice; ares saves the target; findings S1)
-			r.Eq("saved PC", cpu.Long(0x8000 - 8), Code);
+			//Saved PC: the jump destination of the delayed branch (SH7604 manual table 4.11)
+			r.Eq("saved PC", cpu.Long(0x8000 - 8), Code + 4 + 0x20);
 		});
 
 		scenario("IRL interrupt: accepted above the mask, SR.I = level", [&] {
@@ -445,6 +445,69 @@ namespace Scenarios
 			cpu.Io32(0xFFFFFF10, 1);
 			cpu.Io32(0xFFFFFF14, 0); //$1_00000000 / 2 = $80000000: overflow
 			r.Eq("64/32 overflow at $80000000", cpu.RdIo32(0xFFFFFF08) & 1, 1);
+		});
+
+		scenario("DIVU: 39 cycles per division, 6 on overflow; accesses wait for the end", [&] {
+			cpu.Boot(Code);
+			cpu.Io32(0xFFFFFF00, 3);
+			uint64_t c0 = cpu.Cycles();
+			cpu.Io32(0xFFFFFF04, 100);
+			r.Eq("quotient", cpu.RdIo32(0xFFFFFF04), 33);
+			r.Eq("read waited 39 cycles", cpu.Cycles() - c0, 39);
+			cpu.Io32(0xFFFFFF00, 0);
+			c0 = cpu.Cycles();
+			cpu.Io32(0xFFFFFF04, 100);
+			cpu.RdIo32(0xFFFFFF04);
+			r.Eq("overflow ends after 6 cycles", cpu.Cycles() - c0, 6);
+			//Writing DVDNT sign-extends into DVDNTH: -7 / 0 overflows negative
+			cpu.Io32(0xFFFFFF04, (uint32_t)-7);
+			r.Eq("negative overflow", cpu.RdIo32(0xFFFFFF14), 0x80000000);
+			cpu.Io32(0xFFFFFF08, 0);
+		});
+
+		scenario("FRT: 16-bit registers through TEMP", [&] {
+			cpu.Boot(Code);
+			cpu.Io8(0xFFFFFE12, 0x12); //upper byte goes to TEMP
+			cpu.Io8(0xFFFFFE13, 0x34); //lower byte write stores both
+			r.Eq("FRC upper", cpu.RdIo8(0xFFFFFE12), 0x12);
+			cpu.Io8(0xFFFFFE12, 0x56); //TEMP = $56, FRC still $1234
+			r.Eq("upper write alone doesn't change FRC (reads TEMP back as lower after an upper read)", cpu.RdIo8(0xFFFFFE12), 0x12);
+			r.Eq("lower read returns the TEMP latched by the upper read", cpu.RdIo8(0xFFFFFE13), 0x34);
+			cpu.Io16(0xFFFFFE12, 0xABCD);
+			r.Eq("word write", cpu.RdIo32(0xFFFFFE10) & 0xFFFF, 0xABCD);
+		});
+
+		scenario("DMAC: round-robin alternates channels; fixed mode runs channel 0 first", [&] {
+			for(int pr = 0; pr < 2; pr++) {
+				cpu.Boot(Code);
+				for(uint32_t a = Code; a < Code + 0x40; a += 2) {
+					cpu.SetWords(a, { 0x0009 });
+				}
+				for(int ch = 0; ch < 2; ch++) {
+					uint32_t base = 0xFFFFFF80 + ch * 0x10;
+					cpu.Io32(base + 0, 0x20004000);
+					cpu.Io32(base + 4, 0x20005000 + ch * 0x100);
+					cpu.Io32(base + 8, 4);
+				}
+				cpu.Io32(0xFFFFFFB0, pr ? 9 : 1); //DME (+ PR)
+				cpu.Io32(0xFFFFFF8C, 0x5A01);
+				cpu.Io32(0xFFFFFF9C, 0x5A01);
+				s.SR = 0xF0;
+				cpu.Step();
+				cpu.Step();
+				uint32_t tcr0 = cpu.RdIo32(0xFFFFFF88);
+				uint32_t tcr1 = cpu.RdIo32(0xFFFFFF98);
+				if(pr) {
+					r.Eq("round-robin: channel 0 count", tcr0, 3);
+					r.Eq("round-robin: channel 1 count", tcr1, 3);
+				} else {
+					r.Eq("fixed: channel 0 count", tcr0, 2);
+					r.Eq("fixed: channel 1 count", tcr1, 4);
+				}
+				cpu.Io32(0xFFFFFF8C, 0);
+				cpu.Io32(0xFFFFFF9C, 0);
+				cpu.Io32(0xFFFFFFB0, 0);
+			}
 		});
 
 		scenario("FRT: compare match A sets OCFA and clears FRC (CCLRA); OCI interrupt", [&] {

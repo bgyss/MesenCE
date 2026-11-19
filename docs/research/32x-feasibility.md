@@ -2,10 +2,9 @@
 
 Snapshot: branch `sega-cd` at `0e1a17dd`, 2026-11-19.
 
-**Status (2026-11-19): S1 done** (SH-2 core: 68,140 `sh4` suite tests and 85 scenario checks
-pass, `mise run test:sh2-cpu`; findings S1). **S0 partial**: the programming manual is checked;
-the SH7604 and 32X hardware manuals are still to be obtained (findings S0-F1).
-Findings are logged in [`32x-verification-findings.md`](32x-verification-findings.md).
+**Status (2026-11-19): S0 and S1 done.** S1: SH-2 core, 68,140 `sh4` suite tests and 97 scenario
+checks pass (`mise run test:sh2-cpu`). S0: the SH-1/SH-2 programming manual, SH7604 hardware
+manual and Sega 32X hardware manual are checked; the plan's figures hold (findings S0-F2, F6).
 
 ## Decision
 

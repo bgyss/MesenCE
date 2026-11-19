@@ -15,7 +15,6 @@ void Sh2Core::Serialize(Serializer& s)
 	SV(_state.CycleCount);
 	SV(_state.SlotPending);
 	SV(_state.SlotTarget);
-	SV(_state.SlotBranchPc);
 	SV(_state.NoInterrupt);
 	SV(_state.Sleeping);
 	SV(_state.PendingReset);
@@ -73,6 +72,7 @@ void Sh2Core::Serialize(Serializer& s)
 	SV(_dmac.Nmif);
 	SV(_dmac.Ae);
 	SV(_dmac.Pr);
+	SV(_dmac.RoundRobinFirst);
 
 	SV(_divu.Dvsr);
 	SV(_divu.Dvdnth);
@@ -80,6 +80,7 @@ void Sh2Core::Serialize(Serializer& s)
 	SV(_divu.Ovf);
 	SV(_divu.Ovfie);
 	SV(_divu.Vector);
+	SV(_divu.BusyUntil);
 
 	SV(_frt.Ovie);
 	SV(_frt.Ociae);
@@ -99,6 +100,7 @@ void Sh2Core::Serialize(Serializer& s)
 	SV(_frt.Olvla);
 	SV(_frt.Olvlb);
 	SV(_frt.Ocrs);
+	SV(_frt.Temp);
 	SV(_frt.Prescaler);
 
 	SV(_wdt.Cks);
