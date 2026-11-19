@@ -309,3 +309,95 @@ built from `c6a775a2` in a scratch worktree.
   expected values come from the hardware manual, with ares used as a code reference only.
 - **Contention and the VDP DMA latch** (see above), and the 1M swap-request disagreement.
 - **Licences** of `mcd-verificator` and the 240p Test Suite, before anything is vendored.
+
+## S2: graphics chip, PCM, backup RAM (2026-11-18)
+
+### What was added
+
+- `McdUnit`:
+  - **Graphics chip:** stamp map → stamps → image buffer, level 1 at the end, `$FF8058-$FF8066`.
+  - **Font registers:** `$FF804C-$FF8057`.
+  - **1M dot image:** with write priority (normal, underwrite, overwrite).
+  - **Backup RAM:** 8 KiB on the lower byte of `$FE0000-$FE3FFF`, saved as the `.brm` battery
+    file.
+  - **VDP DMA from word RAM:** the one-read delay.
+- `McdPcm`:
+  - The RF5C164 at sub `$FF0000-$FF3FFF`.
+  - Its output is mixed into the Mega Drive's sound at each FM sample (latest PCM sample at that
+    master clock), through a queue that save states include.
+- Headless runner:
+  - `pcm.raw` in `--chip-audio`;
+  - `--battery FILE` to start from a save file;
+  - `--save-battery` to keep the battery files in `OUT/saves`.
+
+### Sources by behaviour
+
+| Behaviour | Source |
+|---|---|
+| Font registers: one colour nibble per font bit, SC1 for 1, SC0 for 0, bit 15 → top nibble of `$FF8050` | Hardware Manual p. 34 (independent model `mcd_models.font_words`) |
+| Graphics registers, trace vector format (13.3 start, 5.11 signed steps), stamp map entry (HFLP, RT1, RT0, stamp number), stamp storage as vertical cells, image buffer of vertical cells, repeat/outside, Vdot counting down, GRON, level 1 at the end, only in 2M mode | Hardware Manual pp. 35-53 |
+| Rotation direction (counter-clockwise for RT0) | Manual figure p. 42 (90/180/270 pictures); ares `gpu.cpp` |
+| Order of HFLP and rotation; stamp map address masks; nibble order in word RAM | ares `gpu.cpp` only (the figure for flip + rotation is not legible enough) |
+| Graphics time per line: 13 + 2 × (offset AND 3) + 9 × ((H dots + offset − 1) >> 2) clocks, plus 3 per 192 for refresh; sub CPU word RAM accesses add 3 | Hardware Manual p. 53. **Judgment call:** the scan is partly illegible (read as above). ares uses 5 clocks per dot instead. |
+| Dot image: one dot per byte, upper 4 bits read 0; priority modes, with the manual's own example values | Hardware Manual pp. 14, 23, 54; byte/bank arrangement from ares |
+| Backup RAM 8 KiB, lower byte | Hardware Manual p. 15, BIOS Manual p. 1 |
+| PCM registers, control register (ON, MOD, bank/channel), FD as an address step per sample, ST/LS, PAN nibbles (high = R), address read-back at `$10-$1F` | Hardware Manual appendix pp. 6-12 |
+| PCM sample format (bit 7 set = positive, sign-magnitude), `$FF` loop marker, on/off bits active low, 16-bit clamp and 10-bit DAC rounding | ares `pcm.cpp` only |
+| PCM mix level in the Mega Drive output | **Judgment call:** unscaled DAC value; no hardware level measured |
+| VDP DMA from word RAM: one read late, first word undefined | Hardware Manual p. 61 ("output with a one cycle delay"; start one word later); ares `wramLatch` |
+
+### Tests (`mcd_cases.py`, models in `mcd_models.py`)
+
+| Case | Checks |
+|---|---|
+| `mcd_font` | two colour/bit combinations against the manual's mapping |
+| `mcd_dot_image` | the manual's priority example (normal `$57`/`$B0`, overwrite `$57`/`$BA`, underwrite `$5A`/`$BA`); dot image read `$030C` |
+| `mcd_backup_ram` | lower-byte reads and writes; the saved `.brm` holds them (`--save-battery`) |
+| `mcd_backup_ram_load` | values from `tests/MD/mcd/backup_seed.brm` (`--battery`) |
+| `mcd_pcm` | address read-back with the chip off; 400 output samples of two channels (full/half step, envelope, pan, loops) equal to the model |
+| `mcd_graphics` | all 768 bytes of a 48x32 image built from every flip/rotation, scaling, right-to-left, a vertical vector and off-map dots, equal to the model; GRON, Vdot before and after; 9-10 stopwatch counts for the operation |
+| `mcd_dma_wordram` | VRAM words 1-3 after a DMA started one word late |
+| `mcd_graphics_busy` | graphics restarting from its own interrupt, with PCM playing, across the save point (replay only) |
+
+**Mutations:** 16/16 caught. They were:
+- PCM: sign, pan, loop to ST, DAC rounding, address byte order;
+- graphics: HFLP, rotation direction, off-map dots, image column height, per-line time;
+- dot image: underwrite/overwrite swap, read format;
+- font colours;
+- no DMA latch;
+- backup RAM not saved, and not loaded.
+
+The loop mutation was missed at first, because the loop point equalled the start point. The
+case now loops elsewhere.
+
+**Replay:** dropping a field from `Serialize` was caught for all nine fields tried:
+- graphics counter, Vdot, image address, vector address, active flag;
+- PCM channel address, channel enable, chip on, current output.
+
+The vector address was missed at first, because the next operation overwrote the wrong dots. The
+busy case now uses underwrite, so wrong dots stay.
+
+**Suites:**
+- `test:md-synthetic`: 60/60, plus all MesenCE cases.
+- `test:md-replay`: 88/88.
+- `test:md-xarch` against an x86-64 build of `3118094c`: 88/88 identical.
+- `test:ci`: upstream and fork pass.
+
+**Speed:** `render_h40`, 3000 frames, medians.
+
+| Configuration | Median | Change |
+|---|---|---|
+| Unit detached | 4.14 s | unchanged |
+| `mcd_busy` | 5.84 s | — |
+| `mcd_graphics_busy` (graphics chip re-run about 57 times per frame, PCM playing) | 6.76 s | +63% |
+
+- The graphics worst case is above the +50% target. It still runs about 7x faster than real time.
+- Real-game load is measured in S5.
+- One saving was made: silence is no longer queued while the PCM chip is off.
+
+### Open after S2
+
+- **RAM cartridge:** needs Mode 2 (the cartridge slot is free only when booting from disc), so it
+  moves to S3.
+- **PCM mix level and the graphics time formula:** both need hardware data.
+- **ares comparison:** still not done; there is no capture harness yet.

@@ -2,7 +2,9 @@
 
 Snapshot: branch `md-support` at `a8453071`, 2026-11-18. Status: proposal; nothing implemented.
 
-**Status (2026-11-18): S1 done, except comparing against ares** (no ares capture harness yet).
+**Status (2026-11-18): S2 done** (graphics chip, PCM, backup RAM, dot image, font registers,
+VDP DMA from word RAM; findings S2). **S1 done, except comparing against ares** (no ares capture
+harness yet).
 The Sega CD unit runs in Mode 1 behind the headless runner's `--md-mcd` test hook: sub CPU, program
 and word RAM, gate array registers, timer, stopwatch and the level 2/3 interrupts, covered by seven
 `mcd_*` synthetic cases (findings S1). Not yet: BIOS, discs, PCM, graphics chip, backup RAM,
@@ -156,7 +158,7 @@ Exit: a findings entry for every figure the core relies on, with its source.
 
 Exit: all cases pass in CI; ares agrees, or each difference is explained.
 
-**S2: graphics chip, PCM, backup RAM**
+**S2: graphics chip, PCM, backup RAM** (done 2026-11-18; the RAM cartridge moved to S3)
 - Stamp rendering, PCM mixing into the sound mixer, and backup RAM (internal, then the RAM
   cartridge) saved as a battery file.
 - Pictures and per-chip audio captured and compared.
