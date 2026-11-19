@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "Shared/SettingTypes.h"
 #include "PCE/PceConsole.h"
+#include "MD/MdConsole.h"
 #include "PCE/PceControlManager.h"
 #include "PCE/PceMemoryManager.h"
 #include "PCE/PceDefaultVideoFilter.h"
@@ -56,6 +57,10 @@ LoadRomResult PceConsole::LoadRom(VirtualFile& romFile)
 		DiscInfo disc = {};
 		if(!CdReader::LoadCue(romFile, disc)) {
 			return LoadRomResult::Failure;
+		}
+		if(MdConsole::IsSegaCdDisc(disc)) {
+			//A Sega CD / Mega-CD disc: let the Mega Drive core take it
+			return LoadRomResult::UnknownType;
 		}
 
 		if(!LoadFirmware(disc, romData)) {

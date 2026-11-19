@@ -290,7 +290,11 @@ def main():
     RUNNER_ARGS.update(extra_cases.RUNNER_ARGS)
     for case in all_cases:
         (out / (case.name + ".md")).write_bytes(build(case))
-        (out / (case.name + ".json")).write_text(json.dumps(run_spec(case), indent=1) + "\n")
+        spec = run_spec(case)
+        #"{roms}" in runner options is this output directory (files written next to the cartridges)
+        spec["runner_args"] = [a.replace("{roms}", str(out.resolve())) for a in spec["runner_args"]]
+        (out / (case.name + ".json")).write_text(json.dumps(spec, indent=1) + "\n")
+    extra_cases.write_assets(out)
     print(f"{len(all_cases)} cartridges in {out}")
 
 

@@ -353,6 +353,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 	bool allowDirty = false;
 	bool mdMcd = false;
 	vector<string> batteryPaths;
+	string mdMcdDisc, mdMcdBios;
 	bool saveBattery = false;
 	for(size_t i = 0; i < args.size(); i++) {
 		auto next = [&]() -> string {
@@ -391,6 +392,10 @@ static int Run(const vector<string>& args, const string& commandLine)
 			mdEeprom = next();
 		} else if(args[i] == "--md-mcd") {
 			mdMcd = true;
+		} else if(args[i] == "--md-mcd-disc") {
+			mdMcdDisc = next();
+		} else if(args[i] == "--md-mcd-bios") {
+			mdMcdBios = next();
 		} else if(args[i] == "--battery") {
 			batteryPaths.push_back(next());
 		} else if(args[i] == "--save-battery") {
@@ -520,8 +525,17 @@ static int Run(const vector<string>& args, const string& commandLine)
 		MdEepromDatabase::SetOverride(eepromInfo);
 		//Test hook: attach the Sega CD unit (Mode 1; no BIOS, discs or UI setting yet)
 		McdUnit::SetAttachedOverride(mdMcd);
+		McdUnit::SetDiscOverride(mdMcdDisc.empty() ? string() : fs::absolute(mdMcdDisc).string());
 		MessageManager::SetOptions(false, false);
 		emu.Initialize(false);
+		//--md-mcd-bios FILE: the Sega CD BIOS for disc boot, under every region's file name
+		if(!mdMcdBios.empty()) {
+			fs::path firmware = FolderUtilities::GetFirmwareFolder();
+			fs::create_directories(firmware);
+			for(const char* name : { "bios_CD_U.bin", "bios_CD_E.bin", "bios_CD_J.bin" }) {
+				fs::copy_file(mdMcdBios, firmware / name, fs::copy_options::overwrite_existing);
+			}
+		}
 		//--battery FILE: start from this save file (it becomes <rom name><FILE's extension>)
 		for(const string& battery : batteryPaths) {
 			fs::path saves = FolderUtilities::GetSaveFolder();
@@ -617,7 +631,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 
 		//--chip-audio (Mega Drive): YM2612 and PSG streams before mixing, s16 little-endian stereo at the
 		//YM2612 sample rate (master clock / 1008)
-		std::ofstream ymFile, psgFile, pcmFile;
+		std::ofstream ymFile, psgFile, pcmFile, cddaFile;
 		if(chipAudio) {
 			MdConsole* md = dynamic_cast<MdConsole*>(emu.GetConsole().get());
 			if(!md) {
@@ -642,6 +656,13 @@ static int Run(const vector<string>& args, const string& commandLine)
 					pcmFile.write((const char*)pcm, sizeof(pcm));
 				});
 				manifest["chip_audio"]["pcm"] = { { "file", "pcm.raw" }, { "format", "s16le-stereo" }, { "sample_rate_hz", 12500000.0 / 384 } };
+				//CD audio after the fader, at 44.1 kHz
+				cddaFile.open(outDir / "cdda.raw", std::ios::binary);
+				md->GetMcd()->GetCdd().SetObserver([&](int16_t l, int16_t r) {
+					int16_t cd[2] = { l, r };
+					cddaFile.write((const char*)cd, sizeof(cd));
+				});
+				manifest["chip_audio"]["cdda"] = { { "file", "cdda.raw" }, { "format", "s16le-stereo" }, { "sample_rate_hz", 44100 } };
 			}
 		}
 

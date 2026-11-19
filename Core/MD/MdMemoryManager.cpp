@@ -266,6 +266,11 @@ uint16_t MdMemoryManager::M68kRead(bool upper, bool lower, uint32_t addr, M68kAc
 	switch(addr >> 21) {
 		case 0:
 		case 1:
+			if(_mcdMode2) {
+				//Disc boot: the Sega CD unit (boot ROM, program RAM window, word RAM)
+				_mcd->Run(_masterClock);
+				return _mcd->MainRead(addr, _m68k->GetRegisters().Irc);
+			}
 			//Cartridge ($000000-$3FFFFF)
 			return (ReadCartBus(addr) << 8) | ReadCartBus(addr | 1);
 
@@ -302,8 +307,9 @@ uint16_t MdMemoryManager::M68kRead(bool upper, bool lower, uint32_t addr, M68kAc
 
 		case 2:
 		case 3:
-			//$400000-$7FFFFF: the Sega CD unit in Mode 1 (nothing connected otherwise)
-			if(_mcd) {
+			//$400000-$7FFFFF: the Sega CD unit in Mode 1 (nothing connected otherwise; in Mode 2 the
+			//cartridge slot, empty)
+			if(_mcd && !_mcdMode2) {
 				_mcd->Run(_masterClock);
 				return _mcd->MainRead(addr - 0x400000, _m68k->GetRegisters().Irc);
 			}
@@ -321,6 +327,11 @@ void MdMemoryManager::M68kWrite(bool upper, bool lower, uint32_t addr, uint16_t 
 	switch(addr >> 21) {
 		case 0:
 		case 1:
+			if(_mcdMode2) {
+				_mcd->Run(_masterClock);
+				_mcd->MainWrite(addr, upper, lower, value);
+				break;
+			}
 			if(_eeprom) {
 				if(upper) {
 					WriteEeprom(addr, value >> 8);
@@ -396,7 +407,7 @@ void MdMemoryManager::M68kWrite(bool upper, bool lower, uint32_t addr, uint16_t 
 
 		case 2:
 		case 3:
-			if(_mcd) {
+			if(_mcd && !_mcdMode2) {
 				_mcd->Run(_masterClock);
 				_mcd->MainWrite(addr - 0x400000, upper, lower, value);
 			}
@@ -655,9 +666,11 @@ uint16_t MdMemoryManager::DmaReadWord(uint32_t addr)
 	addr &= 0xFFFFFE;
 	if(addr >= 0xE00000) {
 		return (_workRam[addr & 0xFFFF] << 8) | _workRam[(addr & 0xFFFF) | 1];
+	} else if(_mcdMode2 && addr < 0x400000) {
+		return _mcd->DmaMainRead(addr);
 	} else if(addr < 0x400000) {
 		return (ReadCartBus(addr) << 8) | ReadCartBus(addr | 1);
-	} else if(_mcd && addr < 0x800000) {
+	} else if(_mcd && !_mcdMode2 && addr < 0x800000) {
 		return _mcd->DmaMainRead(addr - 0x400000);
 	}
 	//DMA from the Z80 area, I/O or the VDP itself returns undefined data; use the 68000 view
@@ -667,11 +680,13 @@ uint16_t MdMemoryManager::DmaReadWord(uint32_t addr)
 uint8_t MdMemoryManager::DebugRead(uint32_t addr)
 {
 	addr &= 0xFFFFFF;
-	if(addr < 0x400000) {
+	if(_mcdMode2 && addr < 0x400000) {
+		return _mcd->DebugMainRead(addr);
+	} else if(addr < 0x400000) {
 		return ReadCartByte(addr);
 	} else if(addr >= 0xE00000) {
 		return _workRam[addr & 0xFFFF];
-	} else if(_mcd && addr < 0x800000) {
+	} else if(_mcd && !_mcdMode2 && addr < 0x800000) {
 		return _mcd->DebugMainRead(addr - 0x400000);
 	} else if(addr >= 0xA00000 && addr < 0xA04000) {
 		return _z80Ram[addr & 0x1FFF];

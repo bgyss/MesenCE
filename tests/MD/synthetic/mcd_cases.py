@@ -651,15 +651,252 @@ def _dma_word_ram():
     return Case("mcd_dma_wordram", tuple(ops), capture_frames=3)
 
 
+# ---------------------------------------------------------------------------------------------
+# S3: a synthetic disc in the drive, driven without the BIOS
+
+DISC_DATA_SECTORS = 200      # track 1: MODE1/2352, LBA 0-199
+DISC_AUDIO_SECTORS = 100     # track 2: AUDIO, LBA 200-299 (cue INDEX 01 00:02:50)
+
+
+def disc_user_data(lba):
+    data = bytearray(((lba * 7 + j * 3 + (j >> 8)) & 0xFF) for j in range(2048))
+    if lba == 0:
+        data[0:16] = b"SEGADISCSYSTEM  "
+        data[0x100:0x110] = b"SEGA MEGA DRIVE "
+        data[0x1F0:0x1F3] = b"JUE"
+    return data
+
+
+def disc_audio_sample(k):
+    """Sample k of track 2: (left, right), 16-bit."""
+    return (((k * 37) % 4096) - 2047) * 8, (((k * 53) % 4096) - 2047) * 8
+
+
+def _bcd(v):
+    return ((v // 10) << 4) | (v % 10)
+
+
+def build_disc():
+    raw = bytearray()
+    sync = bytes([0x00] + [0xFF] * 10 + [0x00])
+    for lba in range(DISC_DATA_SECTORS):
+        msf = lba + 150
+        raw += sync + bytes((_bcd(msf // 75 // 60), _bcd(msf // 75 % 60), _bcd(msf % 75), 0x01)) + disc_user_data(lba) + bytes(288)
+    for k in range(DISC_AUDIO_SECTORS * 588):
+        raw += struct.pack("<hh", *disc_audio_sample(k))
+    cue = ('FILE "mcd_disc.bin" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n'
+           '  TRACK 02 AUDIO\n    INDEX 01 00:02:50\n')
+    return bytes(raw), cue
+
+
+def write_assets(out_dir):
+    raw, cue = build_disc()
+    out = pathlib.Path(out_dir)
+    if not (out / "mcd_disc.bin").exists() or (out / "mcd_disc.bin").read_bytes() != raw:
+        (out / "mcd_disc.bin").write_bytes(raw)
+    (out / "mcd_disc.cue").write_text(cue)
+
+
+def _cdd_words(command):
+    """CDD command nibbles 0-8 plus checksum, as the 5 words written to $FF8042-$FF804A."""
+    nibbles = list(command) + [(~sum(command)) & 0x0F]
+    return [(nibbles[i] << 8) | nibbles[i + 1] for i in range(0, 10, 2)]
+
+
+def _status_words(status):
+    nibbles = list(status) + [(~sum(status)) & 0x0F]
+    return [(nibbles[i] << 8) | nibbles[i + 1] for i in range(0, 10, 2)]
+
+
+class CdAsm(SubAsm):
+    COUNTER = 0x7000
+
+    def send(self, command):
+        for i, word in enumerate(_cdd_words(command)):
+            self.move_w_imm(word, SUB_REG + 0x42 + 2 * i)  # the last word sends the command
+
+    def snapshot(self):                       # move.w (counter).l,d1
+        self.raw(0x3239, 0, self.COUNTER)
+
+    def wait_int4(self, label):               # until the level 4 count moves
+        self.label(label)
+        self.raw(0xB279, 0, self.COUNTER)     # cmp.w (counter).l,d1
+        self.branch(BEQ, label)
+
+    def command(self, command, label):
+        self.snapshot()
+        self.send(command)
+        self.wait_int4(label)
+
+    def save_status(self, dest):
+        for i in range(5):
+            self.move_w_mem(SUB_REG + 0x38 + 2 * i, dest + 2 * i)
+
+    def cdc_reg(self, reg):                   # move.b #reg,$FF8005
+        self.move_b_imm(reg, SUB_REG + 0x05)
+
+    def cdc_write(self, value):               # move.b #value,$FF8007
+        self.move_b_imm(value, SUB_REG + 0x07)
+
+    def read_cdc_to(self, dreg):              # move.b $FF8007,dN
+        self.raw(0x1039 | (dreg << 9), SUB_REG >> 16, (SUB_REG + 0x07) & 0xFFFF)
+
+    def dbf(self, dreg, target):              # dbf dN,target
+        def enc(pc, labels):
+            return struct.pack(">Hh", 0x51C8 | dreg, labels[target] - (pc + 2))
+        self.items.append((None, enc, 4))
+
+    def wait_sector(self, frame_bcd, label):
+        """Poll IFSTAT until a sector is decoded; keep the header in d3-d6 and the block pointer in
+        d2 (PT); clear DECI by reading STAT3; repeat until the header frame is `frame_bcd`."""
+        self.label(label)
+        self.cdc_reg(0x01)
+        self.read_cdc_to(0)
+        self.raw(0x0800, 5)                   # btst #5,d0 (DECI, active low)
+        self.branch(BNE, label)
+        self.cdc_reg(0x04)
+        for d in (3, 4, 5, 6):
+            self.read_cdc_to(d)               # HEAD0-3
+        self.cdc_reg(0x08)
+        self.read_cdc_to(7)                   # PTL -> d7
+        self.read_cdc_to(2)                   # PTH -> d2
+        self.cdc_reg(0x0F)
+        self.read_cdc_to(0)                   # STAT3 (clears DECI)
+        self.raw(0x0C05, frame_bcd)           # cmpi.b #frame,d5
+        self.branch(BNE, label)
+        self.raw(0xE14A)                      # lsl.w #8,d2
+        self.raw(0x1407)                      # move.b d7,d2: d2 = PT
+        self.raw(0x5842)                      # addq.w #4,d2: data after the 4-byte header
+
+    def start_transfer(self, destination):
+        """DBC = 2047, DAC = d2, destination, DTTRG."""
+        self.move_b_imm(destination, SUB_REG + 0x04)
+        self.cdc_reg(0x02)
+        self.cdc_write(0xFF)                  # DBCL
+        self.cdc_write(0x07)                  # DBCH
+        self.raw(0x13C2, SUB_REG >> 16, (SUB_REG + 0x07) & 0xFFFF)  # move.b d2,$FF8007: DACL
+        self.raw(0xE04A)                      # lsr.w #8,d2
+        self.raw(0x13C2, SUB_REG >> 16, (SUB_REG + 0x07) & 0xFFFF)  # DACH
+        self.cdc_write(0x00)                  # DTTRG
+
+
+RESULTS = 0x8000  # results in program RAM, read by the main CPU through $420000 with the sub CPU's bus
+
+
+def _cd_data():
+    """The drive and the CD controller without the BIOS (Mode 1 with a disc: runner --md-mcd-disc).
+
+    Sources: CDD protocol and reports as in ares md/mcd/cdd.cpp and MAME megacdcd.cpp (both agree on
+    the checksum, the first/last track and track start reports); CDC registers from the LC8951
+    manual (IFCTRL, CTRL0, HEAD0-3, PT, DBC, DAC, DTTRG, STAT3); $FF8004 destinations from the
+    Hardware Manual p. 26.
+
+    1. HOCK on; report requests (first/last track) until the drive has read the TOC (status 4,
+       paused): tracks 1-2. Track 2 starts at 00:04:50 and is audio.
+    2. Seek and play from 00:03:25 (LBA 100) with the decoder and buffer writes on; wait for the
+       header 00:03:25 (mode 1); read the 2048 data bytes through $FF8008 (sub CPU read).
+    3. The next sector (00:03:26) goes by DMA into 2M word RAM at 0, then RET returns word RAM.
+    4. Seek and play track 2 (00:04:50): CD audio, checked in cdda.raw (DERIVED_CHECKS).
+    The main CPU then holds the sub CPU's bus and reads the results from program RAM.
+    """
+    a = CdAsm(0x200)
+    a.move_w_imm(0x0010, SUB_REG + 0x32)     # level 4
+    a.raw(0x46FC, 0x2000)
+    a.snapshot()
+    a.move_b_imm(0x04, SUB_REG + 0x37)       # HOCK
+    a.wait_int4("hock")
+    a.label("toc")
+    a.command((2, 0, 0, 4, 0, 0, 0, 0, 0), "toc_wait")
+    a.move_b_to_d0(SUB_REG + 0x38)            # status 0 (upper byte)
+    a.raw(0x0C00, 0x04)                       # paused: the TOC is read
+    a.branch(BNE, "toc")
+    a.save_status(RESULTS)
+    a.command((2, 0, 0, 5, 0, 2, 0, 0, 0), "start2")
+    a.save_status(RESULTS + 0x0A)
+    # CDC: reset, IFCTRL = DECIEN | DOUTEN, CTRL0 = DECEN | WRRQ, CTRL1 = 0
+    a.cdc_reg(0x0F)
+    a.cdc_write(0x00)
+    a.cdc_reg(0x01)
+    a.cdc_write(0x22)
+    a.cdc_reg(0x0A)
+    a.cdc_write(0x84)
+    a.cdc_write(0x00)
+    a.command((3, 0, 0, 0, 0, 3, 2, 5, 0), "seek1")
+    a.wait_sector(0x25, "sector100")
+    a.raw(0x13C3, 0, RESULTS + 0x14)          # move.b d3,(results+$14): HEAD0-3
+    a.raw(0x13C4, 0, RESULTS + 0x15)
+    a.raw(0x13C5, 0, RESULTS + 0x16)
+    a.raw(0x13C6, 0, RESULTS + 0x17)
+    a.start_transfer(3)                       # sub CPU read
+    a.raw(0x43F9, 0, RESULTS + 0x100)         # lea (results+$100).l,a1
+    a.raw(0x323C, 1023)                       # move.w #1023,d1
+    a.label("read")
+    a.raw(0x32F9, SUB_REG >> 16, (SUB_REG + 0x08) & 0xFFFF)  # move.w $FF8008,(a1)+
+    a.dbf(1, "read")
+    a.wait_sector(0x26, "sector101")
+    a.move_w_imm(0x0000, SUB_REG + 0x0A)      # DMA address: word RAM 0
+    a.start_transfer(7)                       # word RAM DMA
+    a.label("dma")
+    a.move_w_to_d0(SUB_REG + 0x04)
+    a.raw(0x0800, 15)                         # btst #15,d0: EDT
+    a.branch(BEQ, "dma")
+    a.move_b_imm(0x01, SUB_REG + 0x03)        # RET = 1
+    a.command((3, 0, 0, 0, 0, 4, 5, 0, 0), "seek2")  # play track 2
+    a.set_sub_flag(0x01)
+    a.halt()
+    a.label("level4")
+    a.raw(0x5279, 0, CdAsm.COUNTER)           # addq.w #1,(counter).l
+    a.raw(0x4E73)
+    a.assemble()
+    words = _sub_image(a, {0x70: 0x200 + _label_offset(a, "level4")})
+
+    toc = _status_words((4, 4, 0, 1, 0, 2, 0, 0, 0))
+    start2 = _status_words((4, 5, 0, 0, 0, 4, 5, 0, 2))
+    sector100 = disc_user_data(100)
+    sector101 = disc_user_data(101)
+    ops = [Operation(WRITE, 1, REG + 0x03, 0x02)]            # DMNA: word RAM to the sub CPU
+    ops += _load_and_start(words) + [_poll_sub_flag(0x01)]
+    ops.append(Operation(WRITE, 1, REG + 0x01, 0x03))        # hold the sub CPU's bus
+    ops += [Operation(READ, 2, PRG_WINDOW + RESULTS + 2 * i, w, compare_mask=0xFFFF) for i, w in enumerate(toc + start2)]
+    ops += [Operation(READ, 2, PRG_WINDOW + RESULTS + 0x14, 0x0003, compare_mask=0xFFFF),
+            Operation(READ, 2, PRG_WINDOW + RESULTS + 0x16, 0x2501, compare_mask=0xFFFF)]
+    for offset in list(range(0, 32, 2)) + [2046]:
+        ops.append(Operation(READ, 2, PRG_WINDOW + RESULTS + 0x100 + offset, (sector100[offset] << 8) | sector100[offset + 1], compare_mask=0xFFFF))
+    for offset in list(range(0, 32, 2)) + [2046]:
+        ops.append(Operation(READ, 2, WORD_RAM + offset, (sector101[offset] << 8) | sector101[offset + 1], compare_mask=0xFFFF))
+    ops.append(Operation(WRITE, 1, REG + 0x01, 0x01))        # release it: CD audio keeps playing
+    return Case("mcd_cd_data", tuple(ops), capture_frames=260)
+
+
+def _check_cdda(values, outdir):
+    path = pathlib.Path(outdir) / "cdda.raw"
+    if not path.exists():
+        return ["no cdda.raw (run with --chip-audio)"]
+    raw = path.read_bytes()
+    samples = [struct.unpack_from("<hh", raw, i) for i in range(0, len(raw) - 3, 4)]
+    first = next((i for i, s in enumerate(samples) if s != (0, 0)), None)
+    if first is None:
+        return ["no CD audio"]
+    count = 2000
+    got = samples[first:first + count]
+    if len(got) < count:
+        return ["only %d CD audio samples" % len(got)]
+    # Full fader volume, output at half scale (ares)
+    want = [(l >> 1, r >> 1) for l, r in (disc_audio_sample(k) for k in range(count))]
+    bad = next((i for i in range(count) if tuple(got[i]) != want[i]), None)
+    return [] if bad is None else ["CD audio sample %d is %s, disc %s" % (bad, got[bad], want[bad])]
+
+
 RUNNER_ARGS_MCD = ["--md-mcd"]
 RUNNER_ARGS_EXTRA = {"mcd_backup_ram": ["--save-battery"], "mcd_backup_ram_load": ["--battery", str(BACKUP_SEED)],
-                     "mcd_pcm": ["--chip-audio"], "mcd_graphics_busy": ["--chip-audio"]}
+                     "mcd_pcm": ["--chip-audio"], "mcd_graphics_busy": ["--chip-audio"],
+                     "mcd_cd_data": ["--md-mcd-disc", "{roms}/mcd_disc.cue", "--chip-audio", "--trace-limit", "100000000"]}
 
 #Checks on several reads of a case (compare.py): name -> function(read values) -> problems
 DERIVED_CHECKS = {"mcd_timer": _check_stopwatch_frame, "mcd_backup_ram": _check_backup_file, "mcd_pcm": _check_pcm,
-                  "mcd_graphics": _check_graphics_time}
+                  "mcd_graphics": _check_graphics_time, "mcd_cd_data": _check_cdda}
 
 
 def all_cases():
     return [_boot_and_comm(), _int2(), _timer(), _word_ram_2m(), _word_ram_1m(), _prg_ram_protect_bank(), _busy(),
-            _font(), _dot_image(), _backup_ram(), _backup_ram_load(), _pcm(), _graphics(), _dma_word_ram(), _graphics_busy()]
+            _font(), _dot_image(), _backup_ram(), _backup_ram_load(), _pcm(), _graphics(), _dma_word_ram(), _graphics_busy(), _cd_data()]

@@ -46,10 +46,15 @@ McdUnit::~McdUnit()
 	delete[] _prgRam;
 }
 
-void McdUnit::Init(MdConsole* console, uint32_t mclkRate)
+void McdUnit::Init(MdConsole* console, uint32_t mclkRate, bool mode2, vector<uint8_t> bios, unique_ptr<DiscInfo> disc)
 {
 	_console = console;
 	_mclkRate = mclkRate;
+	_mode2 = mode2;
+	_bios = std::move(bios);
+	_disc = std::move(disc);
+	_cdc.Init(this);
+	_cdd.Init(this, &_cdc, _disc.get());
 	_prgRam = new uint8_t[PrgRamSize];
 	console->InitializeRam(_prgRam, PrgRamSize);
 	console->InitializeRam(_wordRam, WordRamSize);
@@ -78,6 +83,57 @@ void McdUnit::AdvanceSub(uint32_t subCycles)
 	if(_gfx.Active) {
 		RunGraphics(subCycles);
 	}
+	//CDC DMA: one word every 6 sub cycles (ares MCD::step)
+	if(_cdc.GetTransfer().Active) {
+		_cdcDmaCounter += subCycles;
+		while(_cdcDmaCounter >= 6) {
+			_cdcDmaCounter -= 6;
+			_cdc.DmaStep();
+		}
+	} else {
+		_cdcDmaCounter = 0;
+	}
+	_cdd.Advance(subCycles, _subClock);
+}
+
+void McdUnit::SetInterruptLine(uint8_t level, bool active)
+{
+	if(active) {
+		RaiseInterrupt(level);
+	} else if(_irqPending & (1 << level)) {
+		_irqPending &= ~(1 << level);
+		UpdateInterruptLevel();
+	}
+}
+
+void McdUnit::CdcDmaWrite(uint8_t destination, uint32_t address, uint16_t data)
+{
+	switch(destination) {
+		case McdCdc::PcmDma:
+			//PCM wave RAM through the current 4 KiB bank (Hardware Manual p. 27: A12 is the limit)
+			_pcm.Write(0x1000 | ((address >> 1) & 0xFFF) | 1, data >> 8);
+			_pcm.Write(0x1000 | ((address >> 1) & 0xFFF), (uint8_t)data);
+			break;
+		case McdCdc::PrgRamDma:
+			SubWrite(true, true, address & 0x7FFFE, data);
+			break;
+		case McdCdc::WordRamDma:
+			if(_wordRam1M) {
+				SubWrite(true, true, 0x0C0000 | (address & 0x1FFFE), data);
+			} else {
+				SubWrite(true, true, 0x080000 | (address & 0x3FFFE), data);
+			}
+			break;
+	}
+}
+
+void McdUnit::GetAudioOutput(uint64_t clock, int32_t& left, int32_t& right)
+{
+	int32_t pcmLeft, pcmRight, cdLeft, cdRight;
+	_pcm.GetOutput(clock, pcmLeft, pcmRight);
+	_cdd.GetOutput().GetOutput(clock, cdLeft, cdRight);
+	left = pcmLeft + cdLeft;
+	right = pcmRight + cdRight;
 }
 
 void McdUnit::Tick()
@@ -94,8 +150,9 @@ void McdUnit::Tick()
 			_timerCounter--;
 		}
 	}
-	//The PCM chip produces one sample per 384 sub cycles from the same clock (ares MCD::step)
+	//The PCM chip and the drive's MCU step on the same clock (ares MCD::step)
 	_pcm.Clock(_subClock);
+	_cdd.Tick();
 }
 
 void McdUnit::RaiseInterrupt(uint8_t level)
@@ -195,7 +252,14 @@ uint16_t McdUnit::MainRead(uint32_t offset, uint16_t openBus)
 	//$x40000-$x7FFFF etc. mirror $x00000-$x3FFFF (address bits 18-20 are not decoded; ares)
 	offset &= 0x23FFFE;
 	if(offset < 0x20000) {
-		//Boot ROM: no BIOS in Mode 1 tests yet (S3)
+		//Boot ROM. In Mode 2 the H-INT vector's low word ($000072) comes from $A12006 (Hardware
+		//Manual p. 58); Mode 1 tests run without a BIOS.
+		if(_mode2 && offset == 0x72) {
+			return _hIntVector;
+		}
+		if(offset + 1 < _bios.size()) {
+			return (_bios[offset] << 8) | _bios[offset + 1];
+		}
 		return openBus;
 	} else if(offset < 0x40000) {
 		//Program RAM window: 128 KiB of the 512 KiB, while the main CPU holds the sub CPU's bus or
@@ -292,9 +356,13 @@ uint16_t McdUnit::MainReadRegister(uint32_t addr)
 			//IEN2 (bit 15: the sub CPU's level 2 enable), IFL2 (bit 8: level 2 not yet taken),
 			//SBRQ, SRES (Hardware Manual p. 56)
 			return ((_irqEnable & 0x04) ? 0x8000 : 0) | ((_irqPending & 0x04) ? 0x0100 : 0) | (_busRequest ? 0x02 : 0) | (_run ? 0x01 : 0);
-		case 0x04:
+		case 0x04: {
+			//CDC mode as the main CPU sees it: EDT, DSR, destination (Hardware Manual p. 58)
+			McdCdc::Transfer& t = _cdc.GetTransfer();
+			return (t.Completed ? 0x8000 : 0) | (t.Ready ? 0x4000 : 0) | (t.Destination << 8);
+		}
 		case 0x08:
-			return 0; //CDC (S3)
+			return _cdc.GetTransfer().Destination == McdCdc::MainRead ? _cdc.ReadHostData() : 0xFFFF;
 		case 0x06:
 			return _hIntVector;
 		default:
@@ -394,12 +462,42 @@ void McdUnit::WriteSubRegister(uint32_t reg, bool upper, bool lower, uint16_t va
 			break;
 		}
 
+		case 0x04:
+			//CDC mode: destination (upper byte), register address (lower byte)
+			if(upper) {
+				_cdc.SetDestination((value >> 8) & 0x07);
+			}
+			if(lower) {
+				_cdc.SetAddress(value & 0x1F);
+			}
+			break;
+
+		case 0x06:
+			if(lower) {
+				_cdc.WriteRegister((uint8_t)value);
+			}
+			break;
+
+		case 0x0A:
+			_cdc.SetDmaAddress(value);
+			break;
+
 		case 0x0C:
 			_stopwatch = 0;
 			break;
 
 		case 0x0E:
 			_commFlagSub = (uint8_t)value;
+			break;
+
+		case 0x34:
+			_cdd.WriteFader(value);
+			break;
+
+		case 0x36:
+			if(lower) {
+				_cdd.WriteControl(value);
+			}
 			break;
 
 		case 0x30:
@@ -422,6 +520,8 @@ void McdUnit::WriteSubRegister(uint32_t reg, bool upper, bool lower, uint16_t va
 				if(lower) {
 					word = (word & 0xFF00) | (value & 0x00FF);
 				}
+			} else if(reg >= 0x42 && reg < 0x4C) {
+				_cdd.WriteCommandRegister(reg, upper, lower, value);
 			}
 			break;
 	}
@@ -460,11 +560,27 @@ uint16_t McdUnit::SubRead(bool /*upper*/, bool /*lower*/, uint32_t address)
 		uint32_t reg = address & 0x1FE;
 		switch(reg) {
 			case 0x00: return (_led << 8) | 0x01; //bit 0: peripherals ready; version 0
+			case 0x04: {
+				McdCdc::Transfer& t = _cdc.GetTransfer();
+				return (t.Completed ? 0x8000 : 0) | (t.Ready ? 0x4000 : 0) | (t.Destination << 8) | _cdc.GetAddress();
+			}
+			case 0x06: return _cdc.ReadRegister();
+			case 0x08: return _cdc.GetTransfer().Destination == McdCdc::SubRead ? _cdc.ReadHostData() : 0xFFFF;
+			case 0x0A: return (_cdc.GetTransfer().Address >> 3) & 0xFFFF;
 			case 0x30: return _timerReload;
 			case 0x32: return _irqEnable;
+			case 0x34: return 0; //fader: EFDT = 0 (ready)
+			case 0x36: return _cdd.ReadControl();
+			case 0x68: return (_cdd.GetSubcodePosition() & 0x7F) << 1;
 			default:
-				if(reg >= 0x4C && reg < 0x68) {
+				if(reg >= 0x38 && reg < 0x42) {
+					return _cdd.ReadStatusRegister(reg);
+				} else if(reg >= 0x42 && reg < 0x4C) {
+					return _cdd.ReadCommandRegister(reg);
+				} else if(reg >= 0x4C && reg < 0x68) {
 					return ReadGraphicsRegister(reg);
+				} else if(reg >= 0x100) {
+					return _cdd.ReadSubcode((reg - 0x100) >> 1);
 				}
 				return reg < 0x30 ? ReadRegister(reg, true) : 0;
 		}
@@ -629,6 +745,9 @@ void McdUnit::Serialize(Serializer& s)
 	SV(_gfx.Counter);
 	SV(_dmaLatch);
 	SV(_pcm);
+	SV(_cdc);
+	SV(_cdd);
+	SV(_cdcDmaCounter);
 }
 
 uint8_t McdUnit::ReadNibble(uint32_t address)

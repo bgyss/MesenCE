@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "MD/M68k/M68kCore.h"
 #include "MD/Mcd/McdPcm.h"
+#include "MD/Mcd/McdCd.h"
 #include "Utilities/ISerializable.h"
 
 class MdConsole;
@@ -28,7 +29,8 @@ public:
 // Sega CD / Mega-CD unit, Mode 1 (a cartridge in the Mega Drive, the unit attached): the sub CPU,
 // its program RAM and word RAM, the gate array (registers, timer, interrupts, font registers,
 // graphics chip, dot image), backup RAM, the PCM chip (McdPcm) and VDP DMA from word RAM.
-// Not yet: the BIOS, the CD drive and controller (sega-cd-feasibility.md, S3).
+// Also the CD drive and controller (McdCd.h), the BIOS, and both boot modes: Mode 1 (cartridge at
+// $000000, unit at $400000) and Mode 2 (disc boot: unit at $000000, cartridge slot at $400000).
 //
 // Sources (docs/research/mcd-verification-findings.md): Sega, Mega-CD Hardware Manual (1991) for
 // the memory maps, registers, interrupt levels, word RAM switching and the timer; ares
@@ -47,12 +49,23 @@ public:
 	static constexpr uint32_t WordRamSize = 0x40000;
 	static constexpr uint32_t BackupRamSize = 0x2000;
 
-	//Test hook (mesen-headless --md-mcd): attach the unit to cartridge games. The UI setting is S4.
+	//Test hooks (mesen-headless --md-mcd, --md-mcd-disc): attach the unit to cartridge games, with a
+	//disc in the drive. The UI setting is S4.
 	static void SetAttachedOverride(bool attached) { _attachedOverride = attached; }
 	static bool IsAttachedOverride() { return _attachedOverride; }
+	static void SetDiscOverride(string path) { _discOverride = path; }
+	static string GetDiscOverride() { return _discOverride; }
 
 private:
 	static inline bool _attachedOverride = false;
+	static inline string _discOverride;
+
+	bool _mode2 = false;
+	vector<uint8_t> _bios;
+	unique_ptr<DiscInfo> _disc;
+	McdCdc _cdc;
+	McdCdd _cdd;
+	uint32_t _cdcDmaCounter = 0;
 
 	MdConsole* _console = nullptr;
 	McdM68k _cpu;
@@ -154,7 +167,15 @@ public:
 	McdUnit() = default;
 	~McdUnit();
 
-	void Init(MdConsole* console, uint32_t mclkRate);
+	void Init(MdConsole* console, uint32_t mclkRate, bool mode2, vector<uint8_t> bios, unique_ptr<DiscInfo> disc);
+	bool IsMode2() { return _mode2; }
+
+	//For the CD controller and drive
+	void SetInterruptLine(uint8_t level, bool active);
+	void CdcDmaWrite(uint8_t destination, uint32_t address, uint16_t data);
+	//PCM and CD audio output at master clock `clock` (MdApu)
+	void GetAudioOutput(uint64_t clock, int32_t& left, int32_t& right);
+	McdCdd& GetCdd() { return _cdd; }
 
 	//Runs the sub CPU until its position reaches `masterClock`
 	void Run(uint64_t masterClock);

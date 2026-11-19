@@ -40,6 +40,8 @@ private:
 	MdControlManager* _controlManager = nullptr;
 	//Sega CD unit (Mode 1), when attached: $400000-$7FFFFF and $A12000-$A120FF (Mcd/McdUnit.h)
 	McdUnit* _mcd = nullptr;
+	//Disc boot (Mode 2): the unit is at $000000-$3FFFFF, the cartridge slot at $400000 is empty
+	bool _mcdMode2 = false;
 
 	vector<uint8_t> _rom;
 	uint32_t _romMask = 0;
@@ -112,7 +114,7 @@ public:
 
 	void Init(Emulator* emu, MdConsole* console, vector<uint8_t>& romData, MdM68k* m68k, MdZ80* z80, MdVdp* vdp, MdApu* apu, MdControlManager* controlManager, bool isPal, bool isOverseas, bool hasTmss);
 
-	void SetMcd(McdUnit* mcd) { _mcd = mcd; }
+	void SetMcd(McdUnit* mcd, bool mode2) { _mcd = mcd; _mcdMode2 = mode2; }
 	MdMemoryManagerState& GetState() { return _state; }
 	uint64_t GetMasterClock() { return _masterClock; }
 

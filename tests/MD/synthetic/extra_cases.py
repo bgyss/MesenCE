@@ -312,6 +312,12 @@ def _mcd_cases():
     return found
 
 
+def write_assets(out_dir):
+    """Files the cases need next to the cartridges (the Sega CD test disc)."""
+    import mcd_cases
+    mcd_cases.write_assets(out_dir)
+
+
 def all_cases():
     return ([_pad6_across_frame(), _bank_mapper()] + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)] +
             _accessory_cases() + _mcd_cases())

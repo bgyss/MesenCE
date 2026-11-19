@@ -8,7 +8,7 @@
 
 class Emulator;
 class MdConsole;
-class McdPcm;
+class McdUnit;
 
 // Mega Drive sound: YM2612 (ymfm::ym2612, clocked at MCLK/7, one sample per 144 YM clocks =
 // 1008 master clocks) and the VDP's SN76489-compatible PSG (MCLK/15, one tone step per 16 PSG
@@ -45,8 +45,8 @@ private:
 	int32_t _nukedAcc[2] = {};
 
 	vector<int16_t> _samples;
-	//Sega CD PCM, mixed in when the unit is attached
-	McdPcm* _pcm = nullptr;
+	//Sega CD PCM and CD audio, mixed in when the unit is attached
+	McdUnit* _mcd = nullptr;
 	std::function<void(int32_t ymL, int32_t ymR, int32_t psgL, int32_t psgR)> _chipObserver;
 	uint32_t _sampleRate = 53267;
 
@@ -73,7 +73,7 @@ public:
 	SmsPsgState& GetPsgState() { return _psg.State; }
 	bool IsNukedCore() { return _nuked != nullptr; }
 	uint32_t GetSampleRate() { return _sampleRate; }
-	void SetPcm(McdPcm* pcm) { _pcm = pcm; }
+	void SetMcd(McdUnit* mcd) { _mcd = mcd; }
 
 	//Optional per-sample observer of the two chips before mixing (headless capture)
 	void SetChipObserver(std::function<void(int32_t, int32_t, int32_t, int32_t)> observer) { _chipObserver = observer; }

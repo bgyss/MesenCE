@@ -34,7 +34,10 @@ enum class FirmwareType
 	SwanCrystal,
 	Ymf288AdpcmRom,
 	SmsBootRom,
-	GgBootRom
+	GgBootRom,
+	McdUsa,
+	McdEurope,
+	McdJapan
 };
 
 struct MissingFirmwareMessage
@@ -344,6 +347,28 @@ public:
 		}
 
 		MessageManager::DisplayMessage("Error", "Could not find firmware file for PC Engine CD-ROM");
+		return false;
+	}
+
+	//Sega CD / Mega-CD BIOS (128 KiB) for the disc's region
+	static bool LoadMcdBios(Emulator* emu, ConsoleRegion region, vector<uint8_t>& biosRom)
+	{
+		FirmwareType type = region == ConsoleRegion::Pal ? FirmwareType::McdEurope : (region == ConsoleRegion::NtscJapan ? FirmwareType::McdJapan : FirmwareType::McdUsa);
+		string filename = type == FirmwareType::McdEurope ? "[BIOS] Mega-CD (Europe).bin" : (type == FirmwareType::McdJapan ? "[BIOS] Mega-CD (Japan).bin" : "[BIOS] Sega CD (USA).bin");
+		string altName = type == FirmwareType::McdEurope ? "bios_CD_E.bin" : (type == FirmwareType::McdJapan ? "bios_CD_J.bin" : "bios_CD_U.bin");
+		uint32_t size = 0x20000;
+		if(AttemptLoadFirmware(biosRom, filename, size, altName)) {
+			return true;
+		}
+
+		MissingFirmwareMessage msg(filename.c_str(), type, size);
+		emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::MissingFirmware, &msg);
+
+		if(AttemptLoadFirmware(biosRom, filename, size, altName)) {
+			return true;
+		}
+
+		MessageManager::DisplayMessage("Error", "Could not find the Sega CD / Mega-CD BIOS (" + altName + ")");
 		return false;
 	}
 

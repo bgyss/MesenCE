@@ -13,6 +13,7 @@
 #include "Shared/Emulator.h"
 #include "Shared/EmuSettings.h"
 #include "Shared/BatteryManager.h"
+#include "Shared/FirmwareHelper.h"
 #include "Utilities/VirtualFile.h"
 #include "Utilities/Serializer.h"
 
@@ -82,23 +83,60 @@ ConsoleRegion MdConsole::PickRegion(ConsoleRegion setting)
 	return ConsoleRegion::Pal;
 }
 
+bool MdConsole::IsSegaCdDisc(DiscInfo& disc)
+{
+	if(disc.Tracks.empty() || disc.Tracks[0].Format == TrackFormat::Audio) {
+		return false;
+	}
+	vector<uint8_t> sector;
+	disc.ReadDataSector(disc.Tracks[0].FirstSector, sector);
+	return sector.size() >= 14 && memcmp(sector.data(), "SEGADISCSYSTEM", 14) == 0;
+}
+
 LoadRomResult MdConsole::LoadRom(VirtualFile& romFile)
 {
 	vector<uint8_t> romData;
-	romFile.ReadFile(romData);
 	string ext = romFile.GetFileExtension();
-	if(ext == ".smd" || (romData.size() > 0x200 && (romData.size() % 0x4000) == 0x200 && !HasSegaHeader(romData))) {
+	unique_ptr<DiscInfo> disc;
+	bool mode2 = false;
+	vector<uint8_t> bios;
+	if(ext == ".cue") {
+		//Sega CD disc: boot from the BIOS (Mode 2)
+		disc.reset(new DiscInfo());
+		if(!CdReader::LoadCue(romFile, *disc)) {
+			return LoadRomResult::Failure;
+		}
+		if(!IsSegaCdDisc(*disc)) {
+			return LoadRomResult::UnknownType;
+		}
+		vector<uint8_t> header;
+		disc->ReadDataSector(disc->Tracks[0].FirstSector, header);
+		_headerRegions = string((char*)&header[0x1F0], 3);
+		MdConfig& discCfg = _emu->GetSettings()->GetMdConfig();
+		if(!FirmwareHelper::LoadMcdBios(_emu, PickRegion(discCfg.Region), bios)) {
+			return LoadRomResult::Failure;
+		}
+		mode2 = true;
+		//No cartridge: the main CPU's $000000-$3FFFFF belongs to the unit
+		romData.assign(0x400, 0xFF);
+	} else {
+		romFile.ReadFile(romData);
+	}
+	if(mode2) {
+		//(the cartridge header checks below do not apply)
+	} else if(ext == ".smd" || (romData.size() > 0x200 && (romData.size() % 0x4000) == 0x200 && !HasSegaHeader(romData))) {
 		Deinterleave(romData);
 	}
-	if(romData.size() < 0x200) {
-		return LoadRomResult::Failure;
+	if(!mode2) {
+		if(romData.size() < 0x200) {
+			return LoadRomResult::Failure;
+		}
+		if(!HasSegaHeader(romData)) {
+			//.bin is shared with other systems: without the Sega header this is not a Mega Drive image
+			return ext == ".bin" ? LoadRomResult::UnknownType : LoadRomResult::Failure;
+		}
+		_headerRegions = string((char*)&romData[0x1F0], 3);
 	}
-	if(!HasSegaHeader(romData)) {
-		//.bin is shared with other systems: without the Sega header this is not a Mega Drive image
-		return ext == ".bin" ? LoadRomResult::UnknownType : LoadRomResult::Failure;
-	}
-
-	_headerRegions = string((char*)&romData[0x1F0], 3);
 	MdConfig& cfg = _emu->GetSettings()->GetMdConfig();
 	_region = PickRegion(cfg.Region);
 	_model = cfg.Model;
@@ -116,11 +154,19 @@ LoadRomResult MdConsole::LoadRom(VirtualFile& romFile)
 	_apu->Init(_emu, this, isPal);
 	_z80->Init(_emu, this, _memoryManager.get());
 	_m68k->Init(_emu, this, _memoryManager.get(), _vdp.get());
-	if(McdUnit::IsAttachedOverride()) {
+	if(mode2 || McdUnit::IsAttachedOverride()) {
+		//Mode 1 (test hook): an optional disc in the drive (mesen-headless --md-mcd-disc)
+		if(!mode2 && !McdUnit::GetDiscOverride().empty()) {
+			disc.reset(new DiscInfo());
+			VirtualFile discFile(McdUnit::GetDiscOverride());
+			if(!CdReader::LoadCue(discFile, *disc)) {
+				return LoadRomResult::Failure;
+			}
+		}
 		_mcd.reset(new McdUnit());
-		_mcd->Init(this, GetMasterClockRate());
-		_memoryManager->SetMcd(_mcd.get());
-		_apu->SetPcm(&_mcd->GetPcm());
+		_mcd->Init(this, GetMasterClockRate(), mode2, std::move(bios), std::move(disc));
+		_memoryManager->SetMcd(_mcd.get(), mode2);
+		_apu->SetMcd(_mcd.get());
 	}
 	_m68k->PowerOn();
 	_controlManager->UpdateControlDevices();
