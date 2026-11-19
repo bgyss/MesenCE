@@ -176,7 +176,7 @@ Exit: each regional BIOS reaches its CD player, plays audio tracks, and boots a 
 Debugger views, settings (region, BIOS, RAM cartridge), Lua memory types, the headless runner
 (`--disc`, `--bios`), and the input and recording paths.
 
-**S5: games**
+**S5: games** (partial 2026-11-18: Flux, a Mode 1 cartridge, plays audio CDs; no disc images available for the rest; findings S5)
 Qualify a list of commercial titles chosen to cover:
 - word RAM 1M mode streaming (FMV games);
 - graphics chip (Batman Returns, Silpheed's intro);

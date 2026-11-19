@@ -623,3 +623,47 @@ seek landing (LBA −8 here, −5 in MAME), so it is left as a known reference d
   by MSU-MD hacks). Mode 1 is reachable only through the headless runner's `--md-mcd` options.
   This is a judgment call: the main Sega CD use is booting discs.
 - **The RAM cartridge is still missing** (see S3).
+
+## S5: commercial software (2026-11-18, partial)
+
+### What was available
+
+No Sega CD disc images exist on this machine. I searched the home folder, `/Volumes` and Spotlight
+for `.cue`, `.chd`, `.iso`, `.ccd` and `.mds`. The only Sega CD folders hold screenshots and a DAT
+file. The GoodGen set has three Mega-CD-related cartridges:
+- **Flux (Virgin, 1994):** a cartridge that plays audio CDs through the Mega-CD in Mode 1 with
+  visuals.
+- **Sega-CD BIOS:** BIOS dumps.
+- **"Visual Scene Sega-CD Image":** a bad dump (`[b1]`), not used.
+
+### Flux: Mode 1 with the BIOS
+
+- **Bug:** in Mode 1 the unit had no BIOS, so its main CPU window `$400000-$41FFFF` was open bus.
+  On hardware the BIOS is mapped there in Mode 1 (Mega-CD Hardware Manual, memory map), and Flux
+  calls into it.
+- **Reproduction:** Flux with a disc, run without the BIOS, produces no CD audio (peak 0).
+- **Fix:** `MdConsole` now loads the BIOS for the cartridge's region when the unit is attached in
+  Mode 1. The load is optional (`LoadMcdBios(..., required = false)` doesn't ask for a missing
+  file), so the synthetic Mode 1 cases, which run without one, are unchanged.
+- **Result:** with the European v1.00 BIOS and a generated audio CD (30 s at 440 Hz, then 30 s at
+  660 Hz):
+  - Flux boots: the "exp" logo appears, then the visualizer.
+  - CD audio starts at 1.51 s.
+  - 440 Hz plays at 18 s, and 660 Hz at 36 s (the drive moved on to track 2).
+- **Test:** `tests/MD/mcd/mode1_flux.py`, run by `test:mcd-bios`. It's local only (the cartridge
+  is commercial) and skips when Flux or the BIOS is missing. It checks all of the above, plus
+  silence without the BIOS.
+- **Judgment:** the start time and the track change match the disc layout. I have no hardware or
+  MAME recording of Flux to compare the 1.51 s start against.
+
+### Not qualified (no images)
+
+S5's list needs disc images, and none were available:
+- word RAM 1M streaming (FMV games);
+- the graphics chip (Batman Returns, Silpheed);
+- PCM-heavy audio;
+- Sonic CD's CD audio;
+- backup RAM saves in a game.
+
+Those components are covered by the synthetic cases (S1-S3) and by the BIOS boots (7 versions),
+but not by a commercial game. **S5 stays open until disc images are supplied.**

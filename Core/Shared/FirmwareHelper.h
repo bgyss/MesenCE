@@ -350,8 +350,9 @@ public:
 		return false;
 	}
 
-	//Sega CD / Mega-CD BIOS (128 KiB) for the disc's region
-	static bool LoadMcdBios(Emulator* emu, ConsoleRegion region, vector<uint8_t>& biosRom)
+	//Sega CD / Mega-CD BIOS (128 KiB) for the disc's region. `required` = false (Mode 1, a cartridge
+	//with the unit attached): load it if present, without asking for it.
+	static bool LoadMcdBios(Emulator* emu, ConsoleRegion region, vector<uint8_t>& biosRom, bool required = true)
 	{
 		FirmwareType type = region == ConsoleRegion::Pal ? FirmwareType::McdEurope : (region == ConsoleRegion::NtscJapan ? FirmwareType::McdJapan : FirmwareType::McdUsa);
 		string filename = type == FirmwareType::McdEurope ? "[BIOS] Mega-CD (Europe).bin" : (type == FirmwareType::McdJapan ? "[BIOS] Mega-CD (Japan).bin" : "[BIOS] Sega CD (USA).bin");
@@ -359,6 +360,8 @@ public:
 		uint32_t size = 0x20000;
 		if(AttemptLoadFirmware(biosRom, filename, size, altName)) {
 			return true;
+		} else if(!required) {
+			return false;
 		}
 
 		MissingFirmwareMessage msg(filename.c_str(), type, size);

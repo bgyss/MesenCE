@@ -474,9 +474,14 @@ bin/savestate-roundtrip --warmup 1 --frames 6 bin/md-synthetic
 '''
 
 [tasks."test:mcd-bios"]
-description = "Sega CD: boot the synthetic disc with each known BIOS found locally (MESEN_MCD_BIOS_DIR, default ~/mame/roms/segacd); intro music, CD player, track 2 audio. Skips without a BIOS."
+description = "Sega CD: boot the synthetic disc with each known BIOS found locally (MESEN_MCD_BIOS_DIR, default ~/mame/roms/segacd); intro music, CD player, track 2 audio; Mode 1 with the BIOS (Flux cartridge, MESEN_FLUX_ROM). Skips without a BIOS."
 depends = ["headless"]
-run = "python3 tests/MD/mcd/bios_boot.py"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python3 tests/MD/mcd/bios_boot.py
+python3 tests/MD/mcd/mode1_flux.py
+'''
 
 [tasks."test:md-cheats"]
 description = "Mega Drive: Game Genie and Pro Action Replay codes (ROM patches on the bus, RAM codes, invalid codes) on the bus_map cartridge"

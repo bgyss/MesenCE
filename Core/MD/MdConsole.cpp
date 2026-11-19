@@ -156,6 +156,11 @@ LoadRomResult MdConsole::LoadRom(VirtualFile& romFile)
 	_m68k->Init(_emu, this, _memoryManager.get(), _vdp.get());
 	if(mode2 || McdUnit::IsAttachedOverride()) {
 		//Mode 1 (test hook): an optional disc in the drive (mesen-headless --md-mcd-disc)
+		if(!mode2) {
+			//Mode 1: the BIOS is visible at $400000 and Mode 1 software calls into it (Mega-CD
+			//Hardware Manual, memory map). Optional: the synthetic Mode 1 cases run without one.
+			FirmwareHelper::LoadMcdBios(_emu, _region, bios, false);
+		}
 		if(!mode2 && !McdUnit::GetDiscOverride().empty()) {
 			disc.reset(new DiscInfo());
 			VirtualFile discFile(McdUnit::GetDiscOverride());
