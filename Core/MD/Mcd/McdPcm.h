@@ -46,6 +46,9 @@ private:
 	std::function<void(int16_t, int16_t)> _observer;
 
 public:
+	uint8_t* GetRam() { return _ram; }
+	uint8_t GetBank() { return _bank; }
+
 	uint8_t Read(uint16_t reg);
 	void Write(uint16_t reg, uint8_t value);
 

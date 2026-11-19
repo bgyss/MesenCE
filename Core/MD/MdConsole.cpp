@@ -228,6 +228,9 @@ ConsoleType MdConsole::GetConsoleType()
 
 vector<CpuType> MdConsole::GetCpuTypes()
 {
+	if(_mcd) {
+		return { CpuType::MdM68k, CpuType::MdZ80, CpuType::McdM68k };
+	}
 	return { CpuType::MdM68k, CpuType::MdZ80 };
 }
 
@@ -289,6 +292,8 @@ AddressInfo MdConsole::GetAbsoluteAddress(AddressInfo& relAddress)
 {
 	if(relAddress.Type == MemoryType::MdZ80Memory) {
 		return _memoryManager->GetZ80AbsoluteAddress((uint16_t)relAddress.Address);
+	} else if(relAddress.Type == MemoryType::McdMemory) {
+		return _mcd ? _mcd->SubGetAbsoluteAddress(relAddress.Address) : AddressInfo { -1, MemoryType::None };
 	}
 	return _memoryManager->GetAbsoluteAddress(relAddress.Address);
 }
@@ -297,6 +302,8 @@ AddressInfo MdConsole::GetRelativeAddress(AddressInfo& absAddress, CpuType cpuTy
 {
 	if(cpuType == CpuType::MdZ80) {
 		return { _memoryManager->GetZ80RelativeAddress(absAddress), MemoryType::MdZ80Memory };
+	} else if(cpuType == CpuType::McdM68k) {
+		return { _mcd ? _mcd->SubGetRelativeAddress(absAddress) : -1, MemoryType::McdMemory };
 	}
 	return { _memoryManager->GetRelativeAddress(absAddress), MemoryType::MdMemory };
 }

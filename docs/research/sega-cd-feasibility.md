@@ -172,7 +172,7 @@ Exit: all cases pass in CI; ares agrees, or each difference is explained.
 
 Exit: each regional BIOS reaches its CD player, plays audio tracks, and boots a synthetic disc.
 
-**S4: integration**
+**S4: integration** (done 2026-11-18, without Mode 1 disc pairing in the UI; findings S4)
 Debugger views, settings (region, BIOS, RAM cartridge), Lua memory types, the headless runner
 (`--disc`, `--bios`), and the input and recording paths.
 

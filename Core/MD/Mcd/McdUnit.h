@@ -4,9 +4,12 @@
 #include "MD/Mcd/McdPcm.h"
 #include "MD/Mcd/McdCd.h"
 #include "Utilities/ISerializable.h"
+#include "Debugger/DebugTypes.h"
+#include "MD/MdTypes.h"
 
 class MdConsole;
 class McdUnit;
+class Emulator;
 
 // The Sega CD's sub CPU: a 68000 at 12.5 MHz on the unit's own bus (McdUnit::SubRead/SubWrite).
 // Not visible to the debugger yet (S4 in docs/research/sega-cd-feasibility.md).
@@ -14,9 +17,17 @@ class McdM68k final : public M68kCore
 {
 private:
 	McdUnit* _unit = nullptr;
+	Emulator* _emu = nullptr;
 
 public:
-	void Init(McdUnit* unit) { _unit = unit; }
+	void Init(McdUnit* unit, Emulator* emu)
+	{
+		_unit = unit;
+		_emu = emu;
+	}
+
+	MdM68kState GetState();
+	void SetState(MdM68kState& state);
 
 	void Idle(uint32_t clocks) override;
 	void Wait(uint32_t clocks) override;
@@ -24,6 +35,8 @@ public:
 	void BusWrite(bool upper, bool lower, uint32_t address, uint16_t data, M68kAccess access) override;
 	uint16_t Peek(uint32_t address) override;
 	uint32_t AcknowledgeInterrupt(uint8_t level) override;
+	void OnInstructionStart() override;
+	void OnInterruptTaken(uint32_t originalPc, uint32_t handlerPc) override;
 };
 
 // Sega CD / Mega-CD unit, Mode 1 (a cartridge in the Mega Drive, the unit attached): the sub CPU,
@@ -72,7 +85,23 @@ private:
 	uint32_t _mclkRate = 0;
 
 	uint8_t* _prgRam = nullptr;
-	uint16_t _wordRam[WordRamSize / 2] = {};
+	//Word RAM, big-endian bytes (as the memory viewer and Lua see it); "index" below is a word index
+	uint8_t _wordRam[WordRamSize] = {};
+	__forceinline uint16_t Wram(uint32_t index)
+	{
+		index = (index & 0x1FFFF) << 1;
+		return (_wordRam[index] << 8) | _wordRam[index | 1];
+	}
+	__forceinline void WriteWram(uint32_t index, bool upper, bool lower, uint16_t value)
+	{
+		index = (index & 0x1FFFF) << 1;
+		if(upper) {
+			_wordRam[index] = value >> 8;
+		}
+		if(lower) {
+			_wordRam[index | 1] = (uint8_t)value;
+		}
+	}
 
 	//Sub CPU position: master clocks, plus a remainder in units of 1/SubClockRate master clocks
 	uint64_t _subClock = 0;
@@ -197,8 +226,17 @@ public:
 	void SubAcknowledgeInterrupt(uint8_t level);
 
 	McdM68k& GetCpu() { return _cpu; }
+
+	//Debugger: side-effect-free sub CPU accesses, and addresses in the unit's memories
+	uint8_t SubDebugRead(uint32_t address);
+	void SubDebugWrite(uint32_t address, uint8_t value);
+	AddressInfo SubGetAbsoluteAddress(uint32_t address);
+	int32_t SubGetRelativeAddress(AddressInfo& absAddress);
+	AddressInfo MainGetAbsoluteAddress(uint32_t offset);
 	McdPcm& GetPcm() { return _pcm; }
 	uint8_t* GetBackupRam() { return _backupRam; }
+	uint8_t* GetWordRam() { return _wordRam; }
+	uint8_t* GetPrgRam() { return _prgRam; }
 	uint64_t GetSubCycles() { return _subCycles; }
 
 	void Serialize(Serializer& s) override;

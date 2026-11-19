@@ -1039,6 +1039,11 @@ namespace Mesen.ViewModels
 					OnClick = () => DebuggerWindow.GetOrOpenWindow(CpuType.MdZ80)
 				},
 				new ContextMenuAction() {
+					ActionType = ActionType.OpenMcdM68kDebugger,
+					IsVisible = () => MainWindow.RomInfo.CpuTypes.Contains(CpuType.McdM68k),
+					OnClick = () => DebuggerWindow.GetOrOpenWindow(CpuType.McdM68k)
+				},
+				new ContextMenuAction() {
 					ActionType = ActionType.OpenGameboyDebugger,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenGameboyDebugger),
 					IsVisible = () => MainWindow.RomInfo.ConsoleType == ConsoleType.Snes && MainWindow.RomInfo.CpuTypes.Contains(CpuType.Gameboy),

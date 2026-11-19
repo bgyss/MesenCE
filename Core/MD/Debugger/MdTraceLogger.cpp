@@ -6,7 +6,7 @@
 #include "Debugger/DebugTypes.h"
 #include "Utilities/HexUtilities.h"
 
-MdM68kTraceLogger::MdM68kTraceLogger(Debugger* debugger, IDebugger* cpuDebugger, MdVdp* vdp) : BaseTraceLogger(debugger, cpuDebugger, CpuType::MdM68k)
+MdM68kTraceLogger::MdM68kTraceLogger(Debugger* debugger, IDebugger* cpuDebugger, MdVdp* vdp, CpuType cpuType) : BaseTraceLogger(debugger, cpuDebugger, cpuType)
 {
 	_vdp = vdp;
 }

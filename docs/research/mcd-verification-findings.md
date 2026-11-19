@@ -540,3 +540,86 @@ seek landing (LBA −8 here, −5 in MAME), so it is left as a known reference d
   - the CDC status FIFO (SBOUT);
   - the gate array's forced reset.
 - **Commercial games:** none tested yet (S5; there are no Sega CD game images on this machine).
+
+## S4: integration (2026-11-18)
+
+### What was added
+
+- **Sub CPU in the debugger:**
+  - New CPU type `McdM68k`, with its own debugger window (Debug menu → "Sega CD Sub CPU Debugger").
+  - The window has disassembly, breakpoints, a trace logger, a call stack and the 68000 status
+    view. `MdM68k::BuildState`/`ApplyState` are shared by both 68000s.
+  - The sub CPU calls the same hooks as the main CPU: `ProcessInstruction`, 8- and 16-bit
+    `ProcessMemoryRead`/`Write`, and `ProcessInterrupt`.
+  - Vectors listed: reset `$04` and levels 2-4 (`$68`, `$6C`, `$70`).
+  - Code/data logging covers program RAM. It isn't saved to a file, because program RAM is
+    loaded by the game.
+  - Checked through Lua in the headless runner (below). The debugger window in the UI app
+    builds, but hasn't been exercised by hand.
+- **Memory types (debugger, memory viewer, Lua):**
+  - `McdMemory`: the sub CPU's address space.
+  - `McdPrgRam`, `McdWordRam`, `McdBackupRam`, `McdPcmRam` and `McdCdcRam`.
+  - `McdBios`.
+  - Word RAM and the CDC buffer are now stored as big-endian bytes, so the viewers show them as
+    the CPUs see them (no behaviour change: all 19 `mcd_*` cases pass unchanged).
+  - Address translation works both ways for the sub CPU (`SubGetAbsoluteAddress` /
+    `SubGetRelativeAddress`) and for the unit's main CPU windows (BIOS, program RAM window, word
+    RAM in both modes and both boot modes).
+- **Side-effect-free reads:** `McdUnit::SubDebugRead` serves the memory viewer and the
+  disassembler (`McdM68k::Peek`). The earlier `Peek` went through `SubRead`. It skips the two
+  registers whose reads have side effects, the CDC register data and host data (`$FF8006/8`).
+- **Settings:** Emulation settings → Firmware has a "Sega CD / Mega-CD" section that selects the
+  USA, Europe and Japan BIOS. The file names and SHA-256 lists match `FirmwareHelper::LoadMcdBios`.
+  The region comes from the existing Mega Drive region setting (Auto reads the disc header).
+- **Open dialog:** a "Sega CD / Mega-CD disc images" (`*.cue`) filter. `.cue` was already in "All
+  supported files".
+- **Headless runner:** done in S3 (`--md-mcd`, `--md-mcd-disc`, `--md-mcd-bios`; `.cue` as
+  `--rom`).
+
+### Bug found while testing
+
+- `DebugUtilities::GetLastCpuMemoryType()` still returned `MdZ80Memory`. `McdMemory` was
+  therefore not treated as a CPU address space, so a Lua callback on it compared absolute
+  addresses and never matched. **Reproduction:** `tests/MD/mcd/debugger.lua` reported "sub CPU
+  exec callback at $200 fired 0 times", although the sub CPU's instruction hook was called
+  (checked with a temporary trace). Fixed by returning `McdMemory`.
+- **Build note:** objects that include `DebugUtilities.h` indirectly kept the old inline
+  function. `ScriptingContext.o` was missed by a `grep -l` touch, so after a header change,
+  touch every `.cpp` file.
+
+### Tests
+
+- **`tests/MD/mcd/debugger_check.py`** (in `test:md-synthetic`) runs
+  `tests/MD/mcd/debugger.lua` on `mcd_boot_comm` with the unit attached. It checks:
+  - an exec callback on the sub CPU at `$000200` fires exactly once;
+  - the program the main CPU copied into program RAM reads the same through `mcdPrgRam` and
+    `mcdMemory` (byte and 16-bit reads);
+  - a write through `mcdMemory` lands in program RAM;
+  - the sizes of the six Sega CD memories.
+- **Checks of the check:**
+  - With `GetLastCpuMemoryType()` reverted, the exec check fails (the bug above).
+  - Without the memory type argument (`emu.addMemoryCallback` then defaults to the main CPU's
+    memory), it also fails.
+- **Recording paths (judgment: checked once, not wired into a task):**
+  - The mixed output (`audio.wav` in the headless runner, the same mixer output that the WAV and
+    video recorders take) has peaks of 5258 (`mcd_pcm`) and 5188 (`mcd_cd_audio`), against
+    555 with neither chip playing (`mcd_boot_comm`).
+  - Save states, rewind, movies and netplay all use `Serialize`. That path is covered by
+    `test:md-replay`.
+
+- **Suites:**
+  - `test:md-synthetic`: all cases, both FM cores, plus the debugger check.
+  - `test:md-replay`: 92/92 in all three runs.
+  - `test:md-viewers`: pass.
+  - `test:mcd-bios`: 7/7.
+  - `test:ci`: upstream 612 passed, fork 12 passed.
+
+### Limitations
+
+- **Recorded tests (`.mtp`) can't hold a disc.** `RecordedRomTest` stores the loaded file only,
+  which for a disc is the `.cue` without its tracks. The PC Engine CD has the same limitation
+  upstream. Movies are unaffected: they reference the loaded game.
+- **No Mode 1 disc pairing in the UI** (a cartridge with the unit attached and a disc, as used
+  by MSU-MD hacks). Mode 1 is reachable only through the headless runner's `--md-mcd` options.
+  This is a judgment call: the main Sega CD use is booting discs.
+- **The RAM cartridge is still missing** (see S3).

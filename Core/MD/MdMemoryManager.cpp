@@ -747,7 +747,11 @@ void MdMemoryManager::DebugZ80Write(uint16_t addr, uint8_t value)
 AddressInfo MdMemoryManager::GetAbsoluteAddress(uint32_t relAddr)
 {
 	relAddr &= 0xFFFFFF;
-	if(relAddr < 0x400000) {
+	if(_mcd && _mcdMode2 && relAddr < 0x400000) {
+		return _mcd->MainGetAbsoluteAddress(relAddr);
+	} else if(_mcd && !_mcdMode2 && relAddr >= 0x400000 && relAddr < 0x800000) {
+		return _mcd->MainGetAbsoluteAddress(relAddr - 0x400000);
+	} else if(relAddr < 0x400000) {
 		if(_saveRam && _state.SramEnabled && IsSaveRamAddress(relAddr)) {
 			uint32_t offset = relAddr - _saveRamStart;
 			if(_saveRamOddOnly || _saveRamEvenOnly) {

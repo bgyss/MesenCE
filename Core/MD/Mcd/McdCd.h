@@ -66,7 +66,12 @@ public:
 
 private:
 	McdUnit* _unit = nullptr;
-	uint16_t _ram[0x2000] = {};
+	uint8_t _ram[0x4000] = {}; //big-endian bytes (as the memory viewer shows them)
+	uint16_t RamWord(uint32_t address)
+	{
+		address &= 0x3FFE;
+		return (_ram[address] << 8) | _ram[address | 1];
+	}
 	uint8_t _address = 0;
 
 	Transfer _transfer;
@@ -104,6 +109,7 @@ public:
 	void WriteRegister(uint8_t value);
 
 	Transfer& GetTransfer() { return _transfer; }
+	uint8_t* GetRam() { return _ram; }
 	void SetDestination(uint8_t destination) { _transfer.Destination = destination & 0x07; }
 	void SetDmaAddress(uint16_t value) { _transfer.Address = (uint32_t)value << 3; }
 	//Host data ($FF8008 / $A12008): the next buffer word, for CPU-read destinations

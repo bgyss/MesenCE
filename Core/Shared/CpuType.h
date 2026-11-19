@@ -17,7 +17,8 @@ enum class CpuType : uint8_t
 	Gba,
 	Ws,
 	MdM68k,
-	MdZ80
+	MdZ80,
+	McdM68k //Sega CD sub CPU
 };
 
 class CpuTypeUtilities
@@ -25,6 +26,6 @@ class CpuTypeUtilities
 public:
 	static constexpr int GetCpuTypeCount()
 	{
-		return (int)CpuType::MdZ80 + 1;
+		return (int)CpuType::McdM68k + 1;
 	}
 };

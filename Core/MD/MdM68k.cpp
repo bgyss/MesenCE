@@ -102,11 +102,11 @@ void MdM68k::OnInterruptTaken(uint32_t originalPc, uint32_t handlerPc)
 	_emu->ProcessInterrupt<CpuType::MdM68k>(originalPc, handlerPc, false);
 }
 
-MdM68kState MdM68k::GetState()
+MdM68kState MdM68k::BuildState(M68kCore& cpu, uint64_t cycleCount)
 {
-	M68kRegisters regs = GetRegisters();
+	M68kRegisters regs = cpu.GetRegisters();
 	MdM68kState state = {};
-	state.CycleCount = _cycleCount;
+	state.CycleCount = cycleCount;
 	for(int i = 0; i < 8; i++) {
 		state.D[i] = regs.D[i];
 	}
@@ -116,19 +116,19 @@ MdM68kState MdM68k::GetState()
 	state.Usp = regs.Usp;
 	state.Ssp = regs.Ssp;
 	state.A[7] = (regs.Sr & 0x2000) ? regs.Ssp : regs.Usp;
-	state.PC = GetInstructionPc();
+	state.PC = cpu.GetInstructionPc();
 	state.SR = regs.Sr;
 	state.Ir = regs.Ir;
 	state.Irc = regs.Irc;
-	state.IrqLevel = GetInterruptLevel();
+	state.IrqLevel = cpu.GetInterruptLevel();
 	state.Stopped = regs.Stopped;
-	state.Halted = IsHalted();
+	state.Halted = cpu.IsHalted();
 	return state;
 }
 
-void MdM68k::SetState(MdM68kState& state)
+void MdM68k::ApplyState(M68kCore& cpu, MdM68kState& state)
 {
-	M68kRegisters regs = GetRegisters();
+	M68kRegisters regs = cpu.GetRegisters();
 	for(int i = 0; i < 8; i++) {
 		regs.D[i] = state.D[i];
 	}
@@ -143,13 +143,13 @@ void MdM68k::SetState(MdM68kState& state)
 		regs.Ssp = state.Ssp;
 	}
 	regs.Sr = state.SR;
-	if(state.PC != GetInstructionPc()) {
+	if(state.PC != cpu.GetInstructionPc()) {
 		// Moving the PC refills the prefetch queue from the new address.
 		regs.Pc = state.PC + 4;
-		regs.Ir = Peek(state.PC);
-		regs.Irc = Peek(state.PC + 2);
+		regs.Ir = cpu.Peek(state.PC);
+		regs.Irc = cpu.Peek(state.PC + 2);
 	}
-	SetRegisters(regs);
+	cpu.SetRegisters(regs);
 }
 
 void MdM68k::Serialize(Serializer& s)

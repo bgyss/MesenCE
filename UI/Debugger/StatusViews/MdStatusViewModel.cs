@@ -45,6 +45,14 @@ namespace Mesen.Debugger.StatusViews
 		[ObservableProperty] public partial UInt16 Cycle { get; set; }
 		[ObservableProperty] public partial string StackPreview { get; private set; } = "";
 
+		//The main 68000 (CpuType.MdM68k) or the Sega CD's sub CPU (CpuType.McdM68k)
+		private CpuType _cpuType = CpuType.MdM68k;
+
+		public MdStatusViewModel(CpuType cpuType = CpuType.MdM68k) : this()
+		{
+			_cpuType = cpuType;
+		}
+
 		public MdStatusViewModel()
 		{
 			bool preventUpdate = false;
@@ -69,7 +77,7 @@ namespace Mesen.Debugger.StatusViews
 
 		protected override void InternalUpdateUiState()
 		{
-			MdM68kState cpu = DebugApi.GetCpuState<MdM68kState>(CpuType.MdM68k);
+			MdM68kState cpu = DebugApi.GetCpuState<MdM68kState>(_cpuType);
 			MdVdpState vdp = DebugApi.GetPpuState<MdVdpState>(CpuType.MdM68k);
 			UpdateCycleCount(cpu.CycleCount);
 
@@ -109,7 +117,7 @@ namespace Mesen.Debugger.StatusViews
 
 		protected override void InternalUpdateConsoleState()
 		{
-			MdM68kState cpu = DebugApi.GetCpuState<MdM68kState>(CpuType.MdM68k);
+			MdM68kState cpu = DebugApi.GetCpuState<MdM68kState>(_cpuType);
 			cpu.D[0] = RegD0;
 			cpu.D[1] = RegD1;
 			cpu.D[2] = RegD2;
@@ -131,7 +139,7 @@ namespace Mesen.Debugger.StatusViews
 			cpu.Ssp = RegSsp;
 			cpu.SR = RegSR;
 			cpu.Stopped = Stopped;
-			DebugApi.SetCpuState(cpu, CpuType.MdM68k);
+			DebugApi.SetCpuState(cpu, _cpuType);
 		}
 	}
 }

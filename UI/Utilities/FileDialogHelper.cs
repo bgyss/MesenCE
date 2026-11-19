@@ -76,6 +76,7 @@ namespace Mesen.Utilities
 						filter.Add(new FilePickerFileType("ColecoVision ROM files") { Patterns = new List<string>() { "*.col" } });
 						filter.Add(new FilePickerFileType("WonderSwan ROM files") { Patterns = new List<string>() { "*.ws", "*.wsc", "*.pc2" } });
 						filter.Add(new FilePickerFileType("Mega Drive / Genesis ROM files") { Patterns = new List<string>() { "*.md", "*.gen", "*.smd", "*.bin" } });
+						filter.Add(new FilePickerFileType("Sega CD / Mega-CD disc images") { Patterns = new List<string>() { "*.cue" } });
 						filter.Add(new FilePickerFileType("Patch files (IPS/BPS)") { Patterns = new List<string>() { "*.ips", "*.bps" } });
 					} else if(ext == FileDialogHelper.FirmwareExt) {
 						filter.Add(new FilePickerFileType("All firmware files") { Patterns = new List<string>() { "*.sfc", "*.pce", "*.nes", "*.bin", "*.rom", "*.col", "*.sms", "*.gg", "*.gba", "*.ws", "*.wsc" } });

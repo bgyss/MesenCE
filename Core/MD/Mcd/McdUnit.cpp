@@ -1,6 +1,9 @@
 #include "pch.h"
 #include "MD/Mcd/McdUnit.h"
 #include "MD/MdConsole.h"
+#include "MD/MdM68k.h"
+#include "Shared/MemoryType.h"
+#include "Shared/MemoryOperationType.h"
 #include "Shared/Emulator.h"
 #include "Shared/BatteryManager.h"
 #include "Utilities/Serializer.h"
@@ -15,24 +18,59 @@ void McdM68k::Wait(uint32_t clocks)
 	_unit->SubAdvance(clocks);
 }
 
-uint16_t McdM68k::BusRead(bool upper, bool lower, uint32_t address, M68kAccess /*access*/)
+uint16_t McdM68k::BusRead(bool upper, bool lower, uint32_t address, M68kAccess access)
 {
-	return _unit->SubRead(upper, lower, address);
+	uint16_t value = _unit->SubRead(upper, lower, address);
+	MemoryOperationType opType = access == M68kAccess::Program ? MemoryOperationType::ExecOperand : MemoryOperationType::Read;
+	if(upper && lower) {
+		_emu->ProcessMemoryRead<CpuType::McdM68k, 2>(address & 0xFFFFFE, value, opType);
+	} else {
+		uint8_t byte = upper ? (value >> 8) : (uint8_t)value;
+		_emu->ProcessMemoryRead<CpuType::McdM68k, 1>((address & 0xFFFFFE) | (lower ? 1 : 0), byte, opType);
+	}
+	return value;
 }
 
 void McdM68k::BusWrite(bool upper, bool lower, uint32_t address, uint16_t data, M68kAccess /*access*/)
 {
-	if(!(upper && lower)) {
+	if(upper && lower) {
+		if(!_emu->ProcessMemoryWrite<CpuType::McdM68k, 2>(address & 0xFFFFFE, data, MemoryOperationType::Write)) {
+			return;
+		}
+	} else {
 		//A byte write drives the byte on both data lanes (as MdM68k::BusWrite)
 		uint8_t byte = upper ? (data >> 8) : (uint8_t)data;
+		if(!_emu->ProcessMemoryWrite<CpuType::McdM68k, 1>((address & 0xFFFFFE) | (lower ? 1 : 0), byte, MemoryOperationType::Write)) {
+			return;
+		}
 		data = (byte << 8) | byte;
 	}
 	_unit->SubWrite(upper, lower, address, data);
 }
 
+void McdM68k::OnInstructionStart()
+{
+	_emu->ProcessInstruction<CpuType::McdM68k>();
+}
+
+void McdM68k::OnInterruptTaken(uint32_t originalPc, uint32_t handlerPc)
+{
+	_emu->ProcessInterrupt<CpuType::McdM68k>(originalPc, handlerPc, false);
+}
+
+MdM68kState McdM68k::GetState()
+{
+	return MdM68k::BuildState(*this, _unit->GetSubCycles());
+}
+
+void McdM68k::SetState(MdM68kState& state)
+{
+	MdM68k::ApplyState(*this, state);
+}
+
 uint16_t McdM68k::Peek(uint32_t address)
 {
-	return _unit->SubRead(true, true, address);
+	return (_unit->SubDebugRead(address & 0xFFFFFE) << 8) | _unit->SubDebugRead((address & 0xFFFFFE) | 1);
 }
 
 uint32_t McdM68k::AcknowledgeInterrupt(uint8_t level)
@@ -58,8 +96,17 @@ void McdUnit::Init(MdConsole* console, uint32_t mclkRate, bool mode2, vector<uin
 	_prgRam = new uint8_t[PrgRamSize];
 	console->InitializeRam(_prgRam, PrgRamSize);
 	console->InitializeRam(_wordRam, WordRamSize);
-	_cpu.Init(this);
-	console->GetEmulator()->GetBatteryManager()->LoadBattery(".brm", _backupRam, BackupRamSize);
+	_cpu.Init(this, console->GetEmulator());
+	Emulator* emu = console->GetEmulator();
+	emu->GetBatteryManager()->LoadBattery(".brm", _backupRam, BackupRamSize);
+	emu->RegisterMemory(MemoryType::McdPrgRam, _prgRam, PrgRamSize);
+	emu->RegisterMemory(MemoryType::McdWordRam, _wordRam, WordRamSize);
+	emu->RegisterMemory(MemoryType::McdBackupRam, _backupRam, BackupRamSize);
+	emu->RegisterMemory(MemoryType::McdPcmRam, _pcm.GetRam(), 0x10000);
+	emu->RegisterMemory(MemoryType::McdCdcRam, _cdc.GetRam(), 0x4000);
+	if(!_bios.empty()) {
+		emu->RegisterMemory(MemoryType::McdBios, _bios.data(), (uint32_t)_bios.size());
+	}
 	//Power-on: the sub CPU is held in reset; its reset vectors are fetched when it is released
 	//(ares MCD::power: io.run = 0, io.halt = 1, irq.reset raised)
 	_cpu.PowerOn();
@@ -221,12 +268,12 @@ uint16_t McdUnit::ReadWordRamMain(uint32_t offset)
 {
 	if(!_wordRam1M) {
 		//2M mode: all 256 KiB, while the main CPU owns it (RET)
-		return _wordRam[(offset & 0x3FFFF) >> 1];
+		return Wram((offset & 0x3FFFF) >> 1);
 	}
 	//1M mode: the main CPU's 128 KiB bank (RET = 0: bank 0, RET = 1: bank 1; Hardware Manual
 	//p. 24). The banks are interleaved by word in the 256 KiB array (ares bus-external.cpp).
 	uint32_t byteOffset = offset >= 0x220000 ? CellImageToWordIndex(offset) : offset;
-	return _wordRam[(byteOffset & 0x1FFFE) | (_ret ? 1 : 0)];
+	return Wram((byteOffset & 0x1FFFE) | (_ret ? 1 : 0));
 }
 
 void McdUnit::WriteWordRamMain(uint32_t offset, bool upper, bool lower, uint16_t value)
@@ -238,13 +285,7 @@ void McdUnit::WriteWordRamMain(uint32_t offset, bool upper, bool lower, uint16_t
 		uint32_t byteOffset = offset >= 0x220000 ? CellImageToWordIndex(offset) : offset;
 		index = (byteOffset & 0x1FFFE) | (_ret ? 1 : 0);
 	}
-	uint16_t& word = _wordRam[index];
-	if(upper) {
-		word = (word & 0x00FF) | (value & 0xFF00);
-	}
-	if(lower) {
-		word = (word & 0xFF00) | (value & 0x00FF);
-	}
+	WriteWram(index, upper, lower, value);
 }
 
 uint16_t McdUnit::MainRead(uint32_t offset, uint16_t openBus)
@@ -541,13 +582,13 @@ uint16_t McdUnit::SubRead(bool /*upper*/, bool /*lower*/, uint32_t address)
 				//A sub CPU access to word RAM delays the graphics chip by 3 clocks (Hardware Manual p. 53)
 				_gfx.Counter += 3;
 			}
-			return _wordRam[(address & 0x3FFFF) >> 1];
+			return Wram((address & 0x3FFFF) >> 1);
 		}
 		return 0;
 	} else if(address < 0xE0000) {
 		//1M mode: the sub CPU's bank (the other one from the main CPU's)
 		if(_wordRam1M) {
-			return _wordRam[(address & 0x1FFFE) | (_ret ? 0 : 1)];
+			return Wram((address & 0x1FFFE) | (_ret ? 0 : 1));
 		}
 		return 0;
 	} else if(address >= 0xFE0000 && address < 0xFF0000) {
@@ -613,23 +654,11 @@ void McdUnit::SubWrite(bool upper, bool lower, uint32_t address, uint16_t value)
 			if(_gfx.Active) {
 				_gfx.Counter += 3;
 			}
-			uint16_t& word = _wordRam[(address & 0x3FFFF) >> 1];
-			if(upper) {
-				word = (word & 0x00FF) | (value & 0xFF00);
-			}
-			if(lower) {
-				word = (word & 0xFF00) | (value & 0x00FF);
-			}
+			WriteWram((address & 0x3FFFF) >> 1, upper, lower, value);
 		}
 	} else if(address < 0xE0000) {
 		if(_wordRam1M) {
-			uint16_t& word = _wordRam[(address & 0x1FFFE) | (_ret ? 0 : 1)];
-			if(upper) {
-				word = (word & 0x00FF) | (value & 0xFF00);
-			}
-			if(lower) {
-				word = (word & 0xFF00) | (value & 0x00FF);
-			}
+			WriteWram((address & 0x1FFFE) | (_ret ? 0 : 1), upper, lower, value);
 		}
 	} else if(address >= 0xFE0000 && address < 0xFF0000) {
 		if(lower) {
@@ -647,6 +676,96 @@ void McdUnit::SubWrite(bool upper, bool lower, uint32_t address, uint16_t value)
 			WriteSubRegister(reg, upper, lower, value);
 		}
 	}
+}
+
+uint8_t McdUnit::SubDebugRead(uint32_t address)
+{
+	address &= 0xFFFFFF;
+	if(address < 0x80000) {
+		return _prgRam[address];
+	} else if(address < 0xC0000) {
+		if(_wordRam1M) {
+			uint16_t dots = ReadDotImage(address & ~1);
+			return (address & 1) ? (uint8_t)dots : (dots >> 8);
+		}
+		return _wordRam[address & 0x3FFFF];
+	} else if(address < 0xE0000) {
+		if(_wordRam1M) {
+			return _wordRam[((((address & 0x1FFFE) | (_ret ? 0 : 1)) & 0x1FFFF) << 1) | (address & 1)];
+		}
+		return 0;
+	} else if(address >= 0xFE0000 && address < 0xFF0000) {
+		return (address & 1) ? _backupRam[(address >> 1) & (BackupRamSize - 1)] : 0;
+	} else if(address >= 0xFF0000 && address < 0xFF8000) {
+		return (address & 1) ? _pcm.Read((uint16_t)(address >> 1)) : 0;
+	} else if(address >= 0xFF8000) {
+		uint32_t reg = address & 0x1FE;
+		if(reg == 0x06 || reg == 0x08) {
+			return 0; //CDC register data and host data: reading them has side effects
+		}
+		uint16_t word = SubRead(true, true, address & ~1);
+		return (address & 1) ? (uint8_t)word : (word >> 8);
+	}
+	return 0;
+}
+
+void McdUnit::SubDebugWrite(uint32_t address, uint8_t value)
+{
+	address &= 0xFFFFFF;
+	if(address < 0x80000) {
+		_prgRam[address] = value;
+	} else if(address < 0xC0000 && !_wordRam1M) {
+		_wordRam[address & 0x3FFFF] = value;
+	} else if(address >= 0xC0000 && address < 0xE0000 && _wordRam1M) {
+		_wordRam[((((address & 0x1FFFE) | (_ret ? 0 : 1)) & 0x1FFFF) << 1) | (address & 1)] = value;
+	} else if(address >= 0xFE0000 && address < 0xFF0000 && (address & 1)) {
+		_backupRam[(address >> 1) & (BackupRamSize - 1)] = value;
+	}
+}
+
+AddressInfo McdUnit::SubGetAbsoluteAddress(uint32_t address)
+{
+	address &= 0xFFFFFF;
+	if(address < 0x80000) {
+		return { (int32_t)address, MemoryType::McdPrgRam };
+	} else if(address < 0xC0000 && !_wordRam1M) {
+		return { (int32_t)(address & 0x3FFFF), MemoryType::McdWordRam };
+	} else if(address >= 0xC0000 && address < 0xE0000 && _wordRam1M) {
+		return { (int32_t)(((((address & 0x1FFFE) | (_ret ? 0 : 1)) & 0x1FFFF) << 1) | (address & 1)), MemoryType::McdWordRam };
+	} else if(address >= 0xFE0000 && address < 0xFF0000 && (address & 1)) {
+		return { (int32_t)((address >> 1) & (BackupRamSize - 1)), MemoryType::McdBackupRam };
+	} else if(address >= 0xFF2000 && address < 0xFF4000 && (address & 1)) {
+		return { (int32_t)((_pcm.GetBank() << 12) | ((address >> 1) & 0xFFF)), MemoryType::McdPcmRam };
+	}
+	return { -1, MemoryType::None };
+}
+
+int32_t McdUnit::SubGetRelativeAddress(AddressInfo& absAddress)
+{
+	switch(absAddress.Type) {
+		case MemoryType::McdPrgRam: return absAddress.Address;
+		case MemoryType::McdWordRam: return _wordRam1M ? -1 : (0x080000 | absAddress.Address);
+		case MemoryType::McdBackupRam: return 0xFE0001 | (absAddress.Address << 1);
+		default: return -1;
+	}
+}
+
+AddressInfo McdUnit::MainGetAbsoluteAddress(uint32_t offset)
+{
+	//`offset` within the unit's main CPU area (Mode 1: from $400000, Mode 2: from $000000)
+	offset &= 0x23FFFF;
+	if(offset < 0x20000) {
+		return offset < _bios.size() ? AddressInfo { (int32_t)offset, MemoryType::McdBios } : AddressInfo { -1, MemoryType::None };
+	} else if(offset < 0x40000) {
+		return { (int32_t)(((uint32_t)_prgBank << 17) | (offset & 0x1FFFF)), MemoryType::McdPrgRam };
+	} else if(offset >= 0x200000) {
+		if(!_wordRam1M) {
+			return { (int32_t)(offset & 0x3FFFF), MemoryType::McdWordRam };
+		} else if(offset < 0x220000) {
+			return { (int32_t)(((((offset & 0x1FFFE) | (_ret ? 1 : 0)) & 0x1FFFF) << 1) | (offset & 1)), MemoryType::McdWordRam };
+		}
+	}
+	return { -1, MemoryType::None };
 }
 
 void McdUnit::Serialize(Serializer& s)
@@ -698,7 +817,7 @@ void McdUnit::Serialize(Serializer& s)
 	}
 
 	SVArray(_prgRam, PrgRamSize);
-	SVArray(_wordRam, WordRamSize / 2);
+	SVArray(_wordRam, WordRamSize);
 	SV(_subClock);
 	SV(_subRemainder);
 	SV(_subCycles);
@@ -753,15 +872,14 @@ void McdUnit::Serialize(Serializer& s)
 uint8_t McdUnit::ReadNibble(uint32_t address)
 {
 	//Graphics chip view of 2M word RAM: one 4-bit dot per nibble, high nibble first
-	uint16_t word = _wordRam[(address >> 2) & 0x1FFFF];
-	return (word >> (12 - ((address & 3) << 2))) & 0x0F;
+	uint8_t byte = _wordRam[(address >> 1) & 0x3FFFF];
+	return (address & 1) ? (byte & 0x0F) : (byte >> 4);
 }
 
 void McdUnit::WriteNibble(uint32_t address, uint8_t value)
 {
-	uint16_t& word = _wordRam[(address >> 2) & 0x1FFFF];
-	uint8_t shift = 12 - ((address & 3) << 2);
-	word = (word & ~(0x0F << shift)) | ((value & 0x0F) << shift);
+	uint8_t& byte = _wordRam[(address >> 1) & 0x3FFFF];
+	byte = (address & 1) ? ((byte & 0xF0) | (value & 0x0F)) : ((byte & 0x0F) | (value << 4));
 }
 
 uint16_t McdUnit::ReadDotImage(uint32_t address)
@@ -770,15 +888,15 @@ uint16_t McdUnit::ReadDotImage(uint32_t address)
 	//read 0). Each dot-image word is one byte of the bank (Hardware Manual pp. 14, 54; byte and bank
 	//arrangement from ares bus-internal.cpp).
 	uint32_t index = (((address >> 1) & 0x1FFFF) & ~1) | (_ret ? 0 : 1);
-	uint8_t byte = (address & 2) ? (uint8_t)_wordRam[index] : (_wordRam[index] >> 8);
+	uint8_t byte = _wordRam[((index & 0x1FFFF) << 1) | ((address & 2) ? 1 : 0)];
 	return ((byte >> 4) << 8) | (byte & 0x0F);
 }
 
 void McdUnit::WriteDotImage(uint32_t address, bool upper, bool lower, uint16_t value)
 {
 	uint32_t index = (((address >> 1) & 0x1FFFF) & ~1) | (_ret ? 0 : 1);
-	uint8_t shift = (address & 2) ? 0 : 8;
-	uint8_t byte = (_wordRam[index] >> shift) & 0xFF;
+	uint8_t& target = _wordRam[((index & 0x1FFFF) << 1) | ((address & 2) ? 1 : 0)];
+	uint8_t byte = target;
 	uint8_t hi = byte >> 4;
 	uint8_t lo = byte & 0x0F;
 	uint8_t newHi = (value >> 8) & 0x0F;
@@ -801,7 +919,7 @@ void McdUnit::WriteDotImage(uint32_t address, bool upper, bool lower, uint16_t v
 		default:
 			break;
 	}
-	_wordRam[index] = (_wordRam[index] & ~(0xFF << shift)) | (((hi << 4) | lo) << shift);
+	target = (hi << 4) | lo;
 }
 
 uint16_t McdUnit::ReadGraphicsRegister(uint32_t reg)
@@ -927,10 +1045,10 @@ void McdUnit::RenderGraphicsLine()
 	uint32_t imageWidth = ((uint32_t)_gfx.VCells + 1) << 6;
 	uint32_t mapMask = _gfx.Map16 ? 0x7FFFFF : 0x07FFFF;
 
-	uint32_t x = ((uint32_t)_wordRam[_gfx.VectorAddress++ & 0x1FFFF] << 8) & 0xFFFFFF;
-	uint32_t y = ((uint32_t)_wordRam[_gfx.VectorAddress++ & 0x1FFFF] << 8) & 0xFFFFFF;
-	int32_t xStep = (int16_t)_wordRam[_gfx.VectorAddress++ & 0x1FFFF];
-	int32_t yStep = (int16_t)_wordRam[_gfx.VectorAddress++ & 0x1FFFF];
+	uint32_t x = ((uint32_t)Wram(_gfx.VectorAddress++) << 8) & 0xFFFFFF;
+	uint32_t y = ((uint32_t)Wram(_gfx.VectorAddress++) << 8) & 0xFFFFFF;
+	int32_t xStep = (int16_t)Wram(_gfx.VectorAddress++);
+	int32_t yStep = (int16_t)Wram(_gfx.VectorAddress++);
 
 	uint32_t address = _gfx.ImageAddress;
 	for(uint32_t i = 0; i < _gfx.HDots; i++) {
@@ -942,7 +1060,7 @@ void McdUnit::RenderGraphicsLine()
 		if(!((x | y) & ~mapMask)) {
 			uint32_t xDot = x >> 11;
 			uint32_t yDot = y >> 11;
-			uint16_t entry = _wordRam[(_gfx.MapAddress + ((yDot >> stampShift) << mapShift) + (xDot >> stampShift)) & 0x1FFFF];
+			uint16_t entry = Wram(_gfx.MapAddress + ((yDot >> stampShift) << mapShift) + (xDot >> stampShift));
 			uint32_t index = entry & indexMask;
 			if(index) {
 				//HFLP (bit 15), RT1 (bit 14: 180 degrees), RT0 (bit 13: 90 degrees)

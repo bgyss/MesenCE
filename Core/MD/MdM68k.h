@@ -30,8 +30,12 @@ public:
 
 	uint64_t GetCycleCount() { return _cycleCount; }
 
-	MdM68kState GetState();
-	void SetState(MdM68kState& state);
+	MdM68kState GetState() { return BuildState(*this, _cycleCount); }
+	void SetState(MdM68kState& state) { ApplyState(*this, state); }
+
+	//Debugger state of any 68000 (also the Sega CD's sub CPU)
+	static MdM68kState BuildState(M68kCore& cpu, uint64_t cycleCount);
+	static void ApplyState(M68kCore& cpu, MdM68kState& state);
 
 	void Idle(uint32_t clocks) override;
 	void Wait(uint32_t clocks) override;

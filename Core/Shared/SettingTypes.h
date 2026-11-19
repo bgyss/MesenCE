@@ -1228,4 +1228,5 @@ enum class DebuggerFlags
 	WsDebuggerEnabled = (1 << 12),
 	MdM68kDebuggerEnabled = (1 << 13),
 	MdZ80DebuggerEnabled = (1 << 14),
+	McdM68kDebuggerEnabled = (1 << 15),
 };

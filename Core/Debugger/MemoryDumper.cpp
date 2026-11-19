@@ -26,6 +26,7 @@
 #include "WS/WsConsole.h"
 #include "MD/MdConsole.h"
 #include "MD/MdMemoryManager.h"
+#include "MD/Mcd/McdUnit.h"
 #include "WS/WsMemoryManager.h"
 #include "Shared/Video/VideoDecoder.h"
 #include "Debugger/DebugTypes.h"
@@ -110,6 +111,7 @@ uint32_t MemoryDumper::GetMemorySize(MemoryType type)
 		case MemoryType::WsMemory: return 0x100000;
 		case MemoryType::MdMemory: return 0x1000000;
 		case MemoryType::MdZ80Memory: return 0x10000;
+		case MemoryType::McdMemory: return 0x1000000;
 		case MemoryType::SnesRegister: return 0x10000;
 		case MemoryType::SmsPort: return 0x100;
 		case MemoryType::WsPort: return 0x10000;
@@ -231,7 +233,8 @@ void MemoryDumper::GetMemoryState(MemoryType type, uint8_t* buffer)
 		}
 
 		case MemoryType::MdMemory:
-		case MemoryType::MdZ80Memory: {
+		case MemoryType::MdZ80Memory:
+		case MemoryType::McdMemory: {
 			if(_mdConsole) {
 				uint32_t size = GetMemorySize(type);
 				for(uint32_t i = 0; i < size; i++) {
@@ -305,6 +308,11 @@ void MemoryDumper::InternalSetMemoryValues(MemoryType originalMemoryType, uint32
 			case MemoryType::WsMemory: _wsConsole->GetMemoryManager()->DebugWrite(address, value); break;
 			case MemoryType::MdMemory: _mdConsole->GetMemoryManager()->DebugWrite(address, value); break;
 			case MemoryType::MdZ80Memory: _mdConsole->GetMemoryManager()->DebugZ80Write((uint16_t)address, value); break;
+			case MemoryType::McdMemory:
+				if(_mdConsole->GetMcd()) {
+					_mdConsole->GetMcd()->SubDebugWrite(address, value);
+				}
+				break;
 			case MemoryType::SpcDspRegisters: _spc->DebugWriteDspReg(address, value); break;
 
 			default:
@@ -409,6 +417,7 @@ uint8_t MemoryDumper::InternalGetMemoryValue(MemoryType memoryType, uint32_t add
 		case MemoryType::WsPort: return _wsConsole->GetMemoryManager()->DebugReadPort<uint8_t>(address);
 		case MemoryType::MdMemory: return _mdConsole->GetMemoryManager()->DebugRead(address);
 		case MemoryType::MdZ80Memory: return _mdConsole->GetMemoryManager()->DebugZ80Read((uint16_t)address);
+		case MemoryType::McdMemory: return _mdConsole->GetMcd() ? _mdConsole->GetMcd()->SubDebugRead(address) : 0;
 
 		default:
 			uint8_t* src = GetMemoryBuffer(memoryType);

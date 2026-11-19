@@ -220,6 +220,7 @@
 			<Control ID="lblSms">SMS / Game Gear</Control>
 			<Control ID="lblColecoVision">ColecoVision</Control>
 			<Control ID="lblWonderSwan">WonderSwan</Control>
+			<Control ID="lblMegaCd">Sega CD / Mega-CD</Control>
 			<Control ID="lblOtherConsoles">Other systems</Control>
 			
 			<Control ID="lblWrongHash">File does not contain the expected data, and may not work correctly.</Control>
@@ -2947,6 +2948,7 @@ E
 			<Value ID="Ws">WS</Value>
 			<Value ID="MdM68k">68000</Value>
 			<Value ID="MdZ80">Z80 (MD)</Value>
+			<Value ID="McdM68k">Sega CD sub 68000</Value>
 		</Enum>
 		
 		<Enum ID="MemoryType">
@@ -3059,6 +3061,13 @@ E
 			<Value ID="MdPaletteRam">Color RAM (CRAM)</Value>
 			<Value ID="MdVScrollRam">VScroll RAM (VSRAM)</Value>
 			<Value ID="MdTmssRom">TMSS ROM</Value>
+			<Value ID="McdMemory">Sega CD Sub CPU Memory</Value>
+			<Value ID="McdPrgRam">Sega CD Program RAM</Value>
+			<Value ID="McdWordRam">Sega CD Word RAM</Value>
+			<Value ID="McdBackupRam">Sega CD Backup RAM</Value>
+			<Value ID="McdPcmRam">Sega CD PCM RAM</Value>
+			<Value ID="McdCdcRam">Sega CD CDC Buffer</Value>
+			<Value ID="McdBios">Sega CD BIOS</Value>
 
 			<Value ID="None">None</Value>
 		</Enum>
@@ -3718,6 +3727,7 @@ E
 			<Value ID="OpenDebugger">Debugger</Value>
 			<Value ID="OpenSpcDebugger">SPC Debugger</Value>
 			<Value ID="OpenMdZ80Debugger">Z80 Debugger</Value>
+			<Value ID="OpenMcdM68kDebugger">Sega CD Sub CPU Debugger</Value>
 			<Value ID="OpenSa1Debugger">SA-1 Debugger</Value>
 			<Value ID="OpenSt018Debugger">ST018 Debugger</Value>
 			<Value ID="OpenGsuDebugger">GSU Debugger</Value>

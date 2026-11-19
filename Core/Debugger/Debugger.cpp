@@ -101,6 +101,7 @@ Debugger::Debugger(Emulator* emu, IConsole* console)
 			case CpuType::Ws: debugger.reset(new WsDebugger(this)); break;
 			case CpuType::MdM68k: debugger.reset(new MdDebugger(this, CpuType::MdM68k)); break;
 			case CpuType::MdZ80: debugger.reset(new MdDebugger(this, CpuType::MdZ80)); break;
+			case CpuType::McdM68k: debugger.reset(new MdDebugger(this, CpuType::McdM68k)); break;
 			default: throw std::runtime_error("Unsupported CPU type");
 		}
 
@@ -196,6 +197,7 @@ uint64_t Debugger::GetCpuCycleCount()
 		case CpuType::Ws: return GetDebugger<type, WsDebugger>()->GetCpuCycleCount();
 		case CpuType::MdM68k: return GetDebugger<type, MdDebugger>()->GetCpuCycleCount(false);
 		case CpuType::MdZ80: return GetDebugger<type, MdDebugger>()->GetCpuCycleCount(false);
+		case CpuType::McdM68k: return GetDebugger<type, MdDebugger>()->GetCpuCycleCount(false);
 		default: return 0; break;
 	}
 }
@@ -245,6 +247,7 @@ void Debugger::ProcessInstruction()
 		case CpuType::Gba: GetDebugger<type, GbaDebugger>()->ProcessInstruction(); break;
 		case CpuType::Ws: GetDebugger<type, WsDebugger>()->ProcessInstruction(); break;
 		case CpuType::MdM68k:
+		case CpuType::McdM68k:
 		case CpuType::MdZ80: GetDebugger<type, MdDebugger>()->ProcessInstruction(); break;
 	}
 
@@ -285,6 +288,7 @@ void Debugger::ProcessMemoryRead(uint32_t addr, T& value, MemoryOperationType op
 			}
 			break;
 		case CpuType::MdM68k:
+		case CpuType::McdM68k:
 		case CpuType::MdZ80: GetDebugger<type, MdDebugger>()->ProcessRead(addr, value, opType); break;
 	}
 
@@ -320,6 +324,7 @@ bool Debugger::ProcessMemoryWrite(uint32_t addr, T& value, MemoryOperationType o
 			}
 			break;
 		case CpuType::MdM68k:
+		case CpuType::McdM68k:
 		case CpuType::MdZ80: GetDebugger<type, MdDebugger>()->ProcessWrite(addr, value, opType); break;
 	}
 
@@ -737,6 +742,7 @@ void Debugger::PauseOnNextFrame()
 		case CpuType::Gba: Step(CpuType::Gba, 160, StepType::SpecificScanline, BreakSource::PpuStep); break;
 		case CpuType::Ws: Step(CpuType::Ws, 145, StepType::SpecificScanline, BreakSource::PpuStep); break;
 		case CpuType::MdM68k: Step(CpuType::MdM68k, 1, StepType::PpuFrame, BreakSource::PpuStep); break;
+		case CpuType::McdM68k: Step(CpuType::MdM68k, 1, StepType::PpuFrame, BreakSource::PpuStep); break;
 	}
 }
 
@@ -828,6 +834,7 @@ bool Debugger::IsDebugWindowOpened(CpuType cpuType)
 		case CpuType::Ws: return _settings->CheckDebuggerFlag(DebuggerFlags::WsDebuggerEnabled);
 		case CpuType::MdM68k: return _settings->CheckDebuggerFlag(DebuggerFlags::MdM68kDebuggerEnabled);
 		case CpuType::MdZ80: return _settings->CheckDebuggerFlag(DebuggerFlags::MdZ80DebuggerEnabled);
+		case CpuType::McdM68k: return _settings->CheckDebuggerFlag(DebuggerFlags::McdM68kDebuggerEnabled);
 	}
 
 	return false;
@@ -886,6 +893,7 @@ void Debugger::GetCpuState(BaseState& dstState, CpuType cpuType)
 		case CpuType::Gba: memcpy(&dstState, &srcState, sizeof(GbaCpuState)); break;
 		case CpuType::Ws: memcpy(&dstState, &srcState, sizeof(WsCpuState)); break;
 		case CpuType::MdM68k: memcpy(&dstState, &srcState, sizeof(MdM68kState)); break;
+		case CpuType::McdM68k: memcpy(&dstState, &srcState, sizeof(MdM68kState)); break;
 		case CpuType::MdZ80: memcpy(&dstState, &srcState, sizeof(MdZ80State)); break;
 	}
 }
@@ -909,6 +917,7 @@ void Debugger::SetCpuState(BaseState& srcState, CpuType cpuType)
 		case CpuType::Gba: memcpy(&dstState, &srcState, sizeof(GbaCpuState)); break;
 		case CpuType::Ws: memcpy(&dstState, &srcState, sizeof(WsCpuState)); break;
 		case CpuType::MdM68k: GetDebugger<CpuType::MdM68k, MdDebugger>()->SetM68kState((MdM68kState&)srcState); break;
+		case CpuType::McdM68k: GetDebugger<CpuType::McdM68k, MdDebugger>()->SetM68kState((MdM68kState&)srcState); break;
 		case CpuType::MdZ80: memcpy(&dstState, &srcState, sizeof(MdZ80State)); break;
 	}
 }
@@ -971,6 +980,7 @@ void Debugger::GetPpuState(BaseState& state, CpuType cpuType)
 		}
 
 		case CpuType::MdM68k:
+		case CpuType::McdM68k:
 		case CpuType::MdZ80: {
 			GetDebugger<CpuType::MdM68k, MdDebugger>()->GetPpuState(state);
 			break;
@@ -1024,6 +1034,7 @@ void Debugger::SetPpuState(BaseState& state, CpuType cpuType)
 		}
 
 		case CpuType::MdM68k:
+		case CpuType::McdM68k:
 		case CpuType::MdZ80: {
 			GetDebugger<CpuType::MdM68k, MdDebugger>()->SetPpuState(state);
 			break;
@@ -1267,6 +1278,7 @@ template void Debugger::ProcessInstruction<CpuType::Gba>();
 template void Debugger::ProcessInstruction<CpuType::Ws>();
 template void Debugger::ProcessInstruction<CpuType::MdM68k>();
 template void Debugger::ProcessInstruction<CpuType::MdZ80>();
+template void Debugger::ProcessInstruction<CpuType::McdM68k>();
 
 template void Debugger::ProcessMemoryRead<CpuType::Snes>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template void Debugger::ProcessMemoryRead<CpuType::Sa1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
@@ -1290,6 +1302,8 @@ template void Debugger::ProcessMemoryRead<CpuType::Ws, 2>(uint32_t addr, uint16_
 template void Debugger::ProcessMemoryRead<CpuType::MdM68k, 1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template void Debugger::ProcessMemoryRead<CpuType::MdM68k, 2>(uint32_t addr, uint16_t& value, MemoryOperationType opType);
 template void Debugger::ProcessMemoryRead<CpuType::MdZ80>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
+template void Debugger::ProcessMemoryRead<CpuType::McdM68k, 1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
+template void Debugger::ProcessMemoryRead<CpuType::McdM68k, 2>(uint32_t addr, uint16_t& value, MemoryOperationType opType);
 
 template bool Debugger::ProcessMemoryWrite<CpuType::Snes>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template bool Debugger::ProcessMemoryWrite<CpuType::Sa1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
@@ -1312,6 +1326,8 @@ template bool Debugger::ProcessMemoryWrite<CpuType::Ws, 2>(uint32_t addr, uint16
 template bool Debugger::ProcessMemoryWrite<CpuType::MdM68k, 1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template bool Debugger::ProcessMemoryWrite<CpuType::MdM68k, 2>(uint32_t addr, uint16_t& value, MemoryOperationType opType);
 template bool Debugger::ProcessMemoryWrite<CpuType::MdZ80>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
+template bool Debugger::ProcessMemoryWrite<CpuType::McdM68k, 1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
+template bool Debugger::ProcessMemoryWrite<CpuType::McdM68k, 2>(uint32_t addr, uint16_t& value, MemoryOperationType opType);
 
 template void Debugger::ProcessMemoryAccess<CpuType::Nes, MemoryType::NesMapperRam, MemoryOperationType::Read>(uint32_t addr, uint8_t& value);
 template void Debugger::ProcessMemoryAccess<CpuType::Nes, MemoryType::NesMapperRam, MemoryOperationType::Write>(uint32_t addr, uint8_t& value);
@@ -1355,6 +1371,7 @@ template void Debugger::ProcessInterrupt<CpuType::Gba>(uint32_t originalPc, uint
 template void Debugger::ProcessInterrupt<CpuType::Ws>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
 template void Debugger::ProcessInterrupt<CpuType::MdM68k>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
 template void Debugger::ProcessInterrupt<CpuType::MdZ80>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
+template void Debugger::ProcessInterrupt<CpuType::McdM68k>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
 
 template void Debugger::ProcessPpuRead<CpuType::Snes>(uint16_t addr, uint8_t& value, MemoryType memoryType, MemoryOperationType opType);
 template void Debugger::ProcessPpuRead<CpuType::Gameboy>(uint16_t addr, uint8_t& value, MemoryType memoryType, MemoryOperationType opType);

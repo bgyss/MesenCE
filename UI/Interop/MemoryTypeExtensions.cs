@@ -139,6 +139,15 @@ namespace Mesen.Interop
 				case MemoryType.MdZ80Ram:
 					return CpuType.MdZ80;
 
+				case MemoryType.McdMemory:
+				case MemoryType.McdPrgRam:
+				case MemoryType.McdWordRam:
+				case MemoryType.McdBackupRam:
+				case MemoryType.McdPcmRam:
+				case MemoryType.McdCdcRam:
+				case MemoryType.McdBios:
+					return CpuType.McdM68k;
+
 				default:
 					throw new NotImplementedException("Unsupported cpu type");
 			}
@@ -258,6 +267,7 @@ namespace Mesen.Interop
 				case MemoryType.WsMemory:
 				case MemoryType.MdMemory:
 				case MemoryType.MdZ80Memory:
+				case MemoryType.McdMemory:
 					return true;
 			}
 			return false;
@@ -286,6 +296,7 @@ namespace Mesen.Interop
 				case MemoryType.WsPrgRom:
 				case MemoryType.MdPrgRom:
 				case MemoryType.MdTmssRom:
+				case MemoryType.McdBios:
 					return true;
 			}
 			return false;
@@ -368,6 +379,10 @@ namespace Mesen.Interop
 				case MemoryType.MdWorkRam:
 				case MemoryType.MdZ80Ram:
 				case MemoryType.MdSaveRam:
+				case MemoryType.McdMemory:
+				case MemoryType.McdPrgRam:
+				case MemoryType.McdWordRam:
+				case MemoryType.McdBackupRam:
 					return true;
 			}
 
@@ -392,6 +407,7 @@ namespace Mesen.Interop
 				case MemoryType.WsMemory:
 				case MemoryType.MdMemory:
 				case MemoryType.MdZ80Memory:
+				case MemoryType.McdMemory:
 					return true;
 			}
 
@@ -592,6 +608,14 @@ namespace Mesen.Interop
 				MemoryType.MdPaletteRam => "CRAM",
 				MemoryType.MdVScrollRam => "VSRAM",
 				MemoryType.MdTmssRom => "TMSS",
+
+				MemoryType.McdMemory => "SUB",
+				MemoryType.McdPrgRam => "PRAM",
+				MemoryType.McdWordRam => "WORD",
+				MemoryType.McdBackupRam => "BRAM",
+				MemoryType.McdPcmRam => "PCM",
+				MemoryType.McdCdcRam => "CDC",
+				MemoryType.McdBios => "BIOS",
 
 				MemoryType.None => "n/a",
 

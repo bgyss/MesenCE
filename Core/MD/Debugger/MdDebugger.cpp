@@ -9,6 +9,7 @@
 #include "MD/MdZ80.h"
 #include "MD/MdVdp.h"
 #include "MD/MdMemoryManager.h"
+#include "MD/Mcd/McdUnit.h"
 #include "SMS/Debugger/SmsDisUtils.h"
 #include "Debugger/DisassemblyInfo.h"
 #include "Debugger/Disassembler.h"
@@ -30,7 +31,7 @@ MdDebugger::MdDebugger(Debugger* debugger, CpuType cpuType) : IDebugger(debugger
 	_emu = debugger->GetEmulator();
 	_settings = _emu->GetSettings();
 	_cpuType = cpuType;
-	_cpuMemType = cpuType == CpuType::MdM68k ? MemoryType::MdMemory : MemoryType::MdZ80Memory;
+	_cpuMemType = cpuType == CpuType::MdM68k ? MemoryType::MdMemory : (cpuType == CpuType::McdM68k ? MemoryType::McdMemory : MemoryType::MdZ80Memory);
 	_disassembler = debugger->GetDisassembler();
 	_memoryAccessCounter = debugger->GetMemoryAccessCounter();
 
@@ -39,14 +40,22 @@ MdDebugger::MdDebugger(Debugger* debugger, CpuType cpuType) : IDebugger(debugger
 	_z80 = _console->GetZ80();
 	_vdp = _console->GetVdp();
 	_memoryManager = _console->GetMemoryManager();
+	_mcd = _console->GetMcd();
 
-	_codeDataLogger.reset(new CodeDataLogger(debugger, MemoryType::MdPrgRom, _emu->GetMemory(MemoryType::MdPrgRom).Size, cpuType, _emu->GetCrc32()));
+	if(cpuType == CpuType::McdM68k) {
+		//The sub CPU runs from program RAM: code/data logging covers program RAM (not saved to a file)
+		_codeDataLogger.reset(new CodeDataLogger(debugger, MemoryType::McdPrgRam, McdUnit::PrgRamSize, cpuType, 0));
+		_m68kTraceLogger.reset(new MdM68kTraceLogger(debugger, this, _vdp, CpuType::McdM68k));
+		_traceLogger = _m68kTraceLogger.get();
+	} else {
+		_codeDataLogger.reset(new CodeDataLogger(debugger, MemoryType::MdPrgRom, _emu->GetMemory(MemoryType::MdPrgRom).Size, cpuType, _emu->GetCrc32()));
+	}
 	if(cpuType == CpuType::MdM68k) {
 		_cdlFile = _codeDataLogger->GetCdlFilePath(_emu->GetRomInfo().RomFile.GetFileName());
 		_codeDataLogger->LoadCdlFile(_cdlFile, _settings->GetDebugConfig().AutoResetCdl);
 		_m68kTraceLogger.reset(new MdM68kTraceLogger(debugger, this, _vdp));
 		_traceLogger = _m68kTraceLogger.get();
-	} else {
+	} else if(cpuType == CpuType::MdZ80) {
 		_z80TraceLogger.reset(new MdZ80TraceLogger(debugger, this, _vdp));
 		_traceLogger = _z80TraceLogger.get();
 	}
@@ -78,15 +87,20 @@ AddressInfo MdDebugger::GetAbsoluteAddress(uint32_t addr)
 	return _console->GetAbsoluteAddress(rel);
 }
 
+M68kCore* MdDebugger::Get68k()
+{
+	return _cpuType == CpuType::McdM68k ? (M68kCore*)&_mcd->GetCpu() : (M68kCore*)_m68k;
+}
+
 uint32_t MdDebugger::GetCurrentPc()
 {
-	return _cpuType == CpuType::MdM68k ? _m68k->GetInstructionPc() : _z80->GetState().PC;
+	return Is68k() ? Get68k()->GetInstructionPc() : _z80->GetState().PC;
 }
 
 uint32_t MdDebugger::GetStackPointer()
 {
-	if(_cpuType == CpuType::MdM68k) {
-		M68kRegisters regs = _m68k->GetRegisters();
+	if(Is68k()) {
+		M68kRegisters regs = Get68k()->GetRegisters();
 		return (regs.Sr & 0x2000) ? regs.Ssp : regs.Usp;
 	}
 	return _z80->GetState().SP;
@@ -94,7 +108,9 @@ uint32_t MdDebugger::GetStackPointer()
 
 uint16_t MdDebugger::ReadOpCode(uint32_t pc)
 {
-	if(_cpuType == CpuType::MdM68k) {
+	if(_cpuType == CpuType::McdM68k) {
+		return _mcd->GetCpu().Peek(pc);
+	} else if(_cpuType == CpuType::MdM68k) {
 		return _memoryManager->M68kPeekWord(pc);
 	}
 	uint8_t op = _memoryManager->DebugZ80Read((uint16_t)pc);
@@ -103,20 +119,20 @@ uint16_t MdDebugger::ReadOpCode(uint32_t pc)
 
 uint8_t MdDebugger::GetOpSize(uint32_t pc)
 {
-	if(_cpuType == CpuType::MdM68k) {
-		return MdDisUtils::GetOpSize(pc, MemoryType::MdMemory, _debugger->GetMemoryDumper());
+	if(Is68k()) {
+		return MdDisUtils::GetOpSize(pc, _cpuMemType, _debugger->GetMemoryDumper());
 	}
 	return SmsDisUtils::GetOpSize((uint8_t)_prevOpCode, pc, MemoryType::MdZ80Memory, _debugger->GetMemoryDumper());
 }
 
 bool MdDebugger::IsJumpToSub(uint16_t op)
 {
-	return _cpuType == CpuType::MdM68k ? MdDisUtils::IsJumpToSub(op) : SmsDisUtils::IsJumpToSub((uint8_t)op);
+	return Is68k() ? MdDisUtils::IsJumpToSub(op) : SmsDisUtils::IsJumpToSub((uint8_t)op);
 }
 
 bool MdDebugger::IsReturn(uint16_t op)
 {
-	return _cpuType == CpuType::MdM68k ? MdDisUtils::IsReturnInstruction(op) : SmsDisUtils::IsReturnInstruction(op);
+	return Is68k() ? MdDisUtils::IsReturnInstruction(op) : SmsDisUtils::IsReturnInstruction(op);
 }
 
 void MdDebugger::ProcessInstruction()
@@ -129,8 +145,8 @@ void MdDebugger::ProcessInstruction()
 	InstructionProgress.StartCycle = GetCpuCycleCount(false);
 
 	if(addressInfo.Address >= 0) {
-		if(addressInfo.Type == MemoryType::MdPrgRom) {
-			CdlFlags::CdlFlags flags = _cpuType == CpuType::MdM68k ? MdDisUtils::GetOpFlags(_prevOpCode, pc, _prevProgramCounter, _prevOpSize) : SmsDisUtils::GetOpFlags((uint8_t)_prevOpCode, (uint16_t)pc, (uint16_t)_prevProgramCounter);
+		if(addressInfo.Type == MemoryType::MdPrgRom || (_cpuType == CpuType::McdM68k && addressInfo.Type == MemoryType::McdPrgRam)) {
+			CdlFlags::CdlFlags flags = Is68k() ? MdDisUtils::GetOpFlags(_prevOpCode, pc, _prevProgramCounter, _prevOpSize) : SmsDisUtils::GetOpFlags((uint8_t)_prevOpCode, (uint16_t)pc, (uint16_t)_prevProgramCounter);
 			_codeDataLogger->SetCode(addressInfo.Address, flags);
 		}
 		_disassembler->BuildCache(addressInfo, 0, _cpuType);
@@ -140,8 +156,8 @@ void MdDebugger::ProcessInstruction()
 
 	if(_traceLogger->IsEnabled()) {
 		DisassemblyInfo disInfo = _disassembler->GetDisassemblyInfo(addressInfo, pc, 0, _cpuType);
-		if(_cpuType == CpuType::MdM68k) {
-			_m68kState = _m68k->GetState();
+		if(Is68k()) {
+			_m68kState = _cpuType == CpuType::McdM68k ? _mcd->GetCpu().GetState() : _m68k->GetState();
 			_m68kTraceLogger->Log(_m68kState, disInfo, operation, addressInfo);
 		} else {
 			_z80TraceLogger->Log(_z80->GetState(), disInfo, operation, addressInfo);
@@ -165,7 +181,7 @@ void MdDebugger::ProcessRead(uint32_t addr, T value, MemoryOperationType type)
 	MemoryOperationInfo operation(addr, value, type, _cpuMemType);
 	InstructionProgress.LastMemOperation = operation;
 
-	if(addressInfo.Address >= 0 && addressInfo.Type == MemoryType::MdPrgRom) {
+	if(addressInfo.Address >= 0 && (addressInfo.Type == MemoryType::MdPrgRom || (_cpuType == CpuType::McdM68k && addressInfo.Type == MemoryType::McdPrgRam))) {
 		if(type == MemoryOperationType::ExecOperand) {
 			_codeDataLogger->SetCode(addressInfo.Address);
 		} else {
@@ -173,7 +189,7 @@ void MdDebugger::ProcessRead(uint32_t addr, T value, MemoryOperationType type)
 		}
 	}
 	if(_traceLogger->IsEnabled()) {
-		if(_cpuType == CpuType::MdM68k) {
+		if(Is68k()) {
 			_m68kTraceLogger->LogNonExec(operation, addressInfo);
 		} else {
 			_z80TraceLogger->LogNonExec(operation, addressInfo);
@@ -184,7 +200,7 @@ void MdDebugger::ProcessRead(uint32_t addr, T value, MemoryOperationType type)
 	} else {
 		ReadResult result = _memoryAccessCounter->ProcessMemoryRead(addressInfo, _console->GetMasterClock());
 		if(result == ReadResult::FirstUninitRead) {
-			_debugger->Log(string(_cpuType == CpuType::MdM68k ? "[68K]" : "[Z80]") + " Uninitialized memory read: $" + HexUtilities::ToHex24(addr));
+			_debugger->Log(string(_cpuType == CpuType::MdM68k ? "[68K]" : (_cpuType == CpuType::McdM68k ? "[SUB]" : "[Z80]")) + " Uninitialized memory read: $" + HexUtilities::ToHex24(addr));
 		}
 		if(_cpuType == CpuType::MdM68k && (addr & 0xE700E0) == 0xC00000) {
 			_eventManager->AddEvent(DebugEventType::Register, operation);
@@ -201,11 +217,11 @@ void MdDebugger::ProcessWrite(uint32_t addr, T value, MemoryOperationType type)
 	MemoryOperationInfo operation(addr, value, type, _cpuMemType);
 	InstructionProgress.LastMemOperation = operation;
 
-	if(addressInfo.Type == MemoryType::MdWorkRam || addressInfo.Type == MemoryType::MdZ80Ram || addressInfo.Type == MemoryType::MdSaveRam) {
+	if(addressInfo.Type == MemoryType::MdWorkRam || addressInfo.Type == MemoryType::MdZ80Ram || addressInfo.Type == MemoryType::MdSaveRam || addressInfo.Type == MemoryType::McdPrgRam || addressInfo.Type == MemoryType::McdWordRam) {
 		_disassembler->InvalidateCache(addressInfo, _cpuType);
 	}
 	if(_traceLogger->IsEnabled()) {
-		if(_cpuType == CpuType::MdM68k) {
+		if(Is68k()) {
 			_m68kTraceLogger->LogNonExec(operation, addressInfo);
 		} else {
 			_z80TraceLogger->LogNonExec(operation, addressInfo);
@@ -240,11 +256,11 @@ void MdDebugger::ProcessInterrupt(uint32_t originalPc, uint32_t currentPc, bool 
 {
 	AddressInfo ret = GetAbsoluteAddress(originalPc);
 	AddressInfo dest = GetAbsoluteAddress(currentPc);
-	if(dest.Type == MemoryType::MdPrgRom && dest.Address >= 0) {
+	if((dest.Type == MemoryType::MdPrgRom || dest.Type == MemoryType::McdPrgRam) && dest.Address >= 0) {
 		_codeDataLogger->SetCode(dest.Address, CdlFlags::SubEntryPoint);
 	}
 	uint32_t sp = GetStackPointer();
-	uint32_t originalSp = _cpuType == CpuType::MdM68k ? sp + 6 : sp + 2;
+	uint32_t originalSp = Is68k() ? sp + 6 : sp + 2;
 	_prevStackPointer = originalSp;
 	ProcessCallStackUpdates(ret, originalPc, originalSp);
 	ResetPrevOpCode();
@@ -282,7 +298,11 @@ void MdDebugger::Step(int32_t stepCount, StepType type)
 void MdDebugger::SetProgramCounter(uint32_t addr, bool updateDebuggerOnly)
 {
 	if(!updateDebuggerOnly) {
-		if(_cpuType == CpuType::MdM68k) {
+		if(_cpuType == CpuType::McdM68k) {
+			MdM68kState state = _mcd->GetCpu().GetState();
+			state.PC = addr & 0xFFFFFE;
+			_mcd->GetCpu().SetState(state);
+		} else if(_cpuType == CpuType::MdM68k) {
 			MdM68kState state = _m68k->GetState();
 			state.PC = addr & 0xFFFFFE;
 			_m68k->SetState(state);
@@ -303,6 +323,9 @@ uint32_t MdDebugger::GetProgramCounter(bool getInstPc)
 
 uint64_t MdDebugger::GetCpuCycleCount(bool forProfiler)
 {
+	if(_cpuType == CpuType::McdM68k) {
+		return _mcd->GetSubCycles();
+	}
 	return _cpuType == CpuType::MdM68k ? _m68k->GetCycleCount() : _z80->GetCycleCount();
 }
 
@@ -326,6 +349,12 @@ DebuggerFeatures MdDebugger::GetSupportedFeatures()
 		features.CpuVectors[1] = { "HInt", 0x70, VectorType::Indirect };
 		features.CpuVectors[2] = { "VInt", 0x78, VectorType::Indirect };
 		features.CpuVectorCount = 3;
+	} else if(_cpuType == CpuType::McdM68k) {
+		features.CpuVectors[0] = { "Reset", 0x04, VectorType::Indirect };
+		features.CpuVectors[1] = { "Level 2", 0x68, VectorType::Indirect };
+		features.CpuVectors[2] = { "Level 3", 0x6C, VectorType::Indirect };
+		features.CpuVectors[3] = { "Level 4", 0x70, VectorType::Indirect };
+		features.CpuVectorCount = 4;
 	} else {
 		features.RunToNmi = true;
 		features.CpuVectors[0] = { "IRQ", 0x38, VectorType::Direct };
@@ -362,12 +391,18 @@ ITraceLogger* MdDebugger::GetTraceLogger()
 
 ISerializable* MdDebugger::GetSerializableCpu()
 {
+	if(_cpuType == CpuType::McdM68k) {
+		return _mcd;
+	}
 	return _cpuType == CpuType::MdM68k ? (ISerializable*)_m68k : (ISerializable*)_z80;
 }
 
 BaseState& MdDebugger::GetState()
 {
-	if(_cpuType == CpuType::MdM68k) {
+	if(_cpuType == CpuType::McdM68k) {
+		_m68kState = _mcd->GetCpu().GetState();
+		return _m68kState;
+	} else if(_cpuType == CpuType::MdM68k) {
 		_m68kState = _m68k->GetState();
 		return _m68kState;
 	}
@@ -376,7 +411,11 @@ BaseState& MdDebugger::GetState()
 
 void MdDebugger::SetM68kState(MdM68kState& state)
 {
-	_m68k->SetState(state);
+	if(_cpuType == CpuType::McdM68k) {
+		_mcd->GetCpu().SetState(state);
+	} else {
+		_m68k->SetState(state);
+	}
 }
 
 void MdDebugger::GetPpuState(BaseState& state)

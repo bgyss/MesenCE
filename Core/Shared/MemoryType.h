@@ -18,6 +18,7 @@ enum class MemoryType
 	WsMemory,
 	MdMemory,
 	MdZ80Memory,
+	McdMemory,
 
 	SnesPrgRom,
 	SnesWorkRam,
@@ -112,6 +113,13 @@ enum class MemoryType
 	MdPaletteRam,
 	MdVScrollRam,
 	MdTmssRom,
+
+	McdPrgRam,
+	McdWordRam,
+	McdBackupRam,
+	McdPcmRam,
+	McdCdcRam,
+	McdBios,
 
 	None
 };

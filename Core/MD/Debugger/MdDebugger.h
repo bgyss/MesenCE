@@ -18,6 +18,8 @@ class MdM68k;
 class MdZ80;
 class MdVdp;
 class MdMemoryManager;
+class McdUnit;
+class M68kCore;
 class MdEventManager;
 class MdM68kTraceLogger;
 class MdZ80TraceLogger;
@@ -40,6 +42,9 @@ class MdDebugger final : public IDebugger
 	MdZ80* _z80;
 	MdVdp* _vdp;
 	MdMemoryManager* _memoryManager;
+	McdUnit* _mcd = nullptr; //Sega CD unit (for CpuType::McdM68k, its sub CPU)
+	bool Is68k() { return _cpuType != CpuType::MdZ80; }
+	M68kCore* Get68k();
 	Disassembler* _disassembler;
 	MemoryAccessCounter* _memoryAccessCounter;
 

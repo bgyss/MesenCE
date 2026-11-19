@@ -194,7 +194,7 @@ uint16_t McdCdc::ReadHostData()
 	if(!_transfer.Ready) {
 		return 0xFFFF;
 	}
-	uint16_t data = _ram[(_transfer.Source >> 1) & 0x1FFF];
+	uint16_t data = RamWord(_transfer.Source);
 	_transfer.Source += 2;
 	//DBC counts bytes - 1; the transfer ends when it underflows (ares)
 	for(int i = 0; i < 2; i++) {
@@ -213,7 +213,7 @@ void McdCdc::DmaStep()
 	if(!_transfer.Active || (_transfer.Destination != PcmDma && _transfer.Destination != PrgRamDma && _transfer.Destination != WordRamDma)) {
 		return;
 	}
-	uint16_t data = _ram[(_transfer.Source >> 1) & 0x1FFF];
+	uint16_t data = RamWord(_transfer.Source);
 	_unit->CdcDmaWrite(_transfer.Destination, _transfer.Address, data);
 	//PCM RAM takes the word as two bytes (ares): the address moves 4 per word
 	_transfer.Address += _transfer.Destination == PcmDma ? 4 : 2;
@@ -247,17 +247,21 @@ void McdCdc::Decode(int32_t lba, const uint8_t* raw)
 		_transfer.Pointer += 2352;
 		_transfer.Target += 2352;
 		for(uint32_t i = 0; i < 12; i += 2) {
-			_ram[((_transfer.Pointer + i + 2340) >> 1) & 0x1FFF] = (raw[i] << 8) | raw[i + 1];
+			uint32_t a = (_transfer.Pointer + i + 2340) & 0x3FFE;
+			_ram[a] = raw[i];
+			_ram[a | 1] = raw[i + 1];
 		}
 		for(uint32_t i = 0; i < 2340; i += 2) {
-			_ram[((_transfer.Pointer + i) >> 1) & 0x1FFF] = (raw[12 + i] << 8) | raw[13 + i];
+			uint32_t a = (_transfer.Pointer + i) & 0x3FFE;
+			_ram[a] = raw[12 + i];
+			_ram[a | 1] = raw[13 + i];
 		}
 	}
 }
 
 void McdCdc::Serialize(Serializer& s)
 {
-	SVArray(_ram, 0x2000);
+	SVArray(_ram, 0x4000);
 	SV(_address);
 	SV(_transfer.Destination);
 	SV(_transfer.Address);

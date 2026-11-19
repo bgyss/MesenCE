@@ -16,7 +16,7 @@ protected:
 	RowDataType GetFormatTagType(string& tag) override;
 
 public:
-	MdM68kTraceLogger(Debugger* debugger, IDebugger* cpuDebugger, MdVdp* vdp);
+	MdM68kTraceLogger(Debugger* debugger, IDebugger* cpuDebugger, MdVdp* vdp, CpuType cpuType = CpuType::MdM68k);
 
 	void GetTraceRow(string& output, MdM68kState& cpuState, TraceLogPpuState& ppuState, DisassemblyInfo& disassemblyInfo);
 	void LogPpuState();
