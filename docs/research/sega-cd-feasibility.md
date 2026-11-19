@@ -2,7 +2,9 @@
 
 Snapshot: branch `md-support` at `a8453071`, 2026-11-18. Status: proposal; nothing implemented.
 
-**Status (2026-11-18): S2 done** (graphics chip, PCM, backup RAM, dot image, font registers,
+**Status (2026-11-18): S3 done** (CD drive and controller, CD audio, disc boot with the BIOS:
+7/7 BIOS versions found locally boot and reach their CD player; the RAM cartridge is left out for
+lack of a usable source; findings S3). **S2 done** (graphics chip, PCM, backup RAM, dot image, font registers,
 VDP DMA from word RAM; findings S2). **S1 done, except comparing against ares** (no ares capture
 harness yet).
 The Sega CD unit runs in Mode 1 behind the headless runner's `--md-mcd` test hook: sub CPU, program
@@ -163,7 +165,7 @@ Exit: all cases pass in CI; ares agrees, or each difference is explained.
   cartridge) saved as a battery file.
 - Pictures and per-chip audio captured and compared.
 
-**S3: discs**
+**S3: discs** (done 2026-11-18, without the RAM cartridge)
 - Disc selection by signature (with the PC Engine change above).
 - CD drive and CD controller with seek timing, subcode, and CD audio through the fader.
 - BIOS firmware handling.

@@ -401,3 +401,142 @@ busy case now uses underwrite, so wrong dots stay.
   moves to S3.
 - **PCM mix level and the graphics time formula:** both need hardware data.
 - **ares comparison:** still not done; there is no capture harness yet.
+
+## S3: discs, the CD drive and controller, CD audio, BIOS boot (2026-11-18)
+
+### What was added
+
+- **`McdCdc`:** the LC8951 CD data controller.
+  - Registers through `$FF8004`/`$FF8006`.
+  - Error-free decoding into its 16 KiB buffer.
+  - Host reads at `$FF8008` (sub CPU) and `$A12008` (main CPU).
+  - DMA to PCM RAM, program RAM and word RAM, one word per 6 sub cycles.
+  - Level 5.
+- **`McdCdd`:** the drive.
+  - Command and status nibbles at `$FF8038-$FF804B`, with checksum.
+  - TOC reading from the lead-in.
+  - Report requests: position, relative position, track, disc length, first/last track, track
+    start, errors.
+  - Seek/play/pause, with a seek time from the radial distance.
+  - Status interrupt (level 4) at 75 Hz.
+  - Data sectors into the CDC.
+  - Subcode buffer (level 6), filled with a Q channel computed from the position.
+  - CD audio at 44.1 kHz through the fader, mixed into the Mega Drive output.
+- **Disc boot (Mode 2):**
+  - A `.cue` whose first data sector starts with `SEGADISCSYSTEM` loads in the Mega Drive core;
+    `PceConsole` now returns `UnknownType` for such discs.
+  - The BIOS comes from firmware: `McdUsa`/`McdEurope`/`McdJapan`, chosen by the disc header's
+    region; UI hashes of the dumps tested here.
+  - The unit sits at `$000000`, and `$000072` reads the H-INT vector register.
+- **Headless runner:**
+  - `--md-mcd-disc` (a disc in Mode 1);
+  - `--md-mcd-bios`;
+  - `cdda.raw` in `--chip-audio`.
+
+### Sources
+
+| Behaviour | Source |
+|---|---|
+| CDC registers, IFSTAT/IFCTRL bits, DBC/DAC/WA/PT, CTRL0/1, STAT0-3, HEAD0-3, address register auto-increment | LC8950/LC8951 Design Manual §11, tables 7-8 |
+| `$FF8004`/`$A12004` (EDT, DSR, destinations), host data, DMA address bits | Hardware Manual pp. 26-27, 58 |
+| Buffer layout (sync at the tail), DMA every 6 cycles, DBC underflow bookkeeping, error-free decoder | ares `cdc.cpp`, `cdc-transfer.cpp` |
+| Drive protocol: command codes, report types and formats, checksum (`~sum & $F`), track start with the data flag in bit 3 of nibble 6 | ares `cdd.cpp` and MAME `megacdcd.cpp`, which agree. The Hardware Manual blacks the protocol out ("direct access prohibited"). |
+| 75 Hz status interrupt (13.3 ms) | BIOS Manual p. 5; ares (434 × 384 cycles) |
+| TOC read of 2 s from the lead-in, the 3-sector early landing of seeks, seek time `11 + 112.5 × Δradius` | ares only. MAME lands exactly on the target. |
+| Fader: FD10-FD0 in bits 14-4, `$400` = full volume, one step per sample | Hardware Manual p. 31 (22 µs per step); ares |
+| CD audio level: half scale | **Judgment call** following ares; no hardware level measured |
+| Subcode buffer packing; Q channel computed from the position rather than read from the image | ares packing. **Judgment call:** the image's own subchannel is not used. |
+
+### Tests
+
+`mcd_cd_data` uses a synthetic disc built by `mcd_cases.build_disc`: track 1 is 200 data sectors
+and track 2 is 100 audio sectors, written next to the cartridges by `gen.py`. It runs without the
+BIOS and checks:
+- the TOC report (tracks 1-2) once the drive is paused;
+- the start of track 2 (00:04:50, audio);
+- a sector's header (00:03:25, mode 1) and all 2048 data bytes read by the sub CPU (17 words
+  compared);
+- the next sector DMAed into word RAM;
+- 2000 CD audio samples equal to the disc's;
+- level 4 interrupts 434 stopwatch counts apart.
+
+**Replay cases:** `mcd_cd_busy`, `mcd_cd_seeking` and `mcd_cd_audio` put a CDC DMA, a decoder
+interrupt, a seek and a CD audio fade across the save point. `replay_check.py` gained a per-case
+save point (`replay_warmup`), and `cdda.raw` is now part of its audio continuity check.
+
+**`test:mcd-bios` (local only; needs the BIOS dumps):** 7 of 7 BIOS versions found here boot the
+synthetic disc:
+- US Model 1 v1.10, US Model 2 v2.00w and v2.21;
+- EU Model 1 v1.00 and Model 2 v2.00;
+- JP Model 1 v1.00p and Mega-CD 2 v2.00C.
+
+Each one plays its intro music through the PCM chip and reaches its CD player. For the four whose
+player starts on PLAY, pressing A/START plays track 2, and the CD audio output equals the disc
+sample for sample.
+
+**Reference check:** MAME 0.289's `segacd` driver (Nix binary) ran with the same BIOS
+(`mpr-15045b.bin`) and disc. Both reach "Press the START BUTTON" and then the CD player listing
+tracks 1-2. The player's elapsed time differs (00:06 here, 00:04 in MAME). That fits the different
+seek landing (LBA −8 here, −5 in MAME), so it is left as a known reference difference.
+
+### Bugs found with the BIOS
+
+- **The pregap belongs to track 1:**
+  - **Repro:** the US v1.10 BIOS seeks to 00:01:70/00:01:73 (LBA −8/−5) to read the boot area.
+  - **Symptom:** the drive treated negative LBAs as "no track" and never decoded or advanced, so the
+    BIOS fell back to its attract loop and never showed "Press the START BUTTON".
+  - **Fix:** LBAs −150 to −1 are track 1, as in ares. The track report now gives 01 there (00 only
+    in the lead-in before −150).
+  - **Regression test:** `test:mcd-bios`; the mutation that reverts the fix fails it.
+- **Seeks past the disc:**
+  - **Symptom:** a seek beyond the last sector left the drive "playing" with no track, stalled.
+  - **Fix:** it now reports the lead-out.
+  - **How it was found:** a wrong seek in the first version of `mcd_cd_busy`.
+
+### Checks of the checks
+
+- **Mutations:** 12/12 caught. They were:
+  - status checksum;
+  - last track;
+  - track start without the 2-second offset;
+  - header frame not BCD;
+  - the drive skipping a sector;
+  - sync not moved to the tail;
+  - the host data source not advancing;
+  - word RAM DMA going to program RAM;
+  - CD audio at full scale;
+  - audio advancing a sector early;
+  - pregap not part of track 1 (`test:mcd-bios`);
+  - a 75 Hz step every 400 ticks.
+
+  The last one was missed until the 434-count check was added.
+- **Replay:** dropping each of 12 fields from `Serialize` was caught:
+  - drive sector, drive status, 75 Hz counter, status pending, seek latency;
+  - CDC block pointer, decoder interrupt, transfer active;
+  - 44.1 kHz phase, sample offset, fader position and fader target.
+
+  Several were missed at first. Fixing that took the per-case save points, `cdda.raw` in the
+  replay comparison, publishing IFSTAT, and a fader toggled between half and zero (so the
+  power-on value never matches).
+- **Suites:**
+  - `test:md-synthetic`: 60/60, plus all MesenCE cases.
+  - `test:md-replay`: 92/92.
+  - `test:md-xarch` (x86-64 build of `9a2237cf`): 92/92 identical.
+  - `test:ci`: upstream and fork pass.
+- **Speed:** the BIOS intro and CD player run 3000 frames in 6.88 s (2.3 ms per frame, about 7x
+  real time).
+
+### Not done in S3
+
+- **RAM cartridge (backup RAM cartridge in the Mode 2 cartridge slot):** neither MAME nor ares
+  implements it, and the only implementation known to me (Genesis Plus GX) is under a
+  non-commercial licence. The BIOS manual describes its use, not its interface. Left out until a
+  usable source exists.
+- **Not modelled:**
+  - `.chd` images;
+  - CD-ROM XA (mode 2) sectors;
+  - read errors;
+  - de-emphasis;
+  - the CDC status FIFO (SBOUT);
+  - the gate array's forced reset.
+- **Commercial games:** none tested yet (S5; there are no Sega CD game images on this machine).
