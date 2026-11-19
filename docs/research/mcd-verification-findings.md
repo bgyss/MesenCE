@@ -6,10 +6,9 @@ documents or implementations agree; it is not a hardware test.
 
 ## S0: sources and design (2026-11-18)
 
-Status: S0 is done except for one source. The Mega-CD hardware manual could not be downloaded
-automatically (Sega Retro's wiki pages are behind bot protection), so register-level details for
-the gate array and the graphics chip still rest on ares and MAME. The manual still has to be read
-before those parts are written in S1/S2. Nothing here changes emulator code.
+Status: S0 is done. The Mega-CD hardware manual was supplied by the user (it couldn't be
+downloaded automatically) and checked against the plan in F6. Register-level details are read
+from it as each part is implemented in S1/S2. Nothing here changes emulator code.
 
 ### Sources pinned
 
@@ -18,6 +17,7 @@ before those parts are written in S1/S2. Nothing here changes emulator code.
 | ares `ares/md/mcd` | `65c6fc2f` (master, 2026-11-18; last change to `md/mcd` `0b9b8bce`, 2026-07-24) | ISC | Primary reference implementation |
 | MAME `src/mame/sega/megacd.cpp`, `src/mame/shared/megacdcd.cpp`, `src/devices/sound/rf5c68.cpp` | `ac08a4c2` (master, 2026-11-18) | BSD-3 | Second reference |
 | Sega, *Mega-CD BIOS Manual* | Ver 2.00, 1992-02-24 (Sega Retro scan, `MCDBios.pdf`) | Sega confidential document, read for facts only | Sub-CPU memory map, boot sequence, interrupt levels, CD drive behaviour |
+| Sega, *Mega-CD Hardware Manual* | Ver 1.0, 1991-10-14 (97-page scan; kept out of the repository) | Sega confidential document, read for facts only | Memory maps, register table, interrupts, timer, bus switching |
 | Sanyo, *LC8950 & LC8951 Design Manual* | Sega Retro scan (139 pages, OCR) | Read for facts only | CD controller registers |
 
 Genesis Plus GX was not consulted (non-commercial licence), as for the cartridge core.
@@ -26,22 +26,22 @@ Genesis Plus GX was not consulted (non-commercial licence), as for the cartridge
 
 | Figure | BIOS manual | LC8951 manual | ares | MAME | Status |
 |---|---|---|---|---|---|
-| Sub CPU is a 68000 at 12.5 MHz | | | `Thread::create(12'500'000)` | `SEGACD_CLOCK 12500000` | Two implementations; manual pending |
+| Sub CPU is a 68000 at 12.5 MHz | | | `Thread::create(12'500'000)` | `SEGACD_CLOCK 12500000` | Two implementations; the hardware manual doesn't state it but its timer step (30.72 µs = 384 / 12.5 MHz, F6) agrees |
 | Program RAM 512 KiB at sub `$000000-$07FFFF`, vectors at `$000000` | Memory map p. 4 (`$000000` vectors to `$07FFFF`) | | `pram 512_KiB`, sub bus `0x000000-0x07ffff` | | Two sources |
-| Program RAM write protection, in 512-byte units | "Write protect area" `$000000-$005400` (p. 4) | | `address >= pramProtect << 9` | | Two sources (the unit size is from ares) |
-| Word RAM 256 KiB; sub `$080000-$0BFFFF` (2M) or `$0C0000-$0DFFFF` (1M bank) | | | `wram 256_KiB`, sub bus decode | | One implementation |
-| Main CPU sees program RAM only while it holds the sub CPU's bus | Mode 1 boot transfers programs before releasing the sub CPU (p. 30) | | `if(!io.request) return data` | | Two sources |
-| 1M mode "cell image" view at main `$220000-$23FFFF` (four address-swizzle ranges) | | | `bus-external.cpp` | | One implementation |
+| Program RAM write protection, in 512-byte units | "Write protect area" `$000000-$005400` (p. 4) | | `address >= pramProtect << 9` | | Hardware manual: `$000000-$01FDFF` in `$200` units, set by main `$A12002` (F6) |
+| Word RAM 256 KiB; sub `$080000-$0BFFFF` (2M) or `$0C0000-$0DFFFF` (1M bank) | | | `wram 256_KiB`, sub bus decode | | Hardware manual pp. 12-16 (F6) |
+| Main CPU sees program RAM only while it holds the sub CPU's bus or holds it in reset | Mode 1 boot transfers programs before releasing the sub CPU (p. 30) | | `if(!io.request) return data` | | Hardware manual p. 6: SBRQ=1 or SRES=0 in `$A12001` (F6) |
+| 1M mode "cell image" view at main `$220000-$23FFFF` (four address-swizzle ranges) | | | `bus-external.cpp` | | Hardware manual p. 16: the same four ranges (F6) |
 | VDP DMA from word RAM goes through a one-word latch | | | `wramLatch` while `vdp.dma.active` | | One implementation; the effect (games add 2 to the source) is folklore until a test shows it |
-| Main CPU's level 4 (H-INT) vector redirected by the gate array | | | `io.vectorLevel4` returned at `$70/$72` | | One implementation |
+| Main CPU's level 4 (H-INT) vector redirected by the gate array | | | `io.vectorLevel4` returned at `$70/$72` | | Hardware manual register table: main `$A12006` "H-INT vector" (F6) |
 | Sub CPU interrupts: 2 = from main ("software V-INT"), 4 = CD drive, 5 = CD controller, 6 = subcode | p. 5 ("level 2 (software V-INT)", "level 4 (CDD)", "level 5 (CDC)", "level 6 (SCD)") | | IRQ sources | | Two sources |
-| Sub CPU interrupts: 1 = graphics, 3 = timer | | | IRQ sources | | One implementation |
+| Sub CPU interrupts: 1 = graphics (2M mode only), 3 = timer | | | IRQ sources | | Hardware manual pp. 15, 30 (F6) |
 | CD drive interrupt every 13.3 ms (75 Hz) | p. 5 ("level 4 interrupts with 13.3 msec interval") | | | | Manual |
 | CD controller buffer 16 KiB, "up to 5 frames" | p. 1 | | `cdc.ram 16_KiB` | | Two sources |
 | Subcode buffer: 128 bytes in the gate array | p. 1 | | `cdd.subcode[64]` (words) | | Two sources |
 | Backup RAM 8 KiB at sub `$FE0000` (odd bytes) | p. 1 ("up to 8K bytes") | | `bram 8_KiB`, sub `0xfe0000-0xfeffff` | | Two sources (address from ares) |
 | PCM: RF5C164, 8 channels, 64 KiB, output at 12.5 MHz / 384 | p. 1 ("[SDC] PCM sound generator chip") | | `pcm.ram 64_KiB`, `12'500'000 / 384.0` | `RF5C164(..., SEGACD_CLOCK)` | Two implementations |
-| CD controller, CD drive, timer and PCM clocked from one 12.5 MHz / 384 divider | | | `MCD::step` | | One implementation |
+| CD controller, CD drive, timer and PCM clocked from one 12.5 MHz / 384 divider | | | `MCD::step` | | Timer: hardware manual p. 30 (30.72 µs per count); the others one implementation |
 | Fader volume `$000-$400`, master volume, emphasis flag | p. 23 | | | | Manual |
 | LC8951: 16 registers selected through an address register that auto-increments (not at R0) | | §11.1 | `cdc.cpp` | | Manual |
 | LC8951 read registers: COMIN, IFSTAT, DBCL/H, HEAD0-3, PTL/H, WAL/H, STAT0-3 | | Table 7 | | | Manual |
@@ -120,9 +120,57 @@ The S3 change: check for `SEGADISCSYSTEM` in the first data sector, and have bot
 `UnknownType` for discs that aren't theirs. This needs a regression test that a PC Engine CD image
 still loads.
 
+### F6. Hardware manual check (Ver 1.0, 1991-10-14)
+
+Read: system modes (p. 5), bus construction (pp. 6-10), mapping (pp. 12-17), register table
+(p. 19), timer and interrupt mask (p. 30). Page numbers are the manual's own.
+
+- **System modes (p. 5).**
+  - Mode 1 (boot from cartridge): cartridge at main `$000000`, the boot ROM from `$400000`.
+  - Mode 2 (boot from disc): cartridge area at `$400000-$7FFFFF`, the boot ROM from `$000000`.
+  - This matches the plan.
+- **Bus switching (p. 6).** Each memory has its own bus selector and is accessed without wait
+  states when nothing else competes for it. Who owns each memory:
+  - Program RAM goes to the main CPU when `$A12001` has SBRQ=1 (bus request) or SRES=0 (sub CPU
+    held in reset). The plan said "holds the bus"; reset also counts.
+  - Word RAM: bank 0 goes to the main side when RET=1 in 2M mode or RET=0 in 1M mode. Bank 1
+    goes to the main side when RET=1, in either mode. RET is set from the sub side at `$FF8002`.
+  - Refresh, CD DMA and the graphics chip are bus masters on the same selectors (pp. 7-10). S1
+    needs a decision on modelling their contention; the manual gives no cycle counts.
+- **Sub CPU map (pp. 14-15).**
+  - Program RAM `$000000-$07FFFF`, write-protectable from `$000000` to `$01FDFF` in `$200` units
+    through main `$A12002`.
+  - `$080000-$0BFFFF`: word RAM in 2M mode; in 1M mode, a "dot image" (decoded format, one 4-bit
+    pixel per byte).
+  - `$0C0000-$0DFFFF`: the sub CPU's 1M bank in 1M mode, unassigned in 2M mode.
+  - Backup RAM `$FE0000-$FE3FFF`, odd bytes only (8 KiB).
+  - PCM `$FF0000-$FF3FFF`, lower byte only.
+  - Sub registers `$FF8000-$FF81FF`.
+- **Main CPU map (p. 16).**
+  - Boot ROM `$000000-$01FFFF`.
+  - Program RAM window `$020000-$03FFFF`.
+  - Word RAM `$200000-$23FFFF`. In 1M mode it is the bank at `$200000-$21FFFF`, plus cell-image
+    views at `$220000` (32 cells), `$230000` (16), `$238000` (8), and `$23C000`/`$23E000` (4).
+    These are the same four ranges as ares.
+- **Register table (p. 19).** Main `$A12000-$A1202F` and sub `$FF8000-$FF8057` are as in the
+  plan: reset/INT2, memory mode and write protect, CDC mode/host data, H-INT vector (main only),
+  stop watch, communication flags/command/status, timer, interrupt mask, fader, CDD
+  control/status/command, font colour/bit/data. The graphics chip's registers run up to
+  `$FF8066`.
+- **Interrupts (pp. 15, 30).**
+  - Levels 1-6 as in F1; level 1 (graphics) is raised only in 2M mode.
+  - Each level has an enable bit in `$FF8032`. The manual advises that level 2 be issued from the
+    main CPU's V-INT.
+- **Timer (p. 30).**
+  - 8-bit, counts down from n every 30.72 µs; reaching 0 raises level 3; the interval is
+    (n+1) × 30.72 µs.
+  - 30.72 µs is exactly 384 cycles of 12.5 MHz, which agrees with ares' /384 divider and the
+    12.5 MHz clock. The manual itself never states the CPU clock.
+
 ### Open for S1
 
-- Read the Mega-CD hardware manual (gate array registers at `$A12000`/`$FF8000`, word RAM
-  switching, the graphics chip). Every row above marked "one implementation" should get a second
-  source or be labelled as ares-only in the code.
+- Contention between the sub CPU, refresh, CD DMA and the graphics chip on program RAM and word
+  RAM: the manual says who can access what, not how long it takes. Judgment call for S1: no wait
+  states at first (as the manual says for the uncontended case), labelled as an approximation.
+- The VDP DMA word-RAM latch remains ares-only; it needs a test that shows the effect.
 - Licences of `mcd-verificator` and the 240p Test Suite, before anything is vendored.

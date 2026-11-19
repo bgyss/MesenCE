@@ -2,12 +2,13 @@
 
 Snapshot: branch `md-support` at `a8453071`, 2026-11-18. Status: proposal; nothing implemented.
 
-**Status (2026-11-18): S0 done, except reading the Mega-CD hardware manual** (it couldn't be
-downloaded automatically). Results are in [`mcd-verification-findings.md`](mcd-verification-findings.md):
+**Status (2026-11-18): S0 done.** Results are in [`mcd-verification-findings.md`](mcd-verification-findings.md):
 - the figures below are checked against the BIOS manual, the LC8951 manual, ares and MAME (F1);
 - Mode 1 testing without the BIOS is supported by two sources (F2);
 - timebase: master clocks plus an exact remainder for the sub CPU (F3);
-- a second 68000 measured at +28% frame time (F4).
+- a second 68000 measured at +28% frame time (F4);
+- the Mega-CD hardware manual agrees with the plan's memory maps, registers and interrupts. One
+  correction: the main CPU also gets program RAM while it holds the sub CPU in reset (F6).
 
 ## Decision
 
@@ -28,8 +29,9 @@ Recommended direction:
 - Bring it up in **Mode 1** first (a cartridge running with the Sega CD attached). In Mode 1 the
   main CPU loads the sub CPU's program into program RAM itself, so synthetic test cartridges can
   drive the whole unit **without Sega's BIOS**. That keeps the tests runnable in CI, where
-  copyrighted BIOS files can't go. (Judgment: this follows from the memory map below; confirm
-  against the hardware manual in S0.)
+  copyrighted BIOS files can't go. (Supported by the BIOS manual's Mode 1 boot sequence and the
+  sub CPU memory map in both manuals, findings F2 and F6. The first S1 test confirms it in the
+  emulator.)
 - Use ares (ISC) as the main reference and MAME (BSD-3) as the second. Don't use Genesis Plus GX
   (non-commercial licence), as for the cartridge core.
 - Add the disc path (BIOS boot, CD drive, CD audio) after Mode 1 is verified.
@@ -132,7 +134,7 @@ progress according to the gendev thread above.
 
 ## Milestones
 
-**S0: sources and design** (done 2026-11-18, except the hardware manual; findings S0)
+**S0: sources and design** (done 2026-11-18; findings S0)
 - Read the Mega-CD hardware and BIOS manuals and the LC8951 and RF5C164 datasheets. Correct the
   table above where they differ.
 - Pin an ares revision for reference.
