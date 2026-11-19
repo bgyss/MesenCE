@@ -275,12 +275,16 @@ def main():
                 if seg_err:
                     problems.append(seg_err)
                 else:
+                    values = []
                     for idx, got in vals:
                         op = ops[idx]
+                        value = got[0][2] if op.width != 4 else (got[0][2] << 16) | got[1][2]
+                        values.append(value)
                         if op.compare_mask:
-                            value = got[0][2] if op.width != 4 else (got[0][2] << 16) | got[1][2]
                             if (value & op.compare_mask) != (op.value & op.compare_mask):
                                 problems.append("step %d read $%X, case expects $%X under mask $%X" % (idx, value, op.value, op.compare_mask))
+                    if case.name in extra_cases.DERIVED_CHECKS:
+                        problems += extra_cases.DERIVED_CHECKS[case.name](values)
             extra_fail += bool(problems)
             print("%-5s %s (MesenCE case, expected values)" % ("FAIL" if problems else "pass", case.name))
             for p in problems[:4]:

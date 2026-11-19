@@ -9,8 +9,11 @@ followed by C's, A's YM2612 and PSG streams (--chip-audio) must equal B's follow
 sample (audio phase), and C's final picture and memories must equal A's. Cases with scripted pad
 input (e.g. the 6-button handshake) get it in all three runs.
 This catches state that Serialize misses even when it only shows up in later bus events.
+Finally, A's and C's final save states must hold the same value for every field (a field that is
+saved but restored wrongly, or state that drifts after a load, shows up here even when no later bus
+event depends on it).
 """
-import argparse, json, pathlib, subprocess, sys, tempfile
+import argparse, json, pathlib, struct, subprocess, sys, tempfile, zlib
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
@@ -34,6 +37,39 @@ def run(runner, rom, spec, out, frames, extra):
 
 def trace(path):
     return [l for l in path.read_text().splitlines() if not l.startswith("#")]
+
+
+#Fields that legitimately differ after a load: the runner refreshes input once more on a state load
+#(tools/headless-runner, findings R4), which advances the poll counter
+STATE_FIELDS_IGNORED = {"controlManager.pollCounter"}
+
+
+def state_fields(path):
+    """The emulation state of a .mss file as {key: bytes}: the largest zlib stream holds the
+    serializer's "key\0 + uint32 length + data" records (the other one is the screenshot)."""
+    data = path.read_bytes()
+    best = b""
+    i = 0
+    while i < len(data) - 2:
+        if data[i] == 0x78 and data[i + 1] in (0x01, 0x5E, 0x9C, 0xDA):
+            d = zlib.decompressobj()
+            try:
+                raw = d.decompress(data[i:])
+            except zlib.error:
+                raw = b""
+            if d.eof and raw:
+                best = raw if len(raw) > len(best) else best
+                i = len(data) - len(d.unused_data)
+                continue
+        i += 1
+    fields, pos = {}, 0
+    while pos < len(best):
+        end = best.index(b"\0", pos)
+        key = best[pos:end].decode("ascii", "replace")
+        (size,) = struct.unpack_from("<I", best, end + 1)
+        fields[key] = best[end + 5:end + 5 + size]
+        pos = end + 5 + size
+    return fields
 
 
 def main():
@@ -71,6 +107,12 @@ def main():
             for f in ["final.png"] + sorted(p.relative_to(a).as_posix() for p in (a / "memory").iterdir()):
                 if (a / f).read_bytes() != (c / f).read_bytes():
                     problems.append(f + " differs")
+            sa, sc = state_fields(a / "final.mss"), state_fields(c / "final.mss")
+            differing = sorted(k for k in sa.keys() | sc.keys() if k not in STATE_FIELDS_IGNORED and sa.get(k) != sc.get(k))
+            if not sa:
+                problems.append("final.mss: no state found")
+            elif differing:
+                problems.append("final state differs in %d field(s): %s" % (len(differing), ", ".join(differing[:6])))
             print("%-5s %s" % ("FAIL" if problems else "ok", name))
             for p in problems[:4]:
                 print("      " + p)

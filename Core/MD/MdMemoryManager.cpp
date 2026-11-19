@@ -10,6 +10,7 @@
 #include "Shared/EmuSettings.h"
 #include "Shared/BatteryManager.h"
 #include "MD/MdEeprom.h"
+#include "MD/Mcd/McdUnit.h"
 #include "Utilities/Sha256.h"
 #include "Shared/CheatManager.h"
 #include "Shared/MemoryType.h"
@@ -123,6 +124,9 @@ void MdMemoryManager::SyncAfterM68kInstruction()
 	ApplyRefresh();
 	_vdp->Run(_masterClock);
 	_z80->Run(_masterClock, IsZ80Held());
+	if(_mcd) {
+		_mcd->Run(_masterClock);
+	}
 	_m68k->SetInterruptLevel(_vdp->GetM68kInterruptLevel());
 	if(_vdp->IsZ80InterruptActive()) {
 		_z80->SetIrqSource(SmsIrqSource::Vdp);
@@ -273,6 +277,9 @@ uint16_t MdMemoryManager::M68kRead(bool upper, bool lower, uint32_t addr, M68kAc
 			} else if(addr < 0xA10020) {
 				uint8_t value = ReadIo(addr | 1);
 				return (value << 8) | value;
+			} else if(_mcd && (addr & 0xFFFF00) == 0xA12000) {
+				_mcd->Run(_masterClock);
+				return _mcd->MainReadRegister(addr);
 			} else {
 				return ReadControlRegister(addr, _m68k->GetRegisters().Irc);
 			}
@@ -293,8 +300,17 @@ uint16_t MdMemoryManager::M68kRead(bool upper, bool lower, uint32_t addr, M68kAc
 		case 7:
 			return (_workRam[addr & 0xFFFF] << 8) | _workRam[(addr & 0xFFFF) | 1];
 
+		case 2:
+		case 3:
+			//$400000-$7FFFFF: the Sega CD unit in Mode 1 (nothing connected otherwise)
+			if(_mcd) {
+				_mcd->Run(_masterClock);
+				return _mcd->MainRead(addr - 0x400000, _m68k->GetRegisters().Irc);
+			}
+			return _m68k->GetRegisters().Irc;
+
 		default:
-			//$400000-$9FFFFF: expansion and 32X space, nothing connected
+			//$800000-$9FFFFF: 32X space, nothing connected
 			return _m68k->GetRegisters().Irc;
 	}
 }
@@ -335,6 +351,9 @@ void MdMemoryManager::M68kWrite(bool upper, bool lower, uint32_t addr, uint16_t 
 				if(lower) {
 					WriteIo(addr | 1, (uint8_t)value);
 				}
+			} else if(_mcd && (addr & 0xFFFF00) == 0xA12000) {
+				_mcd->Run(_masterClock);
+				_mcd->MainWriteRegister(addr, upper, lower, value);
 			} else {
 				if(upper) {
 					WriteControlRegister(addr, value >> 8, true);
@@ -372,6 +391,14 @@ void MdMemoryManager::M68kWrite(bool upper, bool lower, uint32_t addr, uint16_t 
 			}
 			if(lower) {
 				_workRam[(addr & 0xFFFF) | 1] = (uint8_t)value;
+			}
+			break;
+
+		case 2:
+		case 3:
+			if(_mcd) {
+				_mcd->Run(_masterClock);
+				_mcd->MainWrite(addr - 0x400000, upper, lower, value);
 			}
 			break;
 
@@ -420,7 +447,7 @@ uint8_t MdMemoryManager::ReadIo(uint32_t addr)
 	switch(addr & 0x1F) {
 		case 0x01:
 			//Version: bit 7 overseas, bit 6 PAL, bit 5 no expansion unit, bits 3-0 version (1 = TMSS)
-			return (_isOverseas ? 0x80 : 0) | (_isPal ? 0x40 : 0) | 0x20 | (_hasTmss ? 0x01 : 0x00);
+			return (_isOverseas ? 0x80 : 0) | (_isPal ? 0x40 : 0) | (_mcd ? 0 : 0x20) | (_hasTmss ? 0x01 : 0x00);
 
 		case 0x03:
 		case 0x05:
@@ -642,12 +669,14 @@ uint8_t MdMemoryManager::DebugRead(uint32_t addr)
 		return ReadCartByte(addr);
 	} else if(addr >= 0xE00000) {
 		return _workRam[addr & 0xFFFF];
+	} else if(_mcd && addr < 0x800000) {
+		return _mcd->DebugMainRead(addr - 0x400000);
 	} else if(addr >= 0xA00000 && addr < 0xA04000) {
 		return _z80Ram[addr & 0x1FFF];
 	} else if(addr >= 0xA10000 && addr < 0xA10020) {
 		if(addr & 1) {
 			switch(addr & 0x1F) {
-				case 0x01: return (_isOverseas ? 0x80 : 0) | (_isPal ? 0x40 : 0) | 0x20 | (_hasTmss ? 0x01 : 0x00);
+				case 0x01: return (_isOverseas ? 0x80 : 0) | (_isPal ? 0x40 : 0) | (_mcd ? 0 : 0x20) | (_hasTmss ? 0x01 : 0x00);
 				case 0x03: return _state.Io.Data[0];
 				case 0x05: return _state.Io.Data[1];
 				case 0x07: return _state.Io.Data[2];

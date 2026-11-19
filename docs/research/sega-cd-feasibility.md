@@ -2,7 +2,13 @@
 
 Snapshot: branch `md-support` at `a8453071`, 2026-11-18. Status: proposal; nothing implemented.
 
-**Status (2026-11-18): S0 done.** Results are in [`mcd-verification-findings.md`](mcd-verification-findings.md):
+**Status (2026-11-18): S1 done, except comparing against ares** (no ares capture harness yet).
+The Sega CD unit runs in Mode 1 behind the headless runner's `--md-mcd` test hook: sub CPU, program
+and word RAM, gate array registers, timer, stopwatch and the level 2/3 interrupts, covered by seven
+`mcd_*` synthetic cases (findings S1). Not yet: BIOS, discs, PCM, graphics chip, backup RAM,
+debugger and a UI setting.
+
+**S0 (done).** Results are in [`mcd-verification-findings.md`](mcd-verification-findings.md):
 - the figures below are checked against the BIOS manual, the LC8951 manual, ares and MAME (F1);
 - Mode 1 testing without the BIOS is supported by two sources (F2);
 - timebase: master clocks plus an exact remainder for the sub CPU (F3);
@@ -49,7 +55,7 @@ copies could not be fetched automatically when this was written.
 | Sub CPU | 68000 at 12.5 MHz (its own crystal, unrelated to the Mega Drive's 53.69 MHz) | Reuse `M68kCore` |
 | Program RAM | 512 KiB, sub CPU's main memory (its vectors are at `$000000`) | Main CPU sees a 128 KiB window, bank-selected, only while it holds the sub CPU's bus; write protection in 512-byte units |
 | Word RAM | 256 KiB shared between the CPUs | 2M mode: one CPU owns all of it, ownership swapped by handshake. 1M mode: two 128 KiB banks, one per CPU, plus a "cell image" view for the main CPU |
-| Gate array | Registers at `$A12000` (main) and `$FF8000` (sub): reset/bus request of the sub CPU, word RAM mode and ownership, 8+8 communication words and flags, interrupts | Main CPU gets a level 2 interrupt from the sub CPU |
+| Gate array | Registers at `$A12000` (main) and `$FF8000` (sub): reset/bus request of the sub CPU, word RAM mode and ownership, 8+8 communication words and flags, interrupts | The main CPU raises level 2 on the sub CPU (IFL2); nothing interrupts the main CPU (corrected in S1, findings S1) |
 | Sub CPU interrupts | 1 graphics, 2 from main CPU, 3 timer, 4 CD drive, 5 CD controller, 6 subcode | Order matches ares' IRQ sources |
 | Timer | 8-bit, ticks at 12.5 MHz / 384 | ares clocks CDC, CDD, timer and PCM from the same /384 divider |
 | Graphics chip | Rotates and scales 16x16 or 32x32 "stamps" from word RAM into an image in word RAM | Used for Mode 7-like effects (Batman Returns, Sol-Feace intro) |
@@ -79,8 +85,8 @@ copies could not be fetched automatically when this was written.
   - The expansion area (`$000000-$3FFFFF` with no cartridge, `$400000-$7FFFFF` in Mode 1) and
     `$A12000-$A1202F` are currently "nothing connected" in `MdMemoryManager`.
   - The version register's bit 5 ("no expansion unit") must clear when the unit is attached.
-  - Level 2 is already used by the light-gun HL input (`MdVdp::TriggerExternalInterrupt`), so the
-    gate array's interrupt needs to join that path.
+  - (Corrected in S1: the gate array does not interrupt the main CPU, so the light-gun level 2
+    path is unaffected. The main CPU's level 2 write goes to the sub CPU.)
   - VDP DMA from word RAM has a known one-word offset that games compensate for. It needs a test
     and a source before it is modelled.
 - **Save states.** The unit adds about 860 KiB of RAM (program 512 KiB, word 256 KiB, PCM 64 KiB,
@@ -142,9 +148,9 @@ progress according to the gendev thread above.
 
 Exit: a findings entry for every figure the core relies on, with its source.
 
-**S1: Mode 1 core, no BIOS**
+**S1: Mode 1 core, no BIOS** (done 2026-11-18 except the comparison with ares; findings S1)
 - Sub 68000, gate array, program RAM, both word RAM modes, communication registers, timer, and
-  interrupts in both directions.
+  interrupts (main to sub; the sub CPU cannot interrupt the main CPU).
 - Synthetic Mode 1 cartridges in `tests/MD/synthetic` (new `mcd_*` cases) with expected values.
 - Save-state replay and cross-architecture checks.
 

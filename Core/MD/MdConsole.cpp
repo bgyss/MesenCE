@@ -9,6 +9,7 @@
 #include "MD/MdEeprom.h"
 #include "MD/MdControlManager.h"
 #include "MD/MdDefaultVideoFilter.h"
+#include "MD/Mcd/McdUnit.h"
 #include "Shared/Emulator.h"
 #include "Shared/EmuSettings.h"
 #include "Shared/BatteryManager.h"
@@ -115,6 +116,11 @@ LoadRomResult MdConsole::LoadRom(VirtualFile& romFile)
 	_apu->Init(_emu, this, isPal);
 	_z80->Init(_emu, this, _memoryManager.get());
 	_m68k->Init(_emu, this, _memoryManager.get(), _vdp.get());
+	if(McdUnit::IsAttachedOverride()) {
+		_mcd.reset(new McdUnit());
+		_mcd->Init(this, GetMasterClockRate());
+		_memoryManager->SetMcd(_mcd.get());
+	}
 	_m68k->PowerOn();
 	_controlManager->UpdateControlDevices();
 	return LoadRomResult::Success;
@@ -273,4 +279,7 @@ void MdConsole::Serialize(Serializer& s)
 	SV(_apu);
 	SV(_memoryManager);
 	SV(_controlManager);
+	if(_mcd) {
+		SV(_mcd);
+	}
 }

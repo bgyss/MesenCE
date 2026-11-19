@@ -13,12 +13,14 @@ class MdVdp;
 class MdApu;
 class MdControlManager;
 class MdEepromDevice;
+class McdUnit;
 
 // The Mega Drive bus (Sega Genesis Software Manual: memory map, system I/O, Z80 control):
 //
-//   68000: $000000-$3FFFFF cartridge ROM (and battery RAM per the header), $A00000-$A0FFFF
+//   68000: $000000-$3FFFFF cartridge ROM (and battery RAM per the header), $400000-$7FFFFF the
+//          Sega CD unit when attached (Mode 1), $A00000-$A0FFFF
 //          Z80 area (RAM, YM2612, bank register; only while the 68000 holds the Z80 bus),
-//          $A10000-$A1001F I/O, $A11100 BUSREQ, $A11200 Z80 RESET, $A130F1 SRAM control,
+//          $A10000-$A1001F I/O, $A11100 BUSREQ, $A11200 Z80 RESET, $A12000 Sega CD registers, $A130F1 SRAM control,
 //          $A14000 TMSS, $C00000-$DFFFFF VDP/PSG, $E00000-$FFFFFF 64 KiB work RAM (mirrored).
 //   Z80:   $0000-$3FFF 8 KiB RAM (mirrored), $4000-$5FFF YM2612, $6000 bank register,
 //          $7F00-$7F1F VDP/PSG, $8000-$FFFF 32 KiB window into the 68000 space.
@@ -36,6 +38,8 @@ private:
 	MdVdp* _vdp = nullptr;
 	MdApu* _apu = nullptr;
 	MdControlManager* _controlManager = nullptr;
+	//Sega CD unit (Mode 1), when attached: $400000-$7FFFFF and $A12000-$A120FF (Mcd/McdUnit.h)
+	McdUnit* _mcd = nullptr;
 
 	vector<uint8_t> _rom;
 	uint32_t _romMask = 0;
@@ -108,6 +112,7 @@ public:
 
 	void Init(Emulator* emu, MdConsole* console, vector<uint8_t>& romData, MdM68k* m68k, MdZ80* z80, MdVdp* vdp, MdApu* apu, MdControlManager* controlManager, bool isPal, bool isOverseas, bool hasTmss);
 
+	void SetMcd(McdUnit* mcd) { _mcd = mcd; }
 	MdMemoryManagerState& GetState() { return _state; }
 	uint64_t GetMasterClock() { return _masterClock; }
 

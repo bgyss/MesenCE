@@ -294,10 +294,24 @@ def _accessory_cases():
 #Extra mesen-headless options per case (gen.py copies them into the run spec)
 RUNNER_ARGS = {}
 
+#Checks across several reads of one case (compare.py): name -> function(READ values) -> problems
+DERIVED_CHECKS = {}
+
 #Cases checked on their picture by their own script (their steps run until the capture ends, so
 #compare.py's expected-read check does not apply): tests/MD/midline/check_midline.py
 PICTURE_ONLY = {"vdp_midline_cram_h32", "vdp_midline_cram_h40"}
 
 
+def _mcd_cases():
+    """Sega CD unit in Mode 1 (mcd_cases.py), run with --md-mcd."""
+    import mcd_cases
+    found = mcd_cases.all_cases()
+    for case in found:
+        RUNNER_ARGS[case.name] = list(mcd_cases.RUNNER_ARGS_MCD)
+    DERIVED_CHECKS.update(mcd_cases.DERIVED_CHECKS)
+    return found
+
+
 def all_cases():
-    return [_pad6_across_frame(), _bank_mapper()] + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)] + _accessory_cases()
+    return ([_pad6_across_frame(), _bank_mapper()] + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)] +
+            _accessory_cases() + _mcd_cases())

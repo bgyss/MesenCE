@@ -11,6 +11,7 @@ class MdVdp;
 class MdApu;
 class MdMemoryManager;
 class MdControlManager;
+class McdUnit;
 
 // Sega Mega Drive / Genesis base console: 68000, Z80, VDP, YM2612 + PSG, two pad ports.
 // See docs/research/mega-drive-genesis-feasibility.md and md-verification-findings.md.
@@ -24,6 +25,7 @@ private:
 	unique_ptr<MdApu> _apu;
 	unique_ptr<MdMemoryManager> _memoryManager;
 	unique_ptr<MdControlManager> _controlManager;
+	unique_ptr<McdUnit> _mcd; //Sega CD unit, when attached (Mode 1)
 
 	ConsoleRegion _region = ConsoleRegion::Ntsc;
 	std::function<void(const MdBusEvent&)> _busObserver;
@@ -48,6 +50,7 @@ public:
 	MdApu* GetApu() { return _apu.get(); }
 	MdMemoryManager* GetMemoryManager() { return _memoryManager.get(); }
 	MdModel GetModel() { return _model; }
+	McdUnit* GetMcd() { return _mcd.get(); }
 
 	//Optional bus observer (headless trace capture); unset during normal emulation
 	void SetBusObserver(std::function<void(const MdBusEvent&)> observer) { _busObserver = observer; }

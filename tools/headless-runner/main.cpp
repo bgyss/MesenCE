@@ -49,6 +49,7 @@
 #include "MD/MdConsole.h"
 #include "MD/MdApu.h"
 #include "MD/MdEeprom.h"
+#include "MD/Mcd/McdUnit.h"
 #include "Shared/BaseControlManager.h"
 #include "Utilities/Sha256.h"
 
@@ -350,6 +351,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 	uint32_t frames = 0;
 	double timeout = 0;
 	bool allowDirty = false;
+	bool mdMcd = false;
 	for(size_t i = 0; i < args.size(); i++) {
 		auto next = [&]() -> string {
 			if(i + 1 >= args.size()) {
@@ -385,6 +387,8 @@ static int Run(const vector<string>& args, const string& commandLine)
 			mdFmCore = next();
 		} else if(args[i] == "--md-eeprom") {
 			mdEeprom = next();
+		} else if(args[i] == "--md-mcd") {
+			mdMcd = true;
 		} else if(args[i] == "--trace-limit") {
 			traceLimit = std::stoull(next());
 		} else if(args[i] == "--allow-dirty") {
@@ -508,6 +512,8 @@ static int Run(const vector<string>& args, const string& commandLine)
 			eepromInfo = { *chip, *board };
 		}
 		MdEepromDatabase::SetOverride(eepromInfo);
+		//Test hook: attach the Sega CD unit (Mode 1; no BIOS, discs or UI setting yet)
+		McdUnit::SetAttachedOverride(mdMcd);
 		MessageManager::SetOptions(false, false);
 		emu.Initialize(false);
 		if(!emu.LoadRom(VirtualFile(fs::absolute(rom).string()), VirtualFile(), false)) {
@@ -526,6 +532,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 			{ "power_on", "TestMode, RAM all zeros" },
 			{ "controllers", "standard pads on ports 1-2" },
 			{ "md_model", mdModel },
+			{ "md_mcd", mdMcd },
 			{ "md_pads", mdPads },
 			{ "md_fm_core", mdFmCore },
 			{ "md_eeprom", mdEeprom.empty() ? "database" : mdEeprom },

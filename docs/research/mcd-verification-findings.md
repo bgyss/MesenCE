@@ -174,3 +174,135 @@ Read: system modes (p. 5), bus construction (pp. 6-10), mapping (pp. 12-17), reg
   states at first (as the manual says for the uncontended case), labelled as an approximation.
 - The VDP DMA word-RAM latch remains ares-only; it needs a test that shows the effect.
 - Licences of `mcd-verificator` and the 240p Test Suite, before anything is vendored.
+
+## S1: Mode 1 core without the BIOS (2026-11-18)
+
+### What was added
+
+- `Core/MD/Mcd/McdUnit.{h,cpp}`:
+  - The sub CPU (`McdM68k`, the same ares-derived `M68kCore` as the main CPU) on its own bus.
+  - 512 KiB program RAM and 256 KiB word RAM.
+  - Gate array registers: main `$A12000-$A120FF`, sub `$FF8000-$FF81FF`.
+  - Timer, stopwatch and interrupt levels 2 and 3.
+- `MdMemoryManager`:
+  - Main `$400000-$7FFFFF` and `$A12000-$A120FF` go to the unit when it is attached.
+  - The version register's bit 5 clears.
+  - The sub CPU catches up after every main instruction and before every main access to the unit.
+- Attaching: `mesen-headless --md-mcd` only (a test hook like `--md-eeprom`). There is no UI
+  setting yet, and nothing changes when the unit is not attached.
+
+### Sources by behaviour
+
+| Behaviour | Source |
+|---|---|
+| Mode 1 map: boot ROM `$400000`, program RAM window `$420000`, word RAM `$600000`; address bits 18-20 not decoded | Hardware Manual pp. 5, 12, 16; mirrors from ares |
+| `$A12000`: SRES, SBRQ, IFL2 (level 2 to the sub CPU), IEN2 (read: the sub CPU's level 2 enable) | Hardware Manual p. 56; ares `io-external.cpp` |
+| SRES = 0 forces the bus request | ares (comment: confirmed by Eke-Eke) |
+| Main CPU has program RAM while SBRQ = 1 or SRES = 0; bank in `$A12003` bits 7-6 | Hardware Manual pp. 6, 57 |
+| Write protection: sub writes below WP × `$200` dropped | Hardware Manual pp. 14, 57 |
+| 2M word RAM: DMNA = 1 (main) hands it to the sub CPU, RET = 1 (sub) returns it; RET/DMNA read back as described | Hardware Manual pp. 23-25, 57; ares |
+| 1M word RAM: RET = 0 gives bank 0 to the main CPU and bank 1 to the sub CPU, RET = 1 swaps | Hardware Manual p. 24; bank interleaving by word from ares |
+| Cell image views at main `$220000-$23FFFF` | Hardware Manual p. 16 (dot/cell table); ares formulas |
+| Communication flags (main = upper byte, sub = lower byte), 8 command and 8 status words | Hardware Manual pp. 19, 59; "every write lands in the flag's own byte" from ares |
+| Timer: interval (n + 1) × 30.72 µs, level 3; stopwatch: 12 bits, 30.72 µs per count, cleared by a sub write | Hardware Manual pp. 30, 59 |
+| Interrupt enables `$FF8032` bits 1-6; a source becomes pending only while enabled | Hardware Manual p. 30; ares `IRQ::raise` |
+
+### Corrections, disagreements and judgment calls
+
+- **Correction to the plan:** nothing in the gate array interrupts the main CPU. `$A12000`'s IFL2
+  raises level 2 on the *sub* CPU (Hardware Manual p. 56, ares). The plan had it the other way
+  round, and has been corrected.
+- **1M swap request:** ares sets the request flag when the main CPU writes DMNA = 0. The manual
+  says writing 1 requests a swap. Implemented as ares; no test depends on it. Open.
+- **Power-on program RAM access:** ares lets the main CPU into program RAM only after a write to
+  `$A12001`; the manual says SRES = 0 is enough. Implemented as the manual; the tests write
+  `$A12001` first, so they hold either way.
+- **Sub write to 2M word RAM it doesn't own:** the manual says the CPU hangs until a forced reset;
+  ares waits until the RAM is handed over. Judgment call: the write is dropped.
+- **Interrupt priority:** the highest pending level is presented to the 68000, as on the real IPL
+  lines. ares checks level 1 first. Judgment call.
+- **Not modelled:**
+  - contention and wait states (the manual gives no figures);
+  - the gate array's forced reset sequence;
+  - H-INT vector redirection (only the register exists; it matters in Mode 2, S3);
+  - the dot image (S2);
+  - VDP DMA from the unit. The debug read path returns word RAM without ares' latch; this is
+    untested.
+  - Open bus on the sub side reads 0.
+- **Scheduling:** the sub CPU may run up to one of its instructions past a main-CPU access.
+
+### Tests (`mise run test:md-synthetic`, `tests/MD/synthetic/mcd_cases.py`)
+
+Each case loads a sub CPU program through `$420000` and releases the CPU; no BIOS is involved,
+which confirms F2 in the emulator.
+
+| Case | Checks |
+|---|---|
+| `mcd_boot_comm` | version bit 5; SRES/SBRQ at power-on and after `$02`; program RAM window read-back; sub boot; command → status round trip; flag bytes, including a word write to `$A1200E` |
+| `mcd_int2` | IEN2 and IFL2 as read by the main CPU; level 2 handler (vector `$68`) runs; IFL2 clears when taken |
+| `mcd_timer` | n = 9 gives 10 stopwatch counts between level 3 interrupts; the stopwatch advances 543-544 counts per NTSC frame (sub clock vs main clock, F3) |
+| `mcd_wordram_2m` | handover in both directions with RET/DMNA read-back and data both ways |
+| `mcd_wordram_1m` | 1M mode, swap by RET, each CPU sees the other's data after the swap, cell image for dots 512-513 and 8-9 |
+| `mcd_prgram_protect_bank` | WP = 2 blocks `$000300` and not `$000400`; window bank 1 is program RAM `$020000` |
+| `mcd_busy` | timer, interrupts and the sub CPU running across the save point (for replay only) |
+
+**Results**
+- All 7 pass.
+- The rest of `test:md-synthetic` still passes: 60/60 BlastEm cases and every MesenCE case.
+- `test:md-replay`: 80/80 on both FM cores and both save points. `test:md-cheats`,
+  `test:md-viewers` and `test:headless` pass.
+
+**Negative controls**
+- Without `--md-mcd`, the six cases with expected values all fail: their polls never end.
+- Mutations of `McdUnit.cpp`, one at a time: 10/10 caught. They were:
+  - timer interval n;
+  - a tick every 400 cycles;
+  - a 12 MHz conversion;
+  - no write protection;
+  - the window ignoring the bank;
+  - the same 1M bank for both CPUs;
+  - no cell image;
+  - RET not returning 2M word RAM;
+  - IFL2 ignored;
+  - the main flag landing in the low byte.
+
+  The last one was missed at first: a byte write puts the same byte on both lanes. The word write
+  in `mcd_boot_comm` was added to catch it.
+
+**Speed:** 3000 frames, five interleaved runs each, Apple M1 Max, medians. The pre-S1 runner was
+built from `c6a775a2` in a scratch worktree.
+
+| Configuration | Median | Runs |
+|---|---|---|
+| Pre-S1 runner, `render_h40` | 4.06 s | 4.97, 4.11, 4.06, 4.05, 4.01 |
+| S1, unit detached, `render_h40` | 4.04 s | 4.08, 4.04, 4.01, 4.08, 4.01 |
+| S1, unit attached, sub CPU held in reset, `render_h40` | 4.28 s (+5%) | 4.25, 4.29, 4.21, 4.38, 4.28 |
+| S1, `mcd_busy` (sub CPU running, timer interrupts every 6 ms) | 5.76 s (+42%) | 5.76, 5.82, 5.84, 5.68, 5.70 |
+
+- **Unit detached:** no cost. The only new work on the hot path is one null check per main
+  instruction.
+- **Sub CPU running:** +42%, within the +50% target set in F4. The S0 stub on a flat bus cost +28%;
+  the rest is the unit's bus decoding and timer.
+
+### R5. Save-state replay now compares the whole final state
+
+- **Repro:** dropping single fields from `McdUnit::Serialize` (stopwatch, timer counter,
+  interrupt enable, clock remainder). Replay caught only the stopwatch: the other fields did not
+  change any later main-CPU read in these short cases.
+- **Fix:** `replay_check.py` now also compares every field of the uninterrupted run's
+  `final.mss` with the loaded run's.
+  - The one field that legitimately differs, `controlManager.pollCounter`, is ignored: the runner
+    refreshes input once more on a load (R4).
+  - The new `mcd_busy` case keeps the sub CPU, its timer interrupts, a masked pending level 2 and
+    1M word RAM writes going across the save point.
+- **Result:** 8/8 dropped fields caught: stopwatch, timer counter, interrupt enable, clock
+  remainder, tick divider, word RAM mode, pending interrupts, reset pending.
+- **Existing cases:** all 80 cases pass the stricter check, so no missing state was found in the
+  existing Mega Drive core.
+
+### Open after S1
+
+- **Comparison with ares:** S1's exit asks for one. There is no ares capture harness yet, so the
+  expected values come from the hardware manual, with ares used as a code reference only.
+- **Contention and the VDP DMA latch** (see above), and the 1M swap-request disagreement.
+- **Licences** of `mcd-verificator` and the 240p Test Suite, before anything is vendored.
