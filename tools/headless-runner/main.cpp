@@ -352,6 +352,8 @@ static int Run(const vector<string>& args, const string& commandLine)
 	double timeout = 0;
 	bool allowDirty = false;
 	bool mdMcd = false;
+	vector<string> batteryPaths;
+	bool saveBattery = false;
 	for(size_t i = 0; i < args.size(); i++) {
 		auto next = [&]() -> string {
 			if(i + 1 >= args.size()) {
@@ -389,6 +391,10 @@ static int Run(const vector<string>& args, const string& commandLine)
 			mdEeprom = next();
 		} else if(args[i] == "--md-mcd") {
 			mdMcd = true;
+		} else if(args[i] == "--battery") {
+			batteryPaths.push_back(next());
+		} else if(args[i] == "--save-battery") {
+			saveBattery = true;
 		} else if(args[i] == "--trace-limit") {
 			traceLimit = std::stoull(next());
 		} else if(args[i] == "--allow-dirty") {
@@ -516,6 +522,12 @@ static int Run(const vector<string>& args, const string& commandLine)
 		McdUnit::SetAttachedOverride(mdMcd);
 		MessageManager::SetOptions(false, false);
 		emu.Initialize(false);
+		//--battery FILE: start from this save file (it becomes <rom name><FILE's extension>)
+		for(const string& battery : batteryPaths) {
+			fs::path saves = FolderUtilities::GetSaveFolder();
+			fs::create_directories(saves);
+			fs::copy_file(battery, saves / (FolderUtilities::GetFilename(rom, false) + fs::path(battery).extension().string()), fs::copy_options::overwrite_existing);
+		}
 		if(!emu.LoadRom(VirtualFile(fs::absolute(rom).string()), VirtualFile(), false)) {
 			std::cerr << "could not load " << rom << "\n"
 						 << MessageManager::GetLog();
@@ -605,7 +617,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 
 		//--chip-audio (Mega Drive): YM2612 and PSG streams before mixing, s16 little-endian stereo at the
 		//YM2612 sample rate (master clock / 1008)
-		std::ofstream ymFile, psgFile;
+		std::ofstream ymFile, psgFile, pcmFile;
 		if(chipAudio) {
 			MdConsole* md = dynamic_cast<MdConsole*>(emu.GetConsole().get());
 			if(!md) {
@@ -622,6 +634,15 @@ static int Run(const vector<string>& args, const string& commandLine)
 				psgFile.write((const char*)psg, sizeof(psg));
 			});
 			manifest["chip_audio"] = { { "format", "s16le-stereo" }, { "sample_rate", md->GetApu()->GetSampleRate() }, { "files", { "ym2612.raw", "psg.raw" } } };
+			if(md->GetMcd()) {
+				//Sega CD PCM: its own stream at 12.5 MHz / 384 (one sample per McdPcm::Clock)
+				pcmFile.open(outDir / "pcm.raw", std::ios::binary);
+				md->GetMcd()->GetPcm().SetObserver([&](int16_t l, int16_t r) {
+					int16_t pcm[2] = { l, r };
+					pcmFile.write((const char*)pcm, sizeof(pcm));
+				});
+				manifest["chip_audio"]["pcm"] = { { "file", "pcm.raw" }, { "format", "s16le-stereo" }, { "sample_rate_hz", 12500000.0 / 384 } };
+			}
 		}
 
 		std::atomic<bool> finished = false;
@@ -723,8 +744,17 @@ static int Run(const vector<string>& args, const string& commandLine)
 			f.write((const char*)mem.Memory, mem.Size);
 		}
 
-		emu.Stop(false, true, false);
+		//--save-battery: write the battery files on exit and keep them in OUT/saves
+		emu.Stop(false, true, saveBattery);
 		emu.Release();
+		if(saveBattery && fs::exists(FolderUtilities::GetSaveFolder())) {
+			fs::create_directories(outDir / "saves");
+			for(auto& e : fs::directory_iterator(FolderUtilities::GetSaveFolder())) {
+				if(e.is_regular_file()) {
+					fs::copy_file(e.path(), outDir / "saves" / e.path().filename(), fs::copy_options::overwrite_existing);
+				}
+			}
+		}
 	}
 
 	fs::remove_all(home);

@@ -657,6 +657,8 @@ uint16_t MdMemoryManager::DmaReadWord(uint32_t addr)
 		return (_workRam[addr & 0xFFFF] << 8) | _workRam[(addr & 0xFFFF) | 1];
 	} else if(addr < 0x400000) {
 		return (ReadCartBus(addr) << 8) | ReadCartBus(addr | 1);
+	} else if(_mcd && addr < 0x800000) {
+		return _mcd->DmaMainRead(addr - 0x400000);
 	}
 	//DMA from the Z80 area, I/O or the VDP itself returns undefined data; use the 68000 view
 	return M68kPeekWord(addr);

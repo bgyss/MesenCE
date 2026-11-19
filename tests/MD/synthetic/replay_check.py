@@ -101,7 +101,9 @@ def main():
                 first = next((i for i, (x, y) in enumerate(zip(ta, tc)) if x != y), min(len(ta), len(tc)))
                 problems.append("trace differs at event %d of %d/%d: %s vs %s" % (first, len(ta), len(tc), ta[first:first + 1], tc[first:first + 1]))
             #Audio phase: the per-chip streams of the uninterrupted run are B's followed by C's, sample for sample
-            for chip in ("ym2612.raw", "psg.raw"):
+            for chip in ("ym2612.raw", "psg.raw", "pcm.raw"):
+                if chip == "pcm.raw" and not (a / chip).exists():
+                    continue  # Sega CD PCM: only with the unit attached
                 if (a / chip).read_bytes() != (b / chip).read_bytes() + (c / chip).read_bytes():
                     problems.append(chip + " differs (audio not continuous across the state)")
             for f in ["final.png"] + sorted(p.relative_to(a).as_posix() for p in (a / "memory").iterdir()):

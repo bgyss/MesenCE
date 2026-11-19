@@ -284,7 +284,7 @@ def main():
                             if (value & op.compare_mask) != (op.value & op.compare_mask):
                                 problems.append("step %d read $%X, case expects $%X under mask $%X" % (idx, value, op.value, op.compare_mask))
                     if case.name in extra_cases.DERIVED_CHECKS:
-                        problems += extra_cases.DERIVED_CHECKS[case.name](values)
+                        problems += extra_cases.DERIVED_CHECKS[case.name](values, ours["dir"])
             extra_fail += bool(problems)
             print("%-5s %s (MesenCE case, expected values)" % ("FAIL" if problems else "pass", case.name))
             for p in problems[:4]:

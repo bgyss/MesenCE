@@ -120,6 +120,7 @@ LoadRomResult MdConsole::LoadRom(VirtualFile& romFile)
 		_mcd.reset(new McdUnit());
 		_mcd->Init(this, GetMasterClockRate());
 		_memoryManager->SetMcd(_mcd.get());
+		_apu->SetPcm(&_mcd->GetPcm());
 	}
 	_m68k->PowerOn();
 	_controlManager->UpdateControlDevices();
@@ -158,6 +159,9 @@ void MdConsole::SaveBattery()
 	if(_memoryManager && _memoryManager->GetEeprom()) {
 		MdEepromDevice* eeprom = _memoryManager->GetEeprom();
 		_emu->GetBatteryManager()->SaveBattery(".eep", eeprom->GetMemory(), eeprom->GetSize());
+	}
+	if(_mcd) {
+		_emu->GetBatteryManager()->SaveBattery(".brm", _mcd->GetBackupRam(), McdUnit::BackupRamSize);
 	}
 }
 

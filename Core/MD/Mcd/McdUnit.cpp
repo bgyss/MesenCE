@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "MD/Mcd/McdUnit.h"
 #include "MD/MdConsole.h"
+#include "Shared/Emulator.h"
+#include "Shared/BatteryManager.h"
 #include "Utilities/Serializer.h"
 
 void McdM68k::Idle(uint32_t clocks)
@@ -52,6 +54,7 @@ void McdUnit::Init(MdConsole* console, uint32_t mclkRate)
 	console->InitializeRam(_prgRam, PrgRamSize);
 	console->InitializeRam(_wordRam, WordRamSize);
 	_cpu.Init(this);
+	console->GetEmulator()->GetBatteryManager()->LoadBattery(".brm", _backupRam, BackupRamSize);
 	//Power-on: the sub CPU is held in reset; its reset vectors are fetched when it is released
 	//(ares MCD::power: io.run = 0, io.halt = 1, irq.reset raised)
 	_cpu.PowerOn();
@@ -72,6 +75,9 @@ void McdUnit::AdvanceSub(uint32_t subCycles)
 		_tickDivider -= 384;
 		Tick();
 	}
+	if(_gfx.Active) {
+		RunGraphics(subCycles);
+	}
 }
 
 void McdUnit::Tick()
@@ -88,6 +94,8 @@ void McdUnit::Tick()
 			_timerCounter--;
 		}
 	}
+	//The PCM chip produces one sample per 384 sub cycles from the same clock (ares MCD::step)
+	_pcm.Clock(_subClock);
 }
 
 void McdUnit::RaiseInterrupt(uint8_t level)
@@ -226,6 +234,20 @@ void McdUnit::MainWrite(uint32_t offset, bool upper, bool lower, uint16_t value)
 		}
 		WriteWordRamMain(offset, upper, lower, value);
 	}
+}
+
+uint16_t McdUnit::DmaMainRead(uint32_t offset)
+{
+	//VDP DMA from word RAM: each read returns the word of the previous read (the data is output
+	//one cycle late; Hardware Manual p. 61, which tells programs to start the DMA one word later;
+	//ares wramLatch). The first word of a transfer is the stale latch.
+	offset &= 0x23FFFE;
+	if(offset >= 0x200000 && (_wordRam1M || !_wordRamToSub)) {
+		uint16_t value = _dmaLatch;
+		_dmaLatch = ReadWordRamMain(offset);
+		return value;
+	}
+	return MainRead(offset, 0xFFFF);
 }
 
 uint8_t McdUnit::DebugMainRead(uint32_t offset)
@@ -411,8 +433,14 @@ uint16_t McdUnit::SubRead(bool /*upper*/, bool /*lower*/, uint32_t address)
 	if(address < 0x80000) {
 		return (_prgRam[address] << 8) | _prgRam[address | 1];
 	} else if(address < 0xC0000) {
-		//2M mode word RAM while the sub CPU owns it. 1M mode: the dot image (S2).
-		if(!_wordRam1M && _wordRamToSub) {
+		//2M mode: word RAM while the sub CPU owns it. 1M mode: the dot image of its bank.
+		if(_wordRam1M) {
+			return ReadDotImage(address);
+		} else if(_wordRamToSub) {
+			if(_gfx.Active) {
+				//A sub CPU access to word RAM delays the graphics chip by 3 clocks (Hardware Manual p. 53)
+				_gfx.Counter += 3;
+			}
 			return _wordRam[(address & 0x3FFFF) >> 1];
 		}
 		return 0;
@@ -422,16 +450,26 @@ uint16_t McdUnit::SubRead(bool /*upper*/, bool /*lower*/, uint32_t address)
 			return _wordRam[(address & 0x1FFFE) | (_ret ? 0 : 1)];
 		}
 		return 0;
+	} else if(address >= 0xFE0000 && address < 0xFF0000) {
+		//Backup RAM on the lower byte (Hardware Manual p. 15)
+		return _backupRam[(address >> 1) & (BackupRamSize - 1)];
+	} else if(address >= 0xFF0000 && address < 0xFF8000) {
+		//PCM on the lower byte
+		return _pcm.Read((uint16_t)(address >> 1));
 	} else if(address >= 0xFF8000) {
 		uint32_t reg = address & 0x1FE;
 		switch(reg) {
 			case 0x00: return (_led << 8) | 0x01; //bit 0: peripherals ready; version 0
 			case 0x30: return _timerReload;
 			case 0x32: return _irqEnable;
-			default: return reg < 0x30 ? ReadRegister(reg, true) : 0;
+			default:
+				if(reg >= 0x4C && reg < 0x68) {
+					return ReadGraphicsRegister(reg);
+				}
+				return reg < 0x30 ? ReadRegister(reg, true) : 0;
 		}
 	}
-	//Backup RAM, PCM (S2) and reserved areas
+	//Reserved areas
 	return 0;
 }
 
@@ -453,7 +491,12 @@ void McdUnit::SubWrite(bool upper, bool lower, uint32_t address, uint16_t value)
 		//2M mode while the main CPU owns word RAM: the manual says the sub CPU hangs until a
 		//forced reset; ares holds the bus until the RAM is handed over. Judgment call: the write is
 		//dropped (findings S1).
-		if(!_wordRam1M && _wordRamToSub) {
+		if(_wordRam1M) {
+			WriteDotImage(address, upper, lower, value);
+		} else if(_wordRamToSub) {
+			if(_gfx.Active) {
+				_gfx.Counter += 3;
+			}
 			uint16_t& word = _wordRam[(address & 0x3FFFF) >> 1];
 			if(upper) {
 				word = (word & 0x00FF) | (value & 0xFF00);
@@ -472,8 +515,21 @@ void McdUnit::SubWrite(bool upper, bool lower, uint32_t address, uint16_t value)
 				word = (word & 0xFF00) | (value & 0x00FF);
 			}
 		}
+	} else if(address >= 0xFE0000 && address < 0xFF0000) {
+		if(lower) {
+			_backupRam[(address >> 1) & (BackupRamSize - 1)] = (uint8_t)value;
+		}
+	} else if(address >= 0xFF0000 && address < 0xFF8000) {
+		if(lower) {
+			_pcm.Write((uint16_t)(address >> 1), (uint8_t)value);
+		}
 	} else if(address >= 0xFF8000) {
-		WriteSubRegister(address & 0x1FE, upper, lower, value);
+		uint32_t reg = address & 0x1FE;
+		if(reg >= 0x4C && reg < 0x68) {
+			WriteGraphicsRegister(reg, upper, lower, value);
+		} else {
+			WriteSubRegister(reg, upper, lower, value);
+		}
 	}
 }
 
@@ -552,4 +608,257 @@ void McdUnit::Serialize(Serializer& s)
 	SV(_irqEnable);
 	SV(_irqPending);
 	SV(_led);
+	SVArray(_backupRam, BackupRamSize);
+	SV(_fontColor);
+	SV(_fontBits);
+	SV(_gfx.Repeat);
+	SV(_gfx.Stamp32);
+	SV(_gfx.Map16);
+	SV(_gfx.MapBase);
+	SV(_gfx.VCells);
+	SV(_gfx.ImageBase);
+	SV(_gfx.ImageOffset);
+	SV(_gfx.HDots);
+	SV(_gfx.VDots);
+	SV(_gfx.VectorBase);
+	SV(_gfx.Active);
+	SV(_gfx.ImageAddress);
+	SV(_gfx.VectorAddress);
+	SV(_gfx.MapAddress);
+	SV(_gfx.LineClocks);
+	SV(_gfx.Counter);
+	SV(_dmaLatch);
+	SV(_pcm);
+}
+
+uint8_t McdUnit::ReadNibble(uint32_t address)
+{
+	//Graphics chip view of 2M word RAM: one 4-bit dot per nibble, high nibble first
+	uint16_t word = _wordRam[(address >> 2) & 0x1FFFF];
+	return (word >> (12 - ((address & 3) << 2))) & 0x0F;
+}
+
+void McdUnit::WriteNibble(uint32_t address, uint8_t value)
+{
+	uint16_t& word = _wordRam[(address >> 2) & 0x1FFFF];
+	uint8_t shift = 12 - ((address & 3) << 2);
+	word = (word & ~(0x0F << shift)) | ((value & 0x0F) << shift);
+}
+
+uint16_t McdUnit::ReadDotImage(uint32_t address)
+{
+	//1M mode, sub CPU $080000-$0BFFFF: the sub CPU's bank, one 4-bit dot per byte (upper four bits
+	//read 0). Each dot-image word is one byte of the bank (Hardware Manual pp. 14, 54; byte and bank
+	//arrangement from ares bus-internal.cpp).
+	uint32_t index = (((address >> 1) & 0x1FFFF) & ~1) | (_ret ? 0 : 1);
+	uint8_t byte = (address & 2) ? (uint8_t)_wordRam[index] : (_wordRam[index] >> 8);
+	return ((byte >> 4) << 8) | (byte & 0x0F);
+}
+
+void McdUnit::WriteDotImage(uint32_t address, bool upper, bool lower, uint16_t value)
+{
+	uint32_t index = (((address >> 1) & 0x1FFFF) & ~1) | (_ret ? 0 : 1);
+	uint8_t shift = (address & 2) ? 0 : 8;
+	uint8_t byte = (_wordRam[index] >> shift) & 0xFF;
+	uint8_t hi = byte >> 4;
+	uint8_t lo = byte & 0x0F;
+	uint8_t newHi = (value >> 8) & 0x0F;
+	uint8_t newLo = value & 0x0F;
+	//Write priority (Hardware Manual pp. 23, 54): 0 = normal, 1 = underwrite (only where the old
+	//dot is 0), 2 = overwrite (only non-zero new dots), 3 = prohibited (treated as no write, ares)
+	switch(_priorityMode) {
+		case 0:
+			hi = upper ? newHi : hi;
+			lo = lower ? newLo : lo;
+			break;
+		case 1:
+			hi = (upper && !hi) ? newHi : hi;
+			lo = (lower && !lo) ? newLo : lo;
+			break;
+		case 2:
+			hi = (upper && newHi) ? newHi : hi;
+			lo = (lower && newLo) ? newLo : lo;
+			break;
+		default:
+			break;
+	}
+	_wordRam[index] = (_wordRam[index] & ~(0xFF << shift)) | (((hi << 4) | lo) << shift);
+}
+
+uint16_t McdUnit::ReadGraphicsRegister(uint32_t reg)
+{
+	switch(reg) {
+		case 0x4C: return _fontColor;
+		case 0x4E: return _fontBits;
+		case 0x50:
+		case 0x52:
+		case 0x54:
+		case 0x56: {
+			//Font data: one nibble per font bit, $FF8050 = bits 15-12 ... $FF8056 = bits 3-0, the
+			//most significant bit in the highest nibble; colour SC1 for a 1 bit, SC0 for a 0 bit
+			//(Hardware Manual p. 34)
+			uint32_t first = 12 - ((reg - 0x50) << 1);
+			uint16_t value = 0;
+			for(int i = 0; i < 4; i++) {
+				bool bit = (_fontBits >> (first + i)) & 1;
+				value |= (bit ? (_fontColor >> 4) : (_fontColor & 0x0F)) << (i * 4);
+			}
+			return value;
+		}
+		case 0x58: return (_gfx.Active ? 0x8000 : 0) | (_gfx.Map16 ? 0x04 : 0) | (_gfx.Stamp32 ? 0x02 : 0) | (_gfx.Repeat ? 0x01 : 0);
+		case 0x5A: return (_gfx.MapBase >> 2) & 0xFFE0;
+		case 0x5C: return _gfx.VCells;
+		case 0x5E: return (_gfx.ImageBase >> 2) & 0xFFF8;
+		case 0x60: return _gfx.ImageOffset;
+		case 0x62: return _gfx.HDots;
+		case 0x64: return _gfx.VDots;
+		default: return 0; //$FF8066 is write-only
+	}
+}
+
+void McdUnit::WriteGraphicsRegister(uint32_t reg, bool upper, bool lower, uint16_t value)
+{
+	switch(reg) {
+		case 0x4C: _fontColor = (uint8_t)value; break;
+		case 0x4E:
+			if(upper) {
+				_fontBits = (_fontBits & 0x00FF) | (value & 0xFF00);
+			}
+			if(lower) {
+				_fontBits = (_fontBits & 0xFF00) | (value & 0x00FF);
+			}
+			break;
+		case 0x58:
+			if(lower) {
+				_gfx.Repeat = value & 0x01;
+				_gfx.Stamp32 = value & 0x02;
+				_gfx.Map16 = value & 0x04;
+			}
+			break;
+		case 0x5A: _gfx.MapBase = (value & 0xFFE0) << 2; break;
+		case 0x5C: _gfx.VCells = value & 0x1F; break;
+		case 0x5E: _gfx.ImageBase = (value & 0xFFF8) << 2; break;
+		case 0x60: _gfx.ImageOffset = value & 0x3F; break;
+		case 0x62: _gfx.HDots = value & 0x1FF; break;
+		case 0x64: _gfx.VDots = (uint8_t)value; break;
+		case 0x66:
+			//Trace vector base address: writing it starts the operation
+			_gfx.VectorBase = (value & 0xFFFE) << 2;
+			StartGraphics();
+			break;
+	}
+}
+
+void McdUnit::StartGraphics()
+{
+	//Only in 2M mode (Hardware Manual p. 36: the stamp generator is the start of the 2M RAM)
+	if(_wordRam1M) {
+		return;
+	}
+	_gfx.Active = true;
+	_gfx.ImageAddress = (_gfx.ImageBase << 1) + _gfx.ImageOffset;
+	_gfx.VectorAddress = _gfx.VectorBase >> 1;
+	//Stamp map base: the address bits that exist for each map/stamp size (Hardware Manual pp. 35-36)
+	uint32_t mapAddress = _gfx.MapBase >> 1;
+	if(!_gfx.Map16) {
+		mapAddress &= _gfx.Stamp32 ? 0x1FFC0 : 0x1FF00;
+	} else {
+		mapAddress &= _gfx.Stamp32 ? 0x1C000 : 0x10000;
+	}
+	_gfx.MapAddress = mapAddress;
+	//Time per line (Hardware Manual p. 53, 1 clock = 80 ns): 13 + 2 x (offset AND 3) + 9 x ((H dots
+	//+ offset - 1) >> 2), plus 3 refresh clocks per 192. Judgment call: the scan of this formula is
+	//partly illegible, "offset" is read as the dot offset and the bracket as a shift by 2.
+	int32_t dotOffset = _gfx.ImageOffset & 7;
+	int32_t clocks = 13 + 2 * (dotOffset & 3) + 9 * (std::max<int32_t>(_gfx.HDots + dotOffset - 1, 0) >> 2);
+	_gfx.LineClocks = clocks + 3 * clocks / 192;
+	_gfx.Counter = _gfx.LineClocks;
+	if(_gfx.VDots == 0) {
+		_gfx.Active = false;
+		RaiseInterrupt(1);
+	}
+}
+
+void McdUnit::RunGraphics(uint32_t subCycles)
+{
+	_gfx.Counter -= (int32_t)subCycles;
+	while(_gfx.Active && _gfx.Counter <= 0) {
+		RenderGraphicsLine();
+		_gfx.ImageAddress += 8;
+		_gfx.VDots--;
+		if(_gfx.VDots == 0) {
+			_gfx.Active = false;
+			//Level 1 when the last dot is written (Hardware Manual p. 41)
+			RaiseInterrupt(1);
+		} else {
+			_gfx.Counter += _gfx.LineClocks;
+		}
+	}
+}
+
+void McdUnit::RenderGraphicsLine()
+{
+	//One image buffer line from one trace vector (Hardware Manual pp. 39-41): start X/Y in 13.3
+	//fixed point, then dX/dY per dot in 5.11; every dot samples the stamp map at (X, Y).
+	//Implementation follows ares md/mcd/gpu.cpp (coordinate masks, stamp/map shifts, flips).
+	uint32_t stampShift = _gfx.Stamp32 ? 5 : 4;
+	uint32_t mapShift = (_gfx.Map16 ? 8 : 4) - (_gfx.Stamp32 ? 1 : 0);
+	uint32_t indexMask = _gfx.Stamp32 ? 0x7FC : 0x7FF;
+	uint32_t pixelMask = _gfx.Stamp32 ? 0x1F : 0x0F;
+	uint32_t imageWidth = ((uint32_t)_gfx.VCells + 1) << 6;
+	uint32_t mapMask = _gfx.Map16 ? 0x7FFFFF : 0x07FFFF;
+
+	uint32_t x = ((uint32_t)_wordRam[_gfx.VectorAddress++ & 0x1FFFF] << 8) & 0xFFFFFF;
+	uint32_t y = ((uint32_t)_wordRam[_gfx.VectorAddress++ & 0x1FFFF] << 8) & 0xFFFFFF;
+	int32_t xStep = (int16_t)_wordRam[_gfx.VectorAddress++ & 0x1FFFF];
+	int32_t yStep = (int16_t)_wordRam[_gfx.VectorAddress++ & 0x1FFFF];
+
+	uint32_t address = _gfx.ImageAddress;
+	for(uint32_t i = 0; i < _gfx.HDots; i++) {
+		if(_gfx.Repeat) {
+			x &= mapMask;
+			y &= mapMask;
+		}
+		uint8_t output = 0;
+		if(!((x | y) & ~mapMask)) {
+			uint32_t xDot = x >> 11;
+			uint32_t yDot = y >> 11;
+			uint16_t entry = _wordRam[(_gfx.MapAddress + ((yDot >> stampShift) << mapShift) + (xDot >> stampShift)) & 0x1FFFF];
+			uint32_t index = entry & indexMask;
+			if(index) {
+				//HFLP (bit 15), RT1 (bit 14: 180 degrees), RT0 (bit 13: 90 degrees)
+				if(entry & 0x8000) {
+					xDot = ~xDot;
+				}
+				if(entry & 0x4000) {
+					xDot = ~xDot;
+					yDot = ~yDot;
+				}
+				if(entry & 0x2000) {
+					uint32_t t = xDot;
+					xDot = ~yDot;
+					yDot = t;
+				}
+				uint32_t xPixel = xDot & pixelMask;
+				uint32_t yPixel = yDot & pixelMask;
+				//Stamps are stored as cells arranged vertically, like Mega Drive sprites
+				output = ReadNibble((index << 8) | ((xPixel & ~7) << stampShift) | (yPixel << 3) | (xPixel & 7));
+			}
+		}
+		if(_priorityMode) {
+			uint8_t input = ReadNibble(address);
+			switch(_priorityMode) {
+				case 1: output = input ? input : output; break; //underwrite
+				case 2: output = output ? output : input; break; //overwrite
+				default: output = input; break;
+			}
+		}
+		WriteNibble(address, output);
+		address++;
+		if(!(address & 7)) {
+			address += imageWidth - 8;
+		}
+		x = (x + xStep) & 0xFFFFFF;
+		y = (y + yStep) & 0xFFFFFF;
+	}
 }

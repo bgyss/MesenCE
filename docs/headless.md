@@ -17,6 +17,8 @@ mesen-headless run --rom ROM --frames N --out NEW_DIR [--input INPUT.json] [--lu
                    [--md-fm-core ymfm|nuked]                               # Mega Drive only
                    [--md-eeprom CHIP,BOARD]   # Mega Drive test hook, e.g. X24C01,Sega
                    [--md-mcd]                 # Mega Drive test hook: attach the Sega CD unit (Mode 1)
+                   [--battery FILE]...        # start from a save file (named <rom><FILE extension>)
+                   [--save-battery]           # write battery files on exit into OUT/saves
 mesen-headless validate OUT_DIR
 mesen-headless doctor
 mesen-headless nnes-compat ROM HOME LUA RESULT WAV   # nativekit NES capture host contract

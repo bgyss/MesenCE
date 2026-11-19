@@ -1,6 +1,7 @@
 #pragma once
 #include "pch.h"
 #include "MD/M68k/M68kCore.h"
+#include "MD/Mcd/McdPcm.h"
 #include "Utilities/ISerializable.h"
 
 class MdConsole;
@@ -25,9 +26,9 @@ public:
 };
 
 // Sega CD / Mega-CD unit, Mode 1 (a cartridge in the Mega Drive, the unit attached): the sub CPU,
-// its program RAM and word RAM, and the gate array's CPU-facing registers, timer and interrupts.
-// Not yet: the BIOS, the CD drive and controller, PCM, the graphics chip, backup RAM, the dot-image
-// view and VDP DMA from the unit (sega-cd-feasibility.md, S2/S3).
+// its program RAM and word RAM, the gate array (registers, timer, interrupts, font registers,
+// graphics chip, dot image), backup RAM, the PCM chip (McdPcm) and VDP DMA from word RAM.
+// Not yet: the BIOS, the CD drive and controller (sega-cd-feasibility.md, S3).
 //
 // Sources (docs/research/mcd-verification-findings.md): Sega, Mega-CD Hardware Manual (1991) for
 // the memory maps, registers, interrupt levels, word RAM switching and the timer; ares
@@ -44,6 +45,7 @@ public:
 	static constexpr uint32_t SubClockRate = 12500000;
 	static constexpr uint32_t PrgRamSize = 0x80000;
 	static constexpr uint32_t WordRamSize = 0x40000;
+	static constexpr uint32_t BackupRamSize = 0x2000;
 
 	//Test hook (mesen-headless --md-mcd): attach the unit to cartridge games. The UI setting is S4.
 	static void SetAttachedOverride(bool attached) { _attachedOverride = attached; }
@@ -92,6 +94,39 @@ private:
 	uint8_t _irqPending = 0; //bit n = level n
 	uint8_t _led = 0;
 
+	//Backup RAM: 8 KiB on the odd bytes of $FE0000-$FE3FFF (battery file .brm)
+	uint8_t _backupRam[BackupRamSize] = {};
+
+	//Font registers $FF804C-$FF8057 (Hardware Manual p. 34)
+	uint8_t _fontColor = 0;
+	uint16_t _fontBits = 0;
+
+	//Graphics chip ("rotation scaling", $FF8058-$FF8066, Hardware Manual pp. 35-53)
+	struct Graphics
+	{
+		bool Repeat = false;
+		bool Stamp32 = false; //STS: 32x32 dot stamps
+		bool Map16 = false; //SMS: 16x16 screen (4096x4096 dot) map
+		uint32_t MapBase = 0; //byte address in word RAM
+		uint8_t VCells = 0; //image buffer V cell size - 1
+		uint32_t ImageBase = 0; //byte address
+		uint8_t ImageOffset = 0; //LN2-0, dot2-0
+		uint16_t HDots = 0;
+		uint8_t VDots = 0;
+		uint32_t VectorBase = 0; //byte address
+		bool Active = false;
+		uint32_t ImageAddress = 0; //nibble address of the current line's first dot
+		uint32_t VectorAddress = 0; //word index of the next trace vector
+		uint32_t MapAddress = 0; //word index
+		int32_t LineClocks = 0; //sub cycles per line
+		int32_t Counter = 0; //sub cycles left in the current line
+	} _gfx;
+
+	//VDP DMA from word RAM: the data comes out one read late (Hardware Manual p. 61; ares wramLatch)
+	uint16_t _dmaLatch = 0;
+
+	McdPcm _pcm;
+
 	bool IsHalted() { return !_run || _busRequest; }
 	bool MainOwnsPrgRam() { return _busRequest || !_run; }
 	void AdvanceSub(uint32_t subCycles);
@@ -102,6 +137,15 @@ private:
 	uint16_t ReadWordRamMain(uint32_t offset);
 	void WriteWordRamMain(uint32_t offset, bool upper, bool lower, uint16_t value);
 	static uint32_t CellImageToWordIndex(uint32_t offset);
+	uint8_t ReadNibble(uint32_t address);
+	void WriteNibble(uint32_t address, uint8_t value);
+	uint16_t ReadDotImage(uint32_t address);
+	void WriteDotImage(uint32_t address, bool upper, bool lower, uint16_t value);
+	void StartGraphics();
+	void RenderGraphicsLine();
+	void RunGraphics(uint32_t subCycles);
+	uint16_t ReadGraphicsRegister(uint32_t reg);
+	void WriteGraphicsRegister(uint32_t reg, bool upper, bool lower, uint16_t value);
 	uint16_t ReadRegister(uint32_t reg, bool fromSub);
 	void WriteMainRegister(uint32_t reg, bool upper, bool lower, uint16_t value);
 	void WriteSubRegister(uint32_t reg, bool upper, bool lower, uint16_t value);
@@ -122,6 +166,8 @@ public:
 	uint16_t MainReadRegister(uint32_t addr);
 	void MainWriteRegister(uint32_t addr, bool upper, bool lower, uint16_t value);
 	uint8_t DebugMainRead(uint32_t offset);
+	//68000-to-VDP DMA source read
+	uint16_t DmaMainRead(uint32_t offset);
 
 	//Sub CPU bus
 	void SubAdvance(uint32_t subCycles) { AdvanceSub(subCycles); }
@@ -130,6 +176,8 @@ public:
 	void SubAcknowledgeInterrupt(uint8_t level);
 
 	McdM68k& GetCpu() { return _cpu; }
+	McdPcm& GetPcm() { return _pcm; }
+	uint8_t* GetBackupRam() { return _backupRam; }
 	uint64_t GetSubCycles() { return _subCycles; }
 
 	void Serialize(Serializer& s) override;

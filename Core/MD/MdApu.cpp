@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "MD/MdApu.h"
 #include "MD/MdConsole.h"
+#include "MD/Mcd/McdPcm.h"
 #include "Shared/Emulator.h"
 #include "Shared/EmuSettings.h"
 #include "Shared/Audio/SoundMixer.h"
@@ -125,6 +126,13 @@ void MdApu::FinishSample(int32_t ymLeft, int32_t ymRight)
 	//The PSG sits about 6 dB below a full-scale FM channel mix (approximate, not hardware-qualified)
 	int32_t left = ymLeft * (int32_t)cfg.FmVolume / 100 + psgLeft * (int32_t)cfg.PsgVolume / 200;
 	int32_t right = ymRight * (int32_t)cfg.FmVolume / 100 + psgRight * (int32_t)cfg.PsgVolume / 200;
+	if(_pcm) {
+		//Sega CD PCM at its DAC level, unscaled (judgment call: no hardware mix level measured yet)
+		int32_t pcmLeft, pcmRight;
+		_pcm->GetOutput(_clock, pcmLeft, pcmRight);
+		left += pcmLeft;
+		right += pcmRight;
+	}
 	_samples.push_back((int16_t)std::clamp(left, -32768, 32767));
 	_samples.push_back((int16_t)std::clamp(right, -32768, 32767));
 	_clock += ClocksPerYmSample;

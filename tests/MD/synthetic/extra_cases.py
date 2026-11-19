@@ -307,7 +307,7 @@ def _mcd_cases():
     import mcd_cases
     found = mcd_cases.all_cases()
     for case in found:
-        RUNNER_ARGS[case.name] = list(mcd_cases.RUNNER_ARGS_MCD)
+        RUNNER_ARGS[case.name] = list(mcd_cases.RUNNER_ARGS_MCD) + mcd_cases.RUNNER_ARGS_EXTRA.get(case.name, [])
     DERIVED_CHECKS.update(mcd_cases.DERIVED_CHECKS)
     return found
 
