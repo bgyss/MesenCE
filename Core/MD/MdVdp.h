@@ -6,6 +6,7 @@
 class Emulator;
 class MdConsole;
 class MdMemoryManager;
+class M32xUnit;
 
 // Mega Drive VDP (YM7101), Mode 5. Sources: Sega Genesis Software Manual (VDP registers, ports,
 // DMA, interrupts, status, access slots per line), plus the H/V counter sequences documented in
@@ -34,6 +35,10 @@ private:
 	Emulator* _emu = nullptr;
 	MdConsole* _console = nullptr;
 	MdMemoryManager* _memoryManager = nullptr;
+	//32X: composites its picture at the end of each line; bit 11 of the VDP's pixels then marks
+	//the backdrop (the 32X shows through it)
+	M32xUnit* _m32x = nullptr;
+	uint16_t _backdropFlag = 0;
 
 	MdVdpState _state = {};
 	uint8_t* _vram = nullptr;
@@ -135,6 +140,13 @@ public:
 
 	void Init(Emulator* emu, MdConsole* console, MdMemoryManager* memoryManager, bool isPal);
 	void SetRegion(bool isPal);
+	void SetM32x(M32xUnit* m32x)
+	{
+		_m32x = m32x;
+		_backdropFlag = m32x ? 0x800 : 0;
+	}
+	//Whether `clock` falls outside the active display part of its line
+	bool IsHBlank(uint64_t clock);
 
 	void Run(uint64_t masterClock);
 

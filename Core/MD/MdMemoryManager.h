@@ -14,6 +14,7 @@ class MdApu;
 class MdControlManager;
 class MdEepromDevice;
 class McdUnit;
+class M32xUnit;
 
 // The Mega Drive bus (Sega Genesis Software Manual: memory map, system I/O, Z80 control):
 //
@@ -42,6 +43,9 @@ private:
 	McdUnit* _mcd = nullptr;
 	//Disc boot (Mode 2): the unit is at $000000-$3FFFFF, the cartridge slot at $400000 is empty
 	bool _mcdMode2 = false;
+	//32X unit, when attached: $000000-$0000FF (vectors) and $000100-$3FFFFF while ADEN = 1,
+	//$800000-$9FFFFF, $A15100-$A153FF and $A130EC (M32x/M32xUnit.h)
+	M32xUnit* _m32x = nullptr;
 
 	vector<uint8_t> _rom;
 	uint32_t _romMask = 0;
@@ -115,6 +119,9 @@ public:
 	void Init(Emulator* emu, MdConsole* console, vector<uint8_t>& romData, MdM68k* m68k, MdZ80* z80, MdVdp* vdp, MdApu* apu, MdControlManager* controlManager, bool isPal, bool isOverseas, bool hasTmss);
 
 	void SetMcd(McdUnit* mcd, bool mode2) { _mcd = mcd; _mcdMode2 = mode2; }
+	void SetM32x(M32xUnit* m32x) { _m32x = m32x; }
+	//Cartridge word at a ROM offset (the 32X's SH-2 and 68000 cartridge windows)
+	uint16_t ReadCartWord(uint32_t addr);
 	MdMemoryManagerState& GetState() { return _state; }
 	uint64_t GetMasterClock() { return _masterClock; }
 

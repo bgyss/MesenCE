@@ -12,6 +12,8 @@ class MdDefaultVideoFilter : public BaseVideoFilter
 {
 private:
 	uint32_t _palette[0x800] = {};
+	//32X pixels (bit 15 set): 15-bit BGR, 5 bits per channel
+	uint32_t _palette32x[0x8000] = {};
 	VideoConfig _videoConfig = {};
 
 	void InitLookupTable()
@@ -32,6 +34,15 @@ private:
 				ApplyColorOptions(r, g, b, config.Brightness, config.Contrast);
 			}
 			_palette[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
+		}
+		for(uint32_t i = 0; i < 0x8000; i++) {
+			uint8_t r = (uint8_t)((i & 0x1F) * 255 / 31);
+			uint8_t g = (uint8_t)(((i >> 5) & 0x1F) * 255 / 31);
+			uint8_t b = (uint8_t)(((i >> 10) & 0x1F) * 255 / 31);
+			if(config.Hue != 0 || config.Saturation != 0 || config.Brightness != 0 || config.Contrast != 0) {
+				ApplyColorOptions(r, g, b, config.Brightness, config.Contrast);
+			}
+			_palette32x[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
 		}
 		_videoConfig = config;
 	}
@@ -58,7 +69,8 @@ public:
 		OverscanDimensions overscan = GetOverscan();
 		for(uint32_t y = 0; y < frame.Height; y++) {
 			for(uint32_t x = 0; x < frame.Width; x++) {
-				out[y * frame.Width + x] = _palette[ppuOutputBuffer[(y + overscan.Top) * _baseFrameInfo.Width + x + overscan.Left] & 0x7FF];
+				uint16_t px = ppuOutputBuffer[(y + overscan.Top) * _baseFrameInfo.Width + x + overscan.Left];
+				out[y * frame.Width + x] = (px & 0x8000) ? _palette32x[px & 0x7FFF] : _palette[px & 0x7FF];
 			}
 		}
 	}

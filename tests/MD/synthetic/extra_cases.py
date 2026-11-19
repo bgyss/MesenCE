@@ -325,6 +325,9 @@ SPEC_EXTRA = {}
 #Checks across several reads of one case (compare.py): name -> function(READ values) -> problems
 DERIVED_CHECKS = {}
 
+#Cases built by their own function instead of gen.build (the 32X cartridges): name -> build(case)
+CUSTOM_BUILD = {}
+
 #Cases checked on their picture by their own script (their steps run until the capture ends, so
 #compare.py's expected-read check does not apply): tests/MD/midline/check_midline.py
 PICTURE_ONLY = {"vdp_midline_cram_h32", "vdp_midline_cram_h40"}
@@ -341,6 +344,16 @@ def _mcd_cases():
     return found
 
 
+def _m32x_cases():
+    """32X cartridges (m32x_cases.py): replacement boot ROMs, SH-2 programs, expected values."""
+    import m32x_cases
+    found = m32x_cases.all_cases()
+    for case in found:
+        CUSTOM_BUILD[case.name] = m32x_cases.build_32x
+    DERIVED_CHECKS.update(m32x_cases.DERIVED_CHECKS)
+    return found
+
+
 def write_assets(out_dir):
     """Files the cases need next to the cartridges (the Sega CD test disc)."""
     import mcd_cases
@@ -349,4 +362,4 @@ def write_assets(out_dir):
 
 def all_cases():
     return ([_pad6_across_frame(), _bank_mapper(), _z80_busack_reset()] + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)] +
-            _accessory_cases() + _mcd_cases())
+            _accessory_cases() + _mcd_cases() + _m32x_cases())

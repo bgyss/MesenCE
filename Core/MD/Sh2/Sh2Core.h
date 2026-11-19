@@ -165,6 +165,7 @@ protected:
 
 	//Test hook: no area decoding, every access goes to the bus with the full 32-bit address
 	bool _flatBus = false;
+	bool _debugHooks = false;
 
 	//Set while an exception is being entered, so a delay slot's branch doesn't override it
 	bool _exceptionTaken = false;
@@ -178,13 +179,61 @@ protected:
 	void InitLruTables();
 
 	//Bus with area decoding
-	uint32_t ReadByte(uint32_t addr);
-	uint32_t ReadWord(uint32_t addr);
-	uint32_t ReadLong(uint32_t addr);
+	uint32_t ReadByteImpl(uint32_t addr);
+	uint32_t ReadWordImpl(uint32_t addr);
+	uint32_t ReadLongImpl(uint32_t addr);
 	uint16_t FetchWord(uint32_t addr);
-	void WriteByte(uint32_t addr, uint32_t value);
-	void WriteWord(uint32_t addr, uint32_t value);
-	void WriteLong(uint32_t addr, uint32_t value);
+	void WriteByteImpl(uint32_t addr, uint32_t value);
+	void WriteWordImpl(uint32_t addr, uint32_t value);
+	void WriteLongImpl(uint32_t addr, uint32_t value);
+
+	//Data accesses as the CPU (and its DMAC) issue them, cache hits included; the debugger sees them
+	//through OnDebugRead/OnDebugWrite while hooks are enabled
+	uint32_t ReadByte(uint32_t addr)
+	{
+		uint32_t v = ReadByteImpl(addr);
+		if(_debugHooks) {
+			OnDebugRead(addr, v, 1);
+		}
+		return v;
+	}
+	uint32_t ReadWord(uint32_t addr)
+	{
+		uint32_t v = ReadWordImpl(addr);
+		if(_debugHooks) {
+			OnDebugRead(addr, v, 2);
+		}
+		return v;
+	}
+	uint32_t ReadLong(uint32_t addr)
+	{
+		uint32_t v = ReadLongImpl(addr);
+		if(_debugHooks) {
+			OnDebugRead(addr, v, 4);
+		}
+		return v;
+	}
+	void WriteByte(uint32_t addr, uint32_t value)
+	{
+		if(_debugHooks) {
+			OnDebugWrite(addr, value & 0xFF, 1);
+		}
+		WriteByteImpl(addr, value);
+	}
+	void WriteWord(uint32_t addr, uint32_t value)
+	{
+		if(_debugHooks) {
+			OnDebugWrite(addr, value & 0xFFFF, 2);
+		}
+		WriteWordImpl(addr, value);
+	}
+	void WriteLong(uint32_t addr, uint32_t value)
+	{
+		if(_debugHooks) {
+			OnDebugWrite(addr, value, 4);
+		}
+		WriteLongImpl(addr, value);
+	}
 
 	template<int Size>
 	uint32_t CacheRead(uint32_t addr, bool fetch);
@@ -234,8 +283,12 @@ public:
 	//Instruction fetch from an external area (default: a word read)
 	virtual uint16_t BusFetch16(uint32_t addr) { return BusRead16(addr); }
 
-	//Hooks for the owner (debugger, interrupt acknowledge)
+	//Hooks for the owner. The debugger hooks run only while SetDebugHooks(true).
 	virtual void OnInstructionStart(uint32_t /*pc*/, uint16_t /*op*/) {}
+	virtual void OnDebugRead(uint32_t /*addr*/, uint32_t /*value*/, int /*size*/) {}
+	virtual void OnDebugWrite(uint32_t /*addr*/, uint32_t /*value*/, int /*size*/) {}
+	virtual void OnInterruptTaken(uint32_t /*returnPc*/, uint32_t /*handlerPc*/) {}
+	void SetDebugHooks(bool enabled) { _debugHooks = enabled; }
 	virtual void OnExternalInterruptAccepted(uint8_t /*level*/) {}
 
 	void PowerOn();
@@ -274,6 +327,13 @@ public:
 	virtual uint8_t Peek8(uint32_t /*addr*/) { return 0; }
 
 	static std::string Disassemble(uint32_t pc, uint16_t op);
+	//Debugger: register values without side effects
+	uint32_t SetPc(uint32_t pc)
+	{
+		_state.PC = pc;
+		_state.SlotPending = false;
+		return pc;
+	}
 
 	void Serialize(Serializer& s);
 };

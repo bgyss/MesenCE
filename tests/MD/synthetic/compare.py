@@ -164,7 +164,8 @@ def run_case(runner, rom, spec, work):
             continue
         clock, dev, op, width, addr, value = line.split()
         addr = int(addr, 16)
-        if dev == "1" and op == "2" and not (0x200 <= addr < 0x4000):
+        #The interpreter's own step reads: $200-$3FFF, or the 32X cartridge mirror ($880800-$883FFF)
+        if dev == "1" and op == "2" and not (0x200 <= addr < 0x4000) and not (0x880800 <= addr < 0x884000):
             reads.append([addr, int(width), int(value, 16)])
     return {"dir": out, "reads": reads}, None
 

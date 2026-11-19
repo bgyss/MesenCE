@@ -2,6 +2,7 @@
 #include "MD/MdApu.h"
 #include "MD/MdConsole.h"
 #include "MD/Mcd/McdUnit.h"
+#include "MD/M32x/M32xUnit.h"
 #include "Shared/Emulator.h"
 #include "Shared/EmuSettings.h"
 #include "Shared/Audio/SoundMixer.h"
@@ -133,6 +134,13 @@ void MdApu::FinishSample(int32_t ymLeft, int32_t ymRight)
 		_mcd->GetAudioOutput(_clock, mcdLeft, mcdRight);
 		left += mcdLeft;
 		right += mcdRight;
+	}
+	if(_m32x) {
+		//32X PWM, at half scale (judgment call: no hardware mix level measured)
+		int32_t pwmLeft, pwmRight;
+		_m32x->GetAudioOutput(pwmLeft, pwmRight);
+		left += pwmLeft;
+		right += pwmRight;
 	}
 	_samples.push_back((int16_t)std::clamp(left, -32768, 32767));
 	_samples.push_back((int16_t)std::clamp(right, -32768, 32767));

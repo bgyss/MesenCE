@@ -289,7 +289,8 @@ def main():
     all_cases = cases.all_cases() + extra_cases.all_cases()
     RUNNER_ARGS.update(extra_cases.RUNNER_ARGS)
     for case in all_cases:
-        (out / (case.name + ".md")).write_bytes(build(case))
+        builder = extra_cases.CUSTOM_BUILD.get(case.name, build)
+        (out / (case.name + ".md")).write_bytes(builder(case))
         spec = run_spec(case)
         #"{roms}" in runner options is this output directory (files written next to the cartridges)
         spec["runner_args"] = [a.replace("{roms}", str(out.resolve())) for a in spec["runner_args"]]

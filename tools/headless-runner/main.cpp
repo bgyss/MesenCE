@@ -52,6 +52,7 @@
 #include "MD/MdApu.h"
 #include "MD/MdEeprom.h"
 #include "MD/Mcd/McdUnit.h"
+#include "MD/M32x/M32xUnit.h"
 #include "Shared/BaseControlManager.h"
 #include "Utilities/Sha256.h"
 
@@ -392,6 +393,8 @@ static int Run(const vector<string>& args, const string& commandLine)
 	double timeout = 0;
 	bool allowDirty = false;
 	bool mdMcd = false;
+	bool md32x = false;
+	string md32xBios;
 	vector<string> batteryPaths;
 	string mdMcdDisc, mdMcdBios;
 	bool saveBattery = false;
@@ -436,6 +439,10 @@ static int Run(const vector<string>& args, const string& commandLine)
 			mdMcdDisc = next();
 		} else if(args[i] == "--md-mcd-bios") {
 			mdMcdBios = next();
+		} else if(args[i] == "--md-32x") {
+			md32x = true;
+		} else if(args[i] == "--md-32x-bios") {
+			md32xBios = next();
 		} else if(args[i] == "--snap-every") {
 			snapEvery = (uint32_t)std::stoul(next());
 		} else if(args[i] == "--battery") {
@@ -568,6 +575,10 @@ static int Run(const vector<string>& args, const string& commandLine)
 		//Test hook: attach the Sega CD unit (Mode 1; no BIOS, discs or UI setting yet)
 		McdUnit::SetAttachedOverride(mdMcd);
 		McdUnit::SetDiscOverride(mdMcdDisc.empty() ? string() : fs::absolute(mdMcdDisc).string());
+		//Test hooks: attach the 32X to any cartridge; --md-32x-bios DIR: Sega's three boot ROMs
+		//(32X_M_BIOS.bin, 32X_S_BIOS.bin, 32X_G_BIOS.bin) instead of MesenCE's replacements
+		M32xUnit::SetAttachedOverride(md32x);
+		M32xUnit::SetBiosFolderOverride(md32xBios.empty() ? string() : fs::absolute(md32xBios).string());
 		MessageManager::SetOptions(false, false);
 		emu.Initialize(false);
 		//--md-mcd-bios FILE: the Sega CD BIOS for disc boot, under every region's file name
@@ -601,6 +612,8 @@ static int Run(const vector<string>& args, const string& commandLine)
 			{ "controllers", "standard pads on ports 1-2" },
 			{ "md_model", mdModel },
 			{ "md_mcd", mdMcd },
+			{ "md_32x", md32x },
+			{ "md_32x_bios", md32xBios.empty() ? "replacement" : "user" },
 			{ "md_pads", mdPads },
 			{ "md_fm_core", mdFmCore },
 			{ "md_eeprom", mdEeprom.empty() ? "database" : mdEeprom },

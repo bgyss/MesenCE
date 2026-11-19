@@ -460,7 +460,7 @@ depends = ["headless", "build:test-roms"]
 run = "tools/headless-runner/selftest.sh"
 
 [tasks."test:md-synthetic"]
-description = "Mega Drive: build the 60 synthetic cartridges and compare MesenCE (reads, frames) with the recorded BlastEm reference"
+description = "Mega Drive: build the synthetic cartridges (BlastEm-referenced cases, MesenCE's own Mega Drive, Sega CD and 32X cases) and check reads, frames and audio"
 depends = ["headless"]
 run = '''
 #!/usr/bin/env bash

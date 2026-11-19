@@ -32,6 +32,21 @@ struct MdM68kState : public BaseState
 	bool Halted;
 };
 
+//32X SH-2 (master or slave) registers for the debugger
+struct M32xSh2State : public BaseState
+{
+	uint64_t CycleCount; //SH-2 clocks since power-on
+	uint32_t R[16];
+	uint32_t PC; //address of the next instruction
+	uint32_t PR;
+	uint32_t GBR;
+	uint32_t VBR;
+	uint32_t MACH;
+	uint32_t MACL;
+	uint32_t SR;
+	bool Sleeping;
+};
+
 //The Mega Drive's Z80 runs the shared Z80 engine and uses the same register state.
 using MdZ80State = SmsCpuState;
 

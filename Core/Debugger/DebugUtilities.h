@@ -26,6 +26,8 @@ public:
 			case CpuType::MdM68k: return MemoryType::MdMemory;
 			case CpuType::MdZ80: return MemoryType::MdZ80Memory;
 			case CpuType::McdM68k: return MemoryType::McdMemory;
+			case CpuType::M32xMaster: return MemoryType::M32xMasterMemory;
+			case CpuType::M32xSlave: return MemoryType::M32xSlaveMemory;
 		}
 
 		throw std::runtime_error("Invalid CPU type");
@@ -50,6 +52,8 @@ public:
 			case CpuType::MdM68k: return 6;
 			case CpuType::MdZ80: return 4;
 			case CpuType::McdM68k: return 6;
+			case CpuType::M32xMaster: return 8;
+			case CpuType::M32xSlave: return 8;
 		}
 
 		throw std::runtime_error("Invalid CPU type");
@@ -210,6 +214,16 @@ public:
 			case MemoryType::McdBios:
 				return CpuType::McdM68k;
 
+			case MemoryType::M32xMasterMemory:
+			case MemoryType::M32xSdram:
+			case MemoryType::M32xFrameBuffer:
+			case MemoryType::M32xPalette:
+			case MemoryType::M32xBootRom:
+				return CpuType::M32xMaster;
+
+			case MemoryType::M32xSlaveMemory:
+				return CpuType::M32xSlave;
+
 			default:
 				throw std::runtime_error("Invalid CPU type");
 		}
@@ -222,7 +236,7 @@ public:
 
 	static constexpr MemoryType GetLastCpuMemoryType()
 	{
-		return MemoryType::McdMemory;
+		return MemoryType::M32xSlaveMemory;
 	}
 
 	static constexpr bool IsPpuMemory(MemoryType memType)
@@ -341,7 +355,7 @@ public:
 
 	static constexpr CpuType GetLastCpuType()
 	{
-		return CpuType::McdM68k;
+		return CpuType::M32xSlave;
 	}
 
 	static string AddressToHex(CpuType cpuType, int32_t address)

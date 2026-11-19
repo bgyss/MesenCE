@@ -2,6 +2,7 @@
 #include "MD/MdVdp.h"
 #include "MD/MdConsole.h"
 #include "MD/MdMemoryManager.h"
+#include "MD/M32x/M32xUnit.h"
 #include "MD/MdControlManager.h"
 #include "Shared/Emulator.h"
 #include "Shared/EmuSettings.h"
@@ -247,6 +248,18 @@ void MdVdp::ProcessLineStart()
 		if(tools && tools->HasOpenedViewer()) {
 			tools->UpdateViewers(line, 0);
 		}
+	}
+	if(_m32x) {
+		//The SH-2s reach the line's start before its events: a long 68000 stall (VDP DMA) makes the
+		//VDP catch up several lines at once, and each line's H interrupt must reach the SH-2s
+		_m32x->Run(_lineStartClock);
+		_m32x->OnLineStart();
+		if(line == 0) {
+			_m32x->OnVBlank(false);
+		} else if(line == GetVBlankStart()) {
+			_m32x->OnVBlank(true);
+		}
+		_m32x->OnHBlank(true);
 	}
 	if(line == 0) {
 		_vintRaisedThisFrame = false;
@@ -749,7 +762,17 @@ void MdVdp::FinishLine()
 	if(_lineActive) {
 		RenderPixels(_lineWidth);
 		_lineActive = false;
+		if(_m32x && GetInterlaceMode() != 3) {
+			_m32x->CompositeLine(_currentBuffer + _state.Scanline * _frameWidth, _state.Scanline, _lineWidth);
+		}
 	}
+}
+
+bool MdVdp::IsHBlank(uint64_t clock)
+{
+	uint64_t pos = clock >= _lineStartClock ? (clock - _lineStartClock) % MdTiming::ClocksPerLine : (MdTiming::ClocksPerLine - (_lineStartClock - clock) % MdTiming::ClocksPerLine) % MdTiming::ClocksPerLine;
+	uint32_t start = IsH40() ? RenderOffsetH40 : RenderOffsetH32;
+	return pos < start || pos >= start + 2560;
 }
 
 void MdVdp::RenderPixels(uint16_t endX)
@@ -774,7 +797,7 @@ void MdVdp::RenderPixels(uint16_t endX)
 
 	uint8_t bgIndex = _state.Regs[7] & 0x3F;
 	if(!IsDisplayEnabled()) {
-		uint16_t bg = toPixel(bgIndex, ShadeNormal);
+		uint16_t bg = toPixel(bgIndex, ShadeNormal) | _backdropFlag;
 		for(uint32_t x = startX; x < endX; x++) {
 			out[x] = bg;
 		}
@@ -868,7 +891,7 @@ void MdVdp::RenderPixels(uint16_t endX)
 		bool priS = spritePriority[x];
 
 		if(blankLeftColumn && x < 8) {
-			out[x] = toPixel(bgIndex, ShadeNormal);
+			out[x] = toPixel(bgIndex, ShadeNormal) | _backdropFlag;
 			continue;
 		}
 
@@ -915,7 +938,9 @@ void MdVdp::RenderPixels(uint16_t endX)
 			}
 		}
 
-		out[x] = toPixel(result, shade);
+		//Backdrop: no sprite (other than a shadow/highlight operator), plane A or plane B pixel
+		bool backdrop = !(colorS && !spriteIsOperator) && !colorA && !colorB;
+		out[x] = toPixel(result, shade) | (backdrop ? _backdropFlag : 0);
 	}
 }
 

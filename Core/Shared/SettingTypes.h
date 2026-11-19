@@ -1229,4 +1229,6 @@ enum class DebuggerFlags
 	MdM68kDebuggerEnabled = (1 << 13),
 	MdZ80DebuggerEnabled = (1 << 14),
 	McdM68kDebuggerEnabled = (1 << 15),
+	M32xMasterDebuggerEnabled = (1 << 16),
+	M32xSlaveDebuggerEnabled = (1 << 17),
 };

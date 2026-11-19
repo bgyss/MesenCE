@@ -13,6 +13,7 @@ class MdApu;
 class MdMemoryManager;
 class MdControlManager;
 class McdUnit;
+class M32xUnit;
 
 // Sega Mega Drive / Genesis base console: 68000, Z80, VDP, YM2612 + PSG, two pad ports.
 // See docs/research/mega-drive-genesis-feasibility.md and md-verification-findings.md.
@@ -27,6 +28,7 @@ private:
 	unique_ptr<MdMemoryManager> _memoryManager;
 	unique_ptr<MdControlManager> _controlManager;
 	unique_ptr<McdUnit> _mcd; //Sega CD unit, when attached (Mode 1)
+	unique_ptr<M32xUnit> _m32x; //32X, for 32X cartridges
 
 	ConsoleRegion _region = ConsoleRegion::Ntsc;
 	std::function<void(const MdBusEvent&)> _busObserver;
@@ -38,7 +40,7 @@ private:
 	ConsoleRegion PickRegion(ConsoleRegion setting);
 
 public:
-	static vector<string> GetSupportedExtensions() { return { ".md", ".gen", ".smd", ".bin", ".cue" }; }
+	static vector<string> GetSupportedExtensions() { return { ".md", ".gen", ".smd", ".bin", ".cue", ".32x" }; }
 	//A Sega CD / Mega-CD disc: "SEGADISCSYSTEM" at the start of the first data sector
 	static bool IsSegaCdDisc(DiscInfo& disc);
 	static const char* GetSecurityCodeRegion(vector<uint8_t>& sector);
@@ -55,6 +57,7 @@ public:
 	MdMemoryManager* GetMemoryManager() { return _memoryManager.get(); }
 	MdModel GetModel() { return _model; }
 	McdUnit* GetMcd() { return _mcd.get(); }
+	M32xUnit* GetM32x() { return _m32x.get(); }
 
 	//Optional bus observer (headless trace capture); unset during normal emulation
 	void SetBusObserver(std::function<void(const MdBusEvent&)> observer) { _busObserver = observer; }

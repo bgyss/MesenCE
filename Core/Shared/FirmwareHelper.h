@@ -37,7 +37,10 @@ enum class FirmwareType
 	GgBootRom,
 	McdUsa,
 	McdEurope,
-	McdJapan
+	McdJapan,
+	M32xMasterBios,
+	M32xSlaveBios,
+	M32xVectorBios
 };
 
 struct MissingFirmwareMessage
@@ -373,6 +376,18 @@ public:
 
 		MessageManager::DisplayMessage("Error", "Could not find the Sega CD / Mega-CD BIOS (" + altName + ")");
 		return false;
+	}
+
+	//32X boot ROMs: master SH-2 (2 KiB), slave SH-2 (1 KiB), 68000 vectors (256 bytes). Optional:
+	//without them MesenCE's replacement boot ROMs are used (MD/M32x/M32xBootRom.h)
+	static void Load32xBios(vector<uint8_t>& master, vector<uint8_t>& slave, vector<uint8_t>& vectors)
+	{
+		vector<uint8_t> m, s, g;
+		if(AttemptLoadFirmware(m, "32X_M_BIOS.bin", 0x800, "[BIOS] 32X Master SH2 (World).bin") && AttemptLoadFirmware(s, "32X_S_BIOS.bin", 0x400, "[BIOS] 32X Slave SH2 (World).bin") && AttemptLoadFirmware(g, "32X_G_BIOS.bin", 0x100, "[BIOS] 32X M68000 (USA).bin")) {
+			master = std::move(m);
+			slave = std::move(s);
+			vectors = std::move(g);
+		}
 	}
 
 	static bool LoadPceGamesExpressFirmware(Emulator* emu, vector<uint8_t>& biosRom)

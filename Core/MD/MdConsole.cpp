@@ -10,6 +10,7 @@
 #include "MD/MdControlManager.h"
 #include "MD/MdDefaultVideoFilter.h"
 #include "MD/Mcd/McdUnit.h"
+#include "MD/M32x/M32xUnit.h"
 #include "Shared/Emulator.h"
 #include "Shared/EmuSettings.h"
 #include "Shared/BatteryManager.h"
@@ -200,6 +201,16 @@ LoadRomResult MdConsole::LoadRom(VirtualFile& romFile)
 		_memoryManager->SetMcd(_mcd.get(), mode2);
 		_apu->SetMcd(_mcd.get());
 	}
+	if(!mode2 && (ext == ".32x" || M32xUnit::Is32xRom(romData) || M32xUnit::IsAttachedOverride())) {
+		//32X: the user's Sega boot ROMs when available, MesenCE's replacements otherwise
+		vector<uint8_t> masterBios, slaveBios, vectorBios;
+		M32xUnit::LoadBios(_emu, masterBios, slaveBios, vectorBios);
+		_m32x.reset(new M32xUnit());
+		_m32x->Init(this, _memoryManager.get(), isPal, std::move(masterBios), std::move(slaveBios), std::move(vectorBios));
+		_memoryManager->SetM32x(_m32x.get());
+		_vdp->SetM32x(_m32x.get());
+		_apu->SetM32x(_m32x.get());
+	}
 	_m68k->PowerOn();
 	_controlManager->UpdateControlDevices();
 	return LoadRomResult::Success;
@@ -263,6 +274,7 @@ vector<CpuType> MdConsole::GetCpuTypes()
 	if(_mcd) {
 		return { CpuType::MdM68k, CpuType::MdZ80, CpuType::McdM68k };
 	}
+	//32X: the SH-2s get debugger CPU types in S4 (Sh2Debugger, not written yet)
 	return { CpuType::MdM68k, CpuType::MdZ80 };
 }
 
@@ -326,6 +338,8 @@ AddressInfo MdConsole::GetAbsoluteAddress(AddressInfo& relAddress)
 		return _memoryManager->GetZ80AbsoluteAddress((uint16_t)relAddress.Address);
 	} else if(relAddress.Type == MemoryType::McdMemory) {
 		return _mcd ? _mcd->SubGetAbsoluteAddress(relAddress.Address) : AddressInfo { -1, MemoryType::None };
+	} else if(relAddress.Type == MemoryType::M32xMasterMemory || relAddress.Type == MemoryType::M32xSlaveMemory) {
+		return _m32x ? _m32x->ShGetAbsoluteAddress(relAddress.Type == MemoryType::M32xSlaveMemory, relAddress.Address) : AddressInfo { -1, MemoryType::None };
 	}
 	return _memoryManager->GetAbsoluteAddress(relAddress.Address);
 }
@@ -336,6 +350,8 @@ AddressInfo MdConsole::GetRelativeAddress(AddressInfo& absAddress, CpuType cpuTy
 		return { _memoryManager->GetZ80RelativeAddress(absAddress), MemoryType::MdZ80Memory };
 	} else if(cpuType == CpuType::McdM68k) {
 		return { _mcd ? _mcd->SubGetRelativeAddress(absAddress) : -1, MemoryType::McdMemory };
+	} else if(cpuType == CpuType::M32xMaster || cpuType == CpuType::M32xSlave) {
+		return { _m32x ? _m32x->ShGetRelativeAddress(absAddress) : -1, cpuType == CpuType::M32xMaster ? MemoryType::M32xMasterMemory : MemoryType::M32xSlaveMemory };
 	}
 	return { _memoryManager->GetRelativeAddress(absAddress), MemoryType::MdMemory };
 }
@@ -370,5 +386,8 @@ void MdConsole::Serialize(Serializer& s)
 	SV(_controlManager);
 	if(_mcd) {
 		SV(_mcd);
+	}
+	if(_m32x) {
+		SV(_m32x);
 	}
 }

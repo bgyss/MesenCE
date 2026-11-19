@@ -210,7 +210,7 @@ void Sh2Core::CachePurgeAll(int ways)
 	}
 }
 
-uint32_t Sh2Core::ReadByte(uint32_t addr)
+uint32_t Sh2Core::ReadByteImpl(uint32_t addr)
 {
 	if(_flatBus) {
 		return BusRead8(addr);
@@ -228,7 +228,7 @@ uint32_t Sh2Core::ReadByte(uint32_t addr)
 	return 0;
 }
 
-uint32_t Sh2Core::ReadWord(uint32_t addr)
+uint32_t Sh2Core::ReadWordImpl(uint32_t addr)
 {
 	if(_flatBus) {
 		return BusRead16(addr);
@@ -250,7 +250,7 @@ uint32_t Sh2Core::ReadWord(uint32_t addr)
 	return 0;
 }
 
-uint32_t Sh2Core::ReadLong(uint32_t addr)
+uint32_t Sh2Core::ReadLongImpl(uint32_t addr)
 {
 	if(_flatBus) {
 		return BusRead32(addr);
@@ -294,7 +294,7 @@ uint16_t Sh2Core::FetchWord(uint32_t addr)
 	}
 }
 
-void Sh2Core::WriteByte(uint32_t addr, uint32_t value)
+void Sh2Core::WriteByteImpl(uint32_t addr, uint32_t value)
 {
 	if(_flatBus) {
 		BusWrite8(addr, (uint8_t)value);
@@ -314,7 +314,7 @@ void Sh2Core::WriteByte(uint32_t addr, uint32_t value)
 	}
 }
 
-void Sh2Core::WriteWord(uint32_t addr, uint32_t value)
+void Sh2Core::WriteWordImpl(uint32_t addr, uint32_t value)
 {
 	if(_flatBus) {
 		BusWrite16(addr, (uint16_t)value);
@@ -340,7 +340,7 @@ void Sh2Core::WriteWord(uint32_t addr, uint32_t value)
 	}
 }
 
-void Sh2Core::WriteLong(uint32_t addr, uint32_t value)
+void Sh2Core::WriteLongImpl(uint32_t addr, uint32_t value)
 {
 	if(_flatBus) {
 		BusWrite32(addr, value);
@@ -1130,8 +1130,12 @@ bool Sh2Core::CheckInterrupts()
 	}
 
 	_state.Sleeping = false;
+	uint32_t returnPc = _state.PC;
 	EnterException(bestVector, _state.PC);
 	_state.SR = (_state.SR & ~0xF0) | (bestLevel << 4);
+	if(_debugHooks) {
+		OnInterruptTaken(returnPc, _state.PC);
+	}
 	if(external) {
 		OnExternalInterruptAccepted((uint8_t)bestLevel);
 	}
@@ -1187,7 +1191,9 @@ void Sh2Core::Step()
 
 	_instPc = _state.PC;
 	uint16_t op = FetchWord(_instPc);
-	OnInstructionStart(_instPc, op);
+	if(_debugHooks) {
+		OnInstructionStart(_instPc, op);
+	}
 	_state.PC = _instPc + 2;
 	AddCycles(1);
 	Execute(op);

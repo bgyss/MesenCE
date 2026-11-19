@@ -138,6 +138,8 @@
     <ClInclude Include="MD\MdControlManager.h" />
     <ClInclude Include="MD\MdEeprom.h" />
     <ClInclude Include="MD\Mcd\McdUnit.h" />
+    <ClInclude Include="MD\M32x\M32xUnit.h" />
+    <ClInclude Include="MD\M32x\M32xBootRom.h" />
     <ClInclude Include="MD\Mcd\McdPcm.h" />
     <ClInclude Include="MD\Mcd\McdCd.h" />
     <ClInclude Include="MD\MdDefaultVideoFilter.h" />
@@ -1003,6 +1005,7 @@
     <ClCompile Include="MD\MdControlManager.cpp" />
     <ClCompile Include="MD\MdEeprom.cpp" />
     <ClCompile Include="MD\Mcd\McdUnit.cpp" />
+    <ClCompile Include="MD\M32x\M32xUnit.cpp" />
     <ClCompile Include="MD\Mcd\McdPcm.cpp" />
     <ClCompile Include="MD\Mcd\McdCd.cpp" />
     <ClCompile Include="MD\MdM68k.cpp" />

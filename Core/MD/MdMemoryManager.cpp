@@ -11,6 +11,7 @@
 #include "Shared/BatteryManager.h"
 #include "MD/MdEeprom.h"
 #include "MD/Mcd/McdUnit.h"
+#include "MD/M32x/M32xUnit.h"
 #include "Utilities/Sha256.h"
 #include "Shared/CheatManager.h"
 #include "Shared/MemoryType.h"
@@ -127,6 +128,9 @@ void MdMemoryManager::SyncAfterM68kInstruction()
 	if(_mcd) {
 		_mcd->Run(_masterClock);
 	}
+	if(_m32x) {
+		_m32x->Run(_masterClock);
+	}
 	_m68k->SetInterruptLevel(_vdp->GetM68kInterruptLevel());
 	if(_vdp->IsZ80InterruptActive()) {
 		_z80->SetIrqSource(SmsIrqSource::Vdp);
@@ -227,6 +231,11 @@ uint8_t MdMemoryManager::ReadCartBus(uint32_t addr)
 	return value;
 }
 
+uint16_t MdMemoryManager::ReadCartWord(uint32_t addr)
+{
+	return (uint16_t)((ReadCartBus(addr) << 8) | ReadCartBus(addr | 1));
+}
+
 bool MdMemoryManager::IsSaveRamAddress(uint32_t addr)
 {
 	if(addr < _saveRamStart || addr > _saveRamEnd) {
@@ -271,6 +280,14 @@ uint16_t MdMemoryManager::M68kRead(bool upper, bool lower, uint32_t addr, M68kAc
 				_mcd->Run(_masterClock);
 				return _mcd->MainRead(addr, _m68k->GetRegisters().Irc);
 			}
+			if(_m32x && _m32x->IsAdapterEnabled()) {
+				//32X (ADEN = 1): the vector ROM at $000000-$0000FF; the cartridge only while RV = 1
+				if(addr < 0x100) {
+					return _m32x->ReadVector(addr);
+				} else if(!_m32x->IsRv()) {
+					return _m68k->GetRegisters().Irc;
+				}
+			}
 			//Cartridge ($000000-$3FFFFF)
 			return (ReadCartBus(addr) << 8) | ReadCartBus(addr | 1);
 
@@ -285,6 +302,9 @@ uint16_t MdMemoryManager::M68kRead(bool upper, bool lower, uint32_t addr, M68kAc
 			} else if(_mcd && (addr & 0xFFFF00) == 0xA12000) {
 				_mcd->Run(_masterClock);
 				return _mcd->MainReadRegister(addr);
+			} else if(_m32x && _m32x->IsMainRegister(addr)) {
+				_m32x->Run(_masterClock);
+				return _m32x->MainReadRegister(addr, _m68k->GetRegisters().Irc);
 			} else {
 				return ReadControlRegister(addr, _m68k->GetRegisters().Irc);
 			}
@@ -316,7 +336,11 @@ uint16_t MdMemoryManager::M68kRead(bool upper, bool lower, uint32_t addr, M68kAc
 			return _m68k->GetRegisters().Irc;
 
 		default:
-			//$800000-$9FFFFF: 32X space, nothing connected
+			//$800000-$9FFFFF: the 32X while ADEN = 1, nothing connected otherwise
+			if(_m32x && _m32x->IsAdapterEnabled()) {
+				_m32x->Run(_masterClock);
+				return _m32x->MainRead(addr, _m68k->GetRegisters().Irc);
+			}
 			return _m68k->GetRegisters().Irc;
 	}
 }
@@ -331,6 +355,14 @@ void MdMemoryManager::M68kWrite(bool upper, bool lower, uint32_t addr, uint16_t 
 				_mcd->Run(_masterClock);
 				_mcd->MainWrite(addr, upper, lower, value);
 				break;
+			}
+			if(_m32x && _m32x->IsAdapterEnabled()) {
+				if(addr < 0x100) {
+					_m32x->WriteVector(addr, upper, lower, value);
+					break;
+				} else if(!_m32x->IsRv()) {
+					break;
+				}
 			}
 			if(_eeprom) {
 				if(upper) {
@@ -365,6 +397,9 @@ void MdMemoryManager::M68kWrite(bool upper, bool lower, uint32_t addr, uint16_t 
 			} else if(_mcd && (addr & 0xFFFF00) == 0xA12000) {
 				_mcd->Run(_masterClock);
 				_mcd->MainWriteRegister(addr, upper, lower, value);
+			} else if(_m32x && _m32x->IsMainRegister(addr)) {
+				_m32x->Run(_masterClock);
+				_m32x->MainWriteRegister(addr, upper, lower, value);
 			} else {
 				if(upper) {
 					WriteControlRegister(addr, value >> 8, true);
@@ -414,6 +449,10 @@ void MdMemoryManager::M68kWrite(bool upper, bool lower, uint32_t addr, uint16_t 
 			break;
 
 		default:
+			if(_m32x && _m32x->IsAdapterEnabled()) {
+				_m32x->Run(_masterClock);
+				_m32x->MainWrite(addr, upper, lower, value);
+			}
 			break;
 	}
 }
@@ -670,6 +709,8 @@ uint16_t MdMemoryManager::DmaReadWord(uint32_t addr)
 		return (_workRam[addr & 0xFFFF] << 8) | _workRam[(addr & 0xFFFF) | 1];
 	} else if(_mcdMode2 && addr < 0x400000) {
 		return _mcd->DmaMainRead(addr);
+	} else if(_m32x && _m32x->IsAdapterEnabled() && (addr < 0x100 || addr >= 0x800000) && addr < 0xA00000) {
+		return addr < 0x100 ? _m32x->ReadVector(addr) : _m32x->PeekMain(addr);
 	} else if(addr < 0x400000) {
 		return (ReadCartBus(addr) << 8) | ReadCartBus(addr | 1);
 	} else if(_mcd && !_mcdMode2 && addr < 0x800000) {
@@ -684,6 +725,9 @@ uint8_t MdMemoryManager::DebugRead(uint32_t addr)
 	addr &= 0xFFFFFF;
 	if(_mcdMode2 && addr < 0x400000) {
 		return _mcd->DebugMainRead(addr);
+	} else if(_m32x && _m32x->IsAdapterEnabled() && (addr < 0x100 || (addr >= 0x800000 && addr < 0xA00000))) {
+		uint16_t w = addr < 0x100 ? _m32x->ReadVector(addr) : _m32x->PeekMain(addr & ~1);
+		return (addr & 1) ? (uint8_t)w : (uint8_t)(w >> 8);
 	} else if(addr < 0x400000) {
 		return ReadCartByte(addr);
 	} else if(addr >= 0xE00000) {
@@ -753,6 +797,10 @@ AddressInfo MdMemoryManager::GetAbsoluteAddress(uint32_t relAddr)
 		return _mcd->MainGetAbsoluteAddress(relAddr);
 	} else if(_mcd && !_mcdMode2 && relAddr >= 0x400000 && relAddr < 0x800000) {
 		return _mcd->MainGetAbsoluteAddress(relAddr - 0x400000);
+	} else if(_m32x && _m32x->IsAdapterEnabled() && relAddr >= 0x800000 && relAddr < 0xA00000) {
+		return _m32x->MainGetAbsoluteAddress(relAddr);
+	} else if(_m32x && _m32x->IsAdapterEnabled() && !_m32x->IsRv() && relAddr < 0x400000) {
+		return { -1, MemoryType::None }; //the vector ROM, or nothing (the cartridge is at $880000)
 	} else if(relAddr < 0x400000) {
 		if(_saveRam && _state.SramEnabled && IsSaveRamAddress(relAddr)) {
 			uint32_t offset = relAddr - _saveRamStart;
@@ -782,6 +830,10 @@ int32_t MdMemoryManager::GetRelativeAddress(AddressInfo& absAddress)
 					}
 				}
 				return -1;
+			}
+			if(_m32x && _m32x->IsAdapterEnabled() && !_m32x->IsRv()) {
+				//32X: the cartridge's first 512 KiB at $880000
+				return absAddress.Address < 0x80000 ? (0x880000 | absAddress.Address) : -1;
 			}
 			return absAddress.Address < 0x400000 ? absAddress.Address : -1;
 		case MemoryType::MdWorkRam: return 0xFF0000 | (absAddress.Address & 0xFFFF);

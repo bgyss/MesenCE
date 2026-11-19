@@ -19,6 +19,8 @@ enum class MemoryType
 	MdMemory,
 	MdZ80Memory,
 	McdMemory,
+	M32xMasterMemory,
+	M32xSlaveMemory,
 
 	SnesPrgRom,
 	SnesWorkRam,
@@ -120,6 +122,11 @@ enum class MemoryType
 	McdPcmRam,
 	McdCdcRam,
 	McdBios,
+
+	M32xSdram,
+	M32xFrameBuffer,
+	M32xPalette,
+	M32xBootRom,
 
 	None
 };

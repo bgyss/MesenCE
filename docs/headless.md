@@ -20,6 +20,8 @@ mesen-headless run --rom ROM --frames N --out NEW_DIR [--input INPUT.json] [--lu
                    [--md-mcd]                 # Mega Drive test hook: attach the Sega CD unit (Mode 1)
                    [--md-mcd-disc FILE.cue]   # with --md-mcd: a disc in the drive (Mode 1)
                    [--md-mcd-bios FILE]       # Sega CD BIOS for disc boot (ROM = a Sega CD .cue)
+                   [--md-32x]                 # Mega Drive test hook: attach the 32X to any cartridge
+                   [--md-32x-bios DIR]        # 32X: Sega's boot ROMs (32X_M/S/G_BIOS.bin) instead of MesenCE's replacements
                    [--battery FILE]...        # start from a save file (named <rom><FILE extension>)
                    [--save-battery]           # write battery files on exit into OUT/saves
 mesen-headless validate OUT_DIR
