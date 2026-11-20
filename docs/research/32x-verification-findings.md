@@ -195,9 +195,11 @@ cartridge windows, frame buffer, registers at `$A15100`, "MARS" at `$A130EC`), s
 from the manual's boot protocol (section 5.1, figures 5.1-5.3): cache purge and enable, the MARS
 user header's initial data load, the header's checksum word to comm8, "M_OK" / "S_OK", VBR and the
 start address. The 68000 vector ROM follows "ROM Access When Using the 32X" (vectors at
-`$880200 + 6n`); Sega's ROM additionally holds a small bank-switch routine at `$C0-$FF`, which the
-replacement doesn't (judgment call: no game is known to call it). Not done by the replacements:
-the SDRAM test and clear, security, BSC set-up, and the sleep until the 68000 wakes the SH-2s.
+`$880200 + 6n`). Not done by the replacements: the SDRAM test and clear, security, BSC set-up,
+and the sleep until the 68000 wakes the SH-2s. **Revised in S5:** S2 left out the bank-switch
+helpers Sega's vector ROM holds at `$C0-$FF` ("no game is known to call it"). That was wrong:
+Knuckles' Chaotix calls `$C0`. S5 also adds a hand-over delay and GBR; see "Replacement boot ROMs"
+under S5.
 The Egypt sample renders the same picture with Sega's BIOS and with the replacements.
 
 ### Tests
@@ -254,3 +256,79 @@ show their pictures.
 - Test: `tests/MD/m32x/debugger.lua` via `debugger_check.py` in `test:md-synthetic` (exec and write
   callbacks on the SH-2s, SDRAM and CPU-space reads and writes, memory sizes); a wrong expectation
   makes it fail.
+
+## S5: games (2026-11-19)
+
+### Method
+
+The local 32X library: 42 titles (one dump per title; commercial games, Sega's sample programs and
+the Mars Check Program). Each runs headless for 3,600 frames with Sega's BIOS (`--md-32x-bios`),
+and for 1,800 frames with the replacement boot ROMs. START is pressed every 300 frames, and a
+screenshot is taken every 300 frames. Pass: the title reaches its title screen or gameplay and the
+run exits cleanly. Black screens and hangs were traced with Lua scripts (CPU positions, comm
+words, 68000 exception vectors, memory dumps) and the disassemblers.
+
+### Results with Sega's BIOS
+
+41 of 42 reach their title screen or gameplay, and none crash. Highlights: Knuckles' Chaotix and
+Brutal (heavy SH-2 sync), Doom (run-length mode), Virtua Fighter, Virtua Racing Deluxe and Star
+Wars Arcade (both SH-2s, cache), Metal Head and Tempo (DREQ), and the Celtic PWM test. The Celtic
+test plays its one sample (0xB6E84 samples at 22 kHz, about 34 s) and then goes silent, as the
+program intends.
+
+The one exception is the ECCO the Dolphin CinePak demo. Sega's master boot ROM compares the
+cartridge's 68000 start-up code with its own copy (`$22A-$238`), and on a mismatch it writes
+"SQER" to comm0 and stops (`$248`). The demo's start-up code starts 16 bytes later than the
+standard one (`$3F0-$3FF` are zero), so the BIOS rejects it. That is the BIOS's own check, not
+an emulation bug. The replacement boot ROMs have no security check, and the demo plays with them.
+
+### Fixes
+
+| Title | Symptom | Cause and fix | Source | Test |
+|---|---|---|---|---|
+| NBA Jam TE, NFL Quarterback Club | Blue stripes | Their start-up check probes the Acclaim EEPROM at `$200000` with RV = 1 and stops when nothing answers. `MdEepromDatabase` had no entries for the 32X dumps: added (24C04 and 24C02, Acclaim board) | MAME's 32X list (NBA Jam TE: "Missing I2C hookup so POST fails with blue/black vertical stripes (same I2C type as plain MD version)"); NFL QB Club: the Mega Drive version's chip, judgment call | Both reach their intros (local); the EEPROM itself is covered by the MD EEPROM cases |
+| Metal Head | Black after the SEGA logo | The master waits for FEN = 1 with no fill running. FEN now also reads 1 in a refresh window at the start of each HBlank (`MdVdp::Is32xRefreshWindow`) | BlastEm: the first 6 pixels of HBlank (`32x_video.c`); ares reports FEN during the VDP's refresh slots. Window: judgment call | `m32x_fen_refresh` (fails without the window) |
+
+### Replacement boot ROMs
+
+With the replacement ROMs, 8 titles stayed black at 1,800 frames (Chaotix, Virtua Racing Deluxe,
+Tempo, Toughman Contest, 36 Great Holes, Sangokushi IV, Motocross Championship, RBI Baseball 95).
+They all boot with Sega's BIOS. Three causes:
+
+1. **Vector ROM helpers.** After the boot handshake, Chaotix and Virtua Racing Deluxe call
+   `jsr ($00C0).w` with a1 = `$A130F1`. Sega's vector ROM keeps two routines in the reserved
+   vector slots `$C0-$FF`. Each sets RV, writes the bank set registers (`$C0`: d0.b to (a1);
+   `$D4`: 8 bytes from (a0)+ to `$A130F1-$A130FF`, preserving d7/a1), then clears RV. The
+   manual requires RV = 1 for those writes (p. 17). The replacement vector ROM now implements both
+   entry points, hand-assembled in `gen_boot.py`. Without them, the 68000 executed vector words
+   as code and took an illegal-instruction exception.
+2. **Hand-over time.** Sega's master BIOS sleeps only while ADEN = 0. It starts when the 68000
+   releases RES (frame 2), and writes "M_OK" about 80 frames later. Carts' 68000 start-up code
+   relies on that time: it swaps the frame buffer with FM = 0 before it waits for the checksum.
+   With an instant hand-over, the application's SH-2 code took FM first, and the 68000 looped
+   on FS forever (Toughman Contest, Tempo, 36 Great Holes, Sangokushi IV). The replacement master
+   now waits 16 VBlanks after loading the initial data. Judgment call: no source gives the BIOS
+   time as a requirement; 16 frames is well under the real BIOS's 80 and enough for every
+   title here.
+3. **GBR at entry.** Both Sega boot ROMs set GBR = `$20004000` and jump to the application with
+   it. RBI Baseball 95 and Motocross Championship read `@(0,GBR)` (FM) before setting GBR
+   themselves. The replacements now set GBR the same way.
+
+The handover is covered by `m32x_handover`: GBR at the master's entry, and the helpers' first
+words at `$C0`/`$C8`/`$D4`. It fails when the GBR set-up and the `$C0` helper are removed. The
+other 32X cases now run 17 frames longer (`BOOT_FRAMES`), as does `tests/MD/m32x/debugger.lua`.
+
+After the three fixes, all 42 titles reach their title screen, gameplay or test screen with the
+replacement boot ROMs (1,800 frames), including the ECCO CinePak demo.
+
+### Open issues
+
+- **Speed.** After Burner Complete, the slowest title, runs 3,600 frames in 59.7 s headless on its
+  own (about 60 fps, real BIOS; Apple Silicon, 10 cores): real time with no headroom. Profile of the
+  emulation thread: the SH-2 interpreter dominates, with per-instruction overhead in
+  `RunPeripherals` (FRT/WDT) and `CheckInterrupts` at about a third of it. Candidates: run the
+  on-chip peripherals lazily (on register access and at the next event) and skip the interrupt
+  scan while no source can exceed the mask. Not done in S5.
+- Carried over: H interrupts 262 vs 256 per frame (Mars Check Program 55/56), the 32X image's
+  sub-pixel offset, SH-2 cartridge reads while RV = 1 (no wait), palette/frame buffer access
+  waits.

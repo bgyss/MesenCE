@@ -34,7 +34,7 @@ end, emu.callbackType.write, 0x402C, 0x402D, emu.cpuType.m32xMaster, emu.memType
 local frames = 0
 emu.addEventCallback(function()
   frames = frames + 1
-  if frames < 4 then
+  if frames < 21 then -- the replacement boot ROM hands over after 16 frames
     return
   end
   -- The master's first instruction is mov.l @(disp,pc),r0 (opcode $D0xx)

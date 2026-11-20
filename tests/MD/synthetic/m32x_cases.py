@@ -120,13 +120,17 @@ def build_32x(case):
 
 _SPECS = {}
 
+# The replacement master boot ROM hands over after 16 frames (tools/m32x-boot/gen_boot.py,
+# BOOT_VBLANKS; findings S5), so every case runs that much longer.
+BOOT_FRAMES = 17
+
 
 def _case(name, ops, master, slave="sleep_loop:\n bra sleep_loop\n nop\n", master_irq=(), slave_irq=(), frames=4,
-          rom_size=0x8000, rom_data=(), render=False):
-    _SPECS[name] = {"master": "master_entry:\n" + PRELUDE.replace("stack_top", "mstack") + master + "\n .align 4\nmstack: .long 0x0603FC00\n",
+          rom_size=0x8000, rom_data=(), render=False, prelude=True):
+    _SPECS[name] = {"master": "master_entry:\n" + (PRELUDE.replace("stack_top", "mstack") if prelude else "") + master + "\n .align 4\nmstack: .long 0x0603FC00\n",
                     "slave": PRELUDE.replace("stack_top", "sstack") + slave + "\n .align 4\nsstack: .long 0x0603F800\n",
                     "master_irq": list(master_irq), "slave_irq": list(slave_irq)}
-    return Case(name, tuple(ops), capture_frames=frames, rom_size=rom_size, rom_data=tuple(rom_data), render=render)
+    return Case(name, tuple(ops), capture_frames=frames + BOOT_FRAMES, rom_size=rom_size, rom_data=tuple(rom_data), render=render)
 
 
 def _wait_boot():
@@ -447,6 +451,27 @@ def _cart_map():
     return _case("m32x_cart_map", ops, master, rom_size=0x200000, rom_data=((0x104000, 0x45), (0x104001, 0x67)))
 
 
+def _handover():
+    """What the replacement boot ROMs hand over beyond the manual's flow chart (findings S5):
+
+    - GBR = $20004000 at the master's entry, as Sega's boot ROMs leave it (RBI Baseball 95 and
+      Motocross Championship read @(0,GBR) before setting GBR): the master's first instructions
+      copy GBR to comm6/comm7 without the usual prelude;
+    - the vector ROM's helpers at $C0 and $D4 (Knuckles' Chaotix calls `jsr ($00C0).w`): the
+      68000 reads their first words (bset #0,$A15107 at $C0, movem.l d7/a1,-(sp) at $D4).
+    """
+    master = """
+    stc gbr,r0
+    mov.l comm6,r1
+    mov.w r0,@r1            ; low word -> comm6
+    shlr16 r0
+    mov.w r0,@(2,r1)        ; high word -> comm7
+""" + IDLE + " .align 4\ncomm6: .long 0x2000402C\n"
+    ops = _wait_boot() + [_poll_comm(6, 0x4000), _read(_comm(7), 0x2000),
+                          _read(0x0000C0, 0x08F9), _read(0x0000C8, 0x1280), _read(0x0000D4, 0x48E7)]
+    return _case("m32x_handover", ops, master, prelude=False)
+
+
 def _pwm():
     """PWM (manual pp. 30-35): control = L and R on, TM = 1 (an interrupt every sample); cycle
     = $400. Three words fill the L FIFO (bit 15 FULL reads 1, comm6 = $8000); the PWM interrupt
@@ -715,7 +740,7 @@ def _pixel_check(name):
 
 def all_cases():
     PIXEL_CHECKS["m32x_render"] = {(40, 100): (0, 255, 0), (280, 100): (0, 0, 255)}
-    found = [_boot(), _cmd_irq(), _vint_hint(), _hint_dma(), _sdram_shared(), _dreq_fifo(), _frame_buffer(), _vdp_68k(), _fen_refresh(), _cart_map(),
+    found = [_boot(), _cmd_irq(), _vint_hint(), _hint_dma(), _sdram_shared(), _dreq_fifo(), _frame_buffer(), _vdp_68k(), _fen_refresh(), _cart_map(), _handover(),
              _pwm(), _render(), _priority_32x(), _priority_md(), _dot_shift()]
     for name in PIXEL_CHECKS:
         DERIVED_CHECKS[name] = _pixel_check(name)

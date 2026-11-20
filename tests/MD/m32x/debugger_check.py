@@ -20,7 +20,7 @@ def main():
     script = ROOT / "tests/MD/m32x/debugger.lua"
     with tempfile.TemporaryDirectory() as tmp:
         out = pathlib.Path(tmp) / "run"
-        proc = subprocess.run([str(ROOT / "bin/mesen-headless"), "run", "--rom", str(rom), "--frames", "10",
+        proc = subprocess.run([str(ROOT / "bin/mesen-headless"), "run", "--rom", str(rom), "--frames", "26",
                                "--out", str(out), "--allow-dirty", "--lua", str(script)],
                               capture_output=True, text=True)
         log = (out / "lua.log").read_text() if (out / "lua.log").exists() else proc.stderr
