@@ -86,6 +86,7 @@ Frame numbers are 1-based (entry `"1"` applies to the first emulated frame); por
 | `snaps/<frame>.png` | the frame buffer every N frames (`--snap-every N`), as `final.png` |
 | `trace.txt` | Mega Drive bus trace (`--trace bus`), below |
 | `ym2612.raw`, `psg.raw` | Mega Drive per-chip audio before mixing (`--chip-audio`): s16le stereo at the YM2612 sample rate (master clock / 1008); the manifest's `chip_audio` gives format and rate |
+| `pwm.raw` | 32X PWM as mixed (`--chip-audio` with a 32X attached): s16le stereo, one sample per YM2612 sample |
 | `pcm.raw`, `cdda.raw` | Sega CD PCM (12.5 MHz / 384) and CD audio after the fader (44.1 kHz), with `--chip-audio` and the unit attached |
 
 `trace.txt` (`mesen-md-bus-trace/1`) has one event per line,

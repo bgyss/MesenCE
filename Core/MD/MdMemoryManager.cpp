@@ -659,6 +659,13 @@ uint8_t MdMemoryManager::Z80Read(uint16_t addr)
 		if((m68kAddr & 0xE00000) == 0xC00000) {
 			return 0xFF; //VDP through the window locks the machine; not modelled
 		}
+		if(_m32x && _m32x->IsAdapterEnabled() && _m32x->IsMainRegister(m68kAddr)) {
+			//32X registers as a 68000 byte read (Blackthorne, Toughman Contest, T-MEK, World Series
+			//Baseball '95: their Z80 drivers poll INTM/INTS and raise CMD interrupts; PicoDrive)
+			_m32x->Run(_z80->GetMasterClock());
+			uint16_t value = _m32x->MainReadRegister(m68kAddr & ~1, 0xFFFF);
+			return (m68kAddr & 1) ? (uint8_t)value : (uint8_t)(value >> 8);
+		}
 		return m68kAddr < 0x400000 ? ReadCartBus(m68kAddr) : DebugRead(m68kAddr);
 	}
 }
@@ -690,6 +697,11 @@ void MdMemoryManager::Z80Write(uint16_t addr, uint8_t value)
 		uint32_t m68kAddr = ((uint32_t)_state.Z80Bank << 15) | (addr & 0x7FFF);
 		if(m68kAddr >= 0xE00000) {
 			_workRam[m68kAddr & 0xFFFF] = value;
+		} else if(_m32x && _m32x->IsAdapterEnabled() && _m32x->IsMainRegister(m68kAddr)) {
+			//32X registers as a 68000 byte write (see Z80Read)
+			_m32x->Run(_z80->GetMasterClock());
+			bool odd = m68kAddr & 1;
+			_m32x->MainWriteRegister(m68kAddr & ~1, !odd, odd, (uint16_t)((value << 8) | value));
 		} else if(m68kAddr < 0x400000 && _saveRam && _state.SramEnabled && IsSaveRamAddress(m68kAddr)) {
 			WriteSaveRam(m68kAddr, value);
 		}

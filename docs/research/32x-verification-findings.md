@@ -321,6 +321,51 @@ other 32X cases now run 17 frames longer (`BOOT_FRAMES`), as does `tests/MD/m32x
 After the three fixes, all 42 titles reach their title screen, gameplay or test screen with the
 replacement boot ROMs (1,800 frames), including the ECCO CinePak demo.
 
+### Audio against PicoDrive (2026-11-20)
+
+Reported: Virtua Fighter played its music but no sound effects. To check audio without
+listening to each title:
+
+- `tools/libretro-capture/capture.py`: a headless libretro host (Python, ctypes). It runs a core
+  (PicoDrive 1.99 from RetroArch here) with the same input script format as `mesen-headless`, and
+  writes the mix and screenshots.
+- `tools/audio-compare/compare.py`: aligns the two mixes by their loudness envelopes (RMS per
+  50 ms), then fits the reference's energy as a weighted sum of MesenCE's per-chip energies.
+  `mesen-headless --chip-audio` now also writes `pwm.raw`. The fit gives each chip's level
+  relative to MesenCE's mix, the windows where sound is missing or extra, and the octave-band
+  spectra of both mixes.
+- `tools/audio-compare/run_library.py` / `mise run test:md-audio-ref -- <rom dir>`: runs every
+  ROM in attract mode with no input, which keeps both emulators on one timeline, and flags
+  outliers. It works for Mega Drive ROMs too, and `--core` takes any libretro core (Genesis Plus
+  GX for the Mega Drive).
+
+Loudness alone was not enough. Virtua Fighter's envelopes correlated at 0.98 while the bug below
+was present. Only the spectra showed it: 95 % of MesenCE's energy was below 150 Hz during a
+PWM-only sound, against 9 % in PicoDrive.
+
+| Finding | Cause and fix | Test |
+|---|---|---|
+| PWM held at one level per frame (Virtua Fighter's sound effects and every PWM sound in the library: right loudness, no content) | `MdApu` mixed `M32xUnit`'s *current* PWM output when it caught up. The 32X runs ahead of the APU (it catches up after each 68000 instruction; the APU runs in batches), so a whole batch, usually a frame, got the newest level. PWM levels are now queued with the master clock of their PWM tick and consumed at each APU sample's clock, like the Sega CD PCM chip's (`McdPcm::GetOutput`), and saved in save states. PWM level changes per second in Virtua Fighter went from 58 to about 10,700. Spectral distance from PicoDrive went from 3.2 dB to 0.6 dB. | `m32x_pwm_stream` (a square wave at about 22.5 kHz; fails with the old mixing); `pwm.raw` added to `replay_check.py` |
+| No sound at all in Blackthorne, Toughman Contest, T-MEK and World Series Baseball '95; no PWM in Star Trek | Their Z80 sound drivers reach the 32X through the Z80's 68000 bank window: they poll INTM/INTS (`$A15102/3`) and raise CMD interrupts. MesenCE's window served only cartridge, work RAM and save RAM: register reads returned a debug peek and writes were dropped, so Blackthorne's Z80 spun on `$A15102` forever. Z80 window accesses to the 32X registers now act as 68000 byte accesses. | `m32x_z80_window` (the Z80 reads comm0 and raises a CMD interrupt; fails without the routing) |
+
+Library results (42 titles, 60 s of attract mode, replacement boot ROMs) after both fixes:
+- 28 titles pass, and 5 test programs make no sound in either emulator.
+- Remaining flags, none of them a missing-sound case:
+  - **Timing, not audio:** Darxide and World Series Baseball '95. Their attract modes run on
+    different timelines in the two emulators (screenshots), so the envelopes can't be aligned.
+  - **Spectral differences of 1.5-3.4 dB** in Blackthorne, Brutal, Primal Rage, NBA Jam TE, WWF
+    Wrestlemania Arcade, the Mars Check Program and the Celtic PWM test. The sound is present;
+    MesenCE has less energy around 400-1,600 Hz in WWF Wrestlemania (-6 dB). Not investigated.
+  - **PWM level:** relative to FM, PicoDrive's PWM is a median 3 dB louder than MesenCE's (range
+    -5 to +7 dB across titles). PicoDrive scales a full-width pulse to ±32768
+    (`pwm_mult = 0x10000 / cycles`), MesenCE to ±16384 (S3, judgment call). The hardware's
+    analogue mix is not measured, so the level is left as is.
+- **Mega Drive check:** Sonic & Knuckles + Sonic 2 and + Sonic 3 against Genesis Plus GX:
+  spectral distance 0.4 dB, envelope correlation 0.98; PSG 1-2 dB quieter in GPGX relative to FM.
+
+PicoDrive is a reference, not ground truth. A flagged title needs a look at which emulator is
+wrong.
+
 ### Open issues
 
 - **Speed.** After Burner Complete, the slowest title, runs 3,600 frames in 59.7 s headless on its

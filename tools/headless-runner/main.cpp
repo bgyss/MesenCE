@@ -686,7 +686,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 
 		//--chip-audio (Mega Drive): YM2612 and PSG streams before mixing, s16 little-endian stereo at the
 		//YM2612 sample rate (master clock / 1008)
-		std::ofstream ymFile, psgFile, pcmFile, cddaFile;
+		std::ofstream ymFile, psgFile, pcmFile, cddaFile, pwmFile;
 		if(chipAudio) {
 			MdConsole* md = dynamic_cast<MdConsole*>(emu.GetConsole().get());
 			if(!md) {
@@ -703,6 +703,15 @@ static int Run(const vector<string>& args, const string& commandLine)
 				psgFile.write((const char*)psg, sizeof(psg));
 			});
 			manifest["chip_audio"] = { { "format", "s16le-stereo" }, { "sample_rate", md->GetApu()->GetSampleRate() }, { "files", { "ym2612.raw", "psg.raw" } } };
+			if(md->GetM32x()) {
+				//32X PWM as mixed (after the PWM level conversion), one sample per YM2612 sample
+				pwmFile.open(outDir / "pwm.raw", std::ios::binary);
+				md->GetApu()->SetPwmObserver([&](int32_t l, int32_t r) {
+					int16_t pwm[2] = { (int16_t)std::clamp(l, -32768, 32767), (int16_t)std::clamp(r, -32768, 32767) };
+					pwmFile.write((const char*)pwm, sizeof(pwm));
+				});
+				manifest["chip_audio"]["pwm"] = { { "file", "pwm.raw" }, { "format", "s16le-stereo" }, { "sample_rate", md->GetApu()->GetSampleRate() } };
+			}
 			if(md->GetMcd()) {
 				//Sega CD PCM: its own stream at 12.5 MHz / 384 (one sample per McdPcm::Clock)
 				pcmFile.open(outDir / "pcm.raw", std::ios::binary);
@@ -783,7 +792,9 @@ static int Run(const vector<string>& args, const string& commandLine)
 		};
 		if(chipAudio) {
 			((MdConsole*)emu.GetConsole().get())->GetApu()->SetChipObserver(nullptr);
+			((MdConsole*)emu.GetConsole().get())->GetApu()->SetPwmObserver(nullptr);
 			ymFile.close();
+			pwmFile.close();
 			psgFile.close();
 		}
 		if(!traceProfile.empty()) {

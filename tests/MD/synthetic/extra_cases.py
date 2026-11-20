@@ -351,6 +351,7 @@ def _m32x_cases():
     for case in found:
         CUSTOM_BUILD[case.name] = m32x_cases.build_32x
     DERIVED_CHECKS.update(m32x_cases.DERIVED_CHECKS)
+    RUNNER_ARGS.update(m32x_cases.RUNNER_ARGS)
     return found
 
 

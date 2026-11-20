@@ -138,7 +138,10 @@ void MdApu::FinishSample(int32_t ymLeft, int32_t ymRight)
 	if(_m32x) {
 		//32X PWM, at half scale (judgment call: no hardware mix level measured)
 		int32_t pwmLeft, pwmRight;
-		_m32x->GetAudioOutput(pwmLeft, pwmRight);
+		_m32x->GetAudioOutput(_clock, pwmLeft, pwmRight);
+		if(_pwmObserver) {
+			_pwmObserver(pwmLeft, pwmRight);
+		}
 		left += pwmLeft;
 		right += pwmRight;
 	}

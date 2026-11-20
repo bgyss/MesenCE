@@ -422,11 +422,35 @@ void M32xUnit::RunPwm(uint64_t sh2Cycle)
 				}
 			}
 		}
+		int32_t left, right;
+		ComputePwmLevels(left, right);
+		const PwmSample& last = _pwmPending.empty() ? _pwmCurrent : _pwmPending.back();
+		if(left != last.Left || right != last.Right) {
+			if(_pwmPending.size() >= 0x10000) {
+				//Nobody is consuming the levels (no APU attached): keep the newest only
+				_pwmPending.erase(_pwmPending.begin(), _pwmPending.begin() + 0x8000);
+			}
+			_pwmPending.push_back({ _pwmNextTick * 7 / 3, (int16_t)left, (int16_t)right });
+		}
 		_pwmNextTick += period;
 	}
 }
 
-void M32xUnit::GetAudioOutput(int32_t& left, int32_t& right)
+void M32xUnit::GetAudioOutput(uint64_t clock, int32_t& left, int32_t& right)
+{
+	size_t used = 0;
+	while(used < _pwmPending.size() && _pwmPending[used].Clock <= clock) {
+		_pwmCurrent = _pwmPending[used];
+		used++;
+	}
+	if(used) {
+		_pwmPending.erase(_pwmPending.begin(), _pwmPending.begin() + used);
+	}
+	left = _pwmCurrent.Left;
+	right = _pwmCurrent.Right;
+}
+
+void M32xUnit::ComputePwmLevels(int32_t& left, int32_t& right)
 {
 	//Pulse width relative to the cycle, centred on half the cycle (judgment call: the analogue
 	//output stage and its DC level are not modelled)
@@ -1326,6 +1350,19 @@ void M32xUnit::Serialize(Serializer& s)
 	SVArray(_pwmFifoCount, 2);
 	SVArray(_pwmOut, 2);
 	SVArray(_pwmLatch, 3);
+	SV(_pwmCurrent.Clock);
+	SV(_pwmCurrent.Left);
+	SV(_pwmCurrent.Right);
+	uint32_t pwmPendingCount = (uint32_t)_pwmPending.size();
+	SV(pwmPendingCount);
+	if(!s.IsSaving()) {
+		_pwmPending.resize(pwmPendingCount);
+	}
+	for(uint32_t i = 0; i < pwmPendingCount; i++) {
+		SVI(_pwmPending[i].Clock);
+		SVI(_pwmPending[i].Left);
+		SVI(_pwmPending[i].Right);
+	}
 	if(!s.IsSaving()) {
 		UpdateIrls();
 		UpdateDreq0();

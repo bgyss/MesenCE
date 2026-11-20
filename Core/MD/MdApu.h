@@ -50,6 +50,7 @@ private:
 	McdUnit* _mcd = nullptr;
 	M32xUnit* _m32x = nullptr;
 	std::function<void(int32_t ymL, int32_t ymR, int32_t psgL, int32_t psgR)> _chipObserver;
+	std::function<void(int32_t pwmL, int32_t pwmR)> _pwmObserver;
 	uint32_t _sampleRate = 53267;
 
 	void ProcessTimers(uint64_t until);
@@ -80,6 +81,8 @@ public:
 
 	//Optional per-sample observer of the two chips before mixing (headless capture)
 	void SetChipObserver(std::function<void(int32_t, int32_t, int32_t, int32_t)> observer) { _chipObserver = observer; }
+	//32X PWM output as mixed, one call per YM2612 sample (test hook, like the chip observer)
+	void SetPwmObserver(std::function<void(int32_t, int32_t)> observer) { _pwmObserver = observer; }
 
 	//ymfm_interface
 	void ymfm_set_timer(uint32_t tnum, int32_t durationInClocks) override;

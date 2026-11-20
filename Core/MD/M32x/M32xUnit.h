@@ -164,6 +164,18 @@ private:
 	uint8_t _pwmFifoCount[2] = {};
 	uint16_t _pwmOut[2] = {};
 	uint16_t _pwmLatch[3] = {};
+	//PWM output levels with the master clock of the PWM tick that produced them, consumed by
+	//MdApu at each of its samples' clocks (the 32X runs ahead of the APU; mixing the current
+	//output instead held one level per batch, i.e. per frame)
+	struct PwmSample
+	{
+		uint64_t Clock;
+		int16_t Left;
+		int16_t Right;
+	};
+	std::vector<PwmSample> _pwmPending;
+	PwmSample _pwmCurrent = {};
+	void ComputePwmLevels(int32_t& left, int32_t& right);
 	bool _dreq1Pulse = false;
 	bool _syncingVdp = false;
 
@@ -247,7 +259,7 @@ public:
 	void OnResetButton();
 
 	//PWM output at master clock `clock` (MdApu), 16-bit
-	void GetAudioOutput(int32_t& left, int32_t& right);
+	void GetAudioOutput(uint64_t clock, int32_t& left, int32_t& right);
 
 	M32xSh2& GetSh2(int i) { return _sh2[i]; }
 	uint8_t* GetSdram() { return _sdram; }

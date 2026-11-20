@@ -538,3 +538,18 @@ set -euo pipefail
 python3 tests/MD/synthetic/gen.py bin/md-synthetic
 python3 tests/MD/synthetic/xarch_compare.py bin/md-synthetic "$@"
 '''
+
+[tasks."test:md-audio-ref"]
+description = "Mega Drive / 32X audio vs PicoDrive (libretro core from RetroArch, or PICODRIVE_CORE): every ROM in MD_AUDIO_ROMS (or the folder given) runs its attract mode in both; loudness envelopes, per-chip balance and octave-band spectra are compared (tools/audio-compare). Local only: needs the core and ROMs. Usage: mise run test:md-audio-ref -- <rom dir> [--frames N] [--match TEXT]"
+depends = ["headless"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+dir="${1:-${MD_AUDIO_ROMS:-}}"
+if [ -z "$dir" ]; then
+  echo "usage: mise run test:md-audio-ref -- <rom dir> [--frames N] [--match TEXT] (or set MD_AUDIO_ROMS)"
+  exit 2
+fi
+[ $# -gt 0 ] && shift
+python3 tools/audio-compare/run_library.py "$dir" bin/md-audio-ref "$@"
+'''

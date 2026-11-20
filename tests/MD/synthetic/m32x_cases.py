@@ -186,6 +186,43 @@ cmd_handler:
     return _case("m32x_cmd_irq", ops, master, master_irq=[(68, "cmd_handler")])
 
 
+def _z80_window():
+    """The Z80 reaches the 32X registers through its 68000 bank window (findings S5, audio:
+    Blackthorne, Toughman Contest, T-MEK and World Series Baseball '95 drive the SH-2s from their
+    Z80 sound drivers, which poll INTM/INTS and raise CMD interrupts; PicoDrive routes Z80 bank
+    accesses through the 68000's handlers). The 68000 loads a Z80 program that sets the bank to
+    $A10000 ($142, nine bit writes to $6000), copies $A15120 (comm0's high byte, "M" of M_OK) to Z80
+    RAM $0040, then writes INTM ($A15103 = 1): the master takes the CMD interrupt and counts it in
+    comm6. MesenCE used to return $FF and drop the write."""
+    bank = 0xA10000 >> 15
+    z80 = ["        ld      a,%d" % ((bank >> i) & 1) + "\n        ld      ($6000),a" for i in range(9)]
+    z80 = "\n".join(z80).split("\n") + [
+        "        ld      a,($D120)",
+        "        ld      ($0040),a",
+        "        ld      a,1",
+        "        ld      ($D103),a",
+        "hang:   jr      hang",
+    ]
+    code = gen.z80_assemble(z80)
+    load = [Operation(WRITE, 2, 0xA11100, 0x0100), Operation(WRITE, 2, 0xA11200, 0x0000)]
+    load += [Operation(WRITE, 1, 0xA00000 + i, b) for i, b in enumerate(code)]
+    load += [Operation(WRITE, 2, 0xA11200, 0x0100), Operation(WRITE, 2, 0xA11100, 0x0000)]
+    master = _irq_on(0x02) + " mov #1,r0\n mov.w r0,@(0x2E,gbr)\n" + IDLE + """
+cmd_handler:
+    mov.w @(0x2C,gbr),r0
+    add #1,r0
+    mov.w r0,@(0x2C,gbr)
+    mov.w r0,@(0x1A,gbr)
+    rte
+    nop
+"""
+    ops = _wait_boot() + [_poll_comm(7, 1)] + load + [
+        _poll_comm(6, 1),
+        Operation(WRITE, 2, 0xA11100, 0x0100), Operation(POLL, 2, 0xA11100, 0x0000, compare_mask=0x0100),
+        _read(0xA00040, 0x4D, mask=0xFF, width=1)]
+    return _case("m32x_z80_window", ops, master, master_irq=[(68, "cmd_handler")])
+
+
 def _vint_hint():
     """V and H interrupts (manual pp. 22-23, 69): V at each VBlank; H every HCount + 1 lines of the
     display (HEN = 0: not in VBlank). With HCount = 1, a frame of 224 lines gives 112 H interrupts.
@@ -517,6 +554,52 @@ mask:   .word 0xC000
     return _case("m32x_pwm", ops, master, master_irq=[(67, "pwm_handler")])
 
 
+def _pwm_stream():
+    """PWM samples reach the mix at the PWM rate (findings S5, audio): the master streams a square
+    wave (mono register, $100 / $300 alternately, whenever the FIFO isn't full) with cycle $400,
+    about 22.5 kHz. The derived check counts level changes in pwm.raw (--chip-audio) over the last
+    two frames: a square wave at that rate changes level hundreds of times per frame. MesenCE used
+    to mix the PWM's current output when the APU caught up, i.e. one level per frame (Virtua Fighter's
+    sound effects played as low rumble)."""
+    master = """
+    mov.w cycle,r0
+    mov.w r0,@(0x32,gbr)
+    mov.w ctrl,r0
+    mov.w r0,@(0x30,gbr)    ; L and R on
+    mov.w lo,r10
+    mov.w flip,r11
+    mov #1,r0
+    mov.w r0,@(0x2C,gbr)    ; comm6 = 1: streaming
+feed:
+    mov.w @(0x38,gbr),r0
+    cmp/pz r0               ; bit 15 = FIFO full
+    bf feed
+    mov r10,r0
+    mov.w r0,@(0x38,gbr)    ; mono: both FIFOs
+    bra feed
+    xor r11,r10
+cycle:  .word 0x0400
+ctrl:   .word 0x0005
+lo:     .word 0x0100
+flip:   .word 0x0200
+"""
+    ops = _wait_boot() + [_poll_comm(6, 1)]
+    RUNNER_ARGS["m32x_pwm_stream"] = ["--chip-audio"]
+    DERIVED_CHECKS["m32x_pwm_stream"] = _pwm_stream_check
+    return _case("m32x_pwm_stream", ops, master, frames=6)
+
+
+def _pwm_stream_check(values, outdir):
+    raw = (outdir / "pwm.raw").read_bytes()
+    left = struct.unpack("<%dh" % (len(raw) // 2), raw)[0::2]
+    per_frame = 53267 // 60
+    tail = left[-2 * per_frame:]
+    changes = sum(1 for a, b in zip(tail, tail[1:]) if a != b)
+    if changes < 200:
+        return ["pwm.raw: %d level changes in the last two frames, expected hundreds (PWM mixed once per frame?)" % changes]
+    return []
+
+
 def _render():
     """The 32X picture over the Mega Drive's (manual pp. 36-43, figure 3.9 priority).
 
@@ -741,13 +824,14 @@ def _pixel_check(name):
 def all_cases():
     PIXEL_CHECKS["m32x_render"] = {(40, 100): (0, 255, 0), (280, 100): (0, 0, 255)}
     found = [_boot(), _cmd_irq(), _vint_hint(), _hint_dma(), _sdram_shared(), _dreq_fifo(), _frame_buffer(), _vdp_68k(), _fen_refresh(), _cart_map(), _handover(),
-             _pwm(), _render(), _priority_32x(), _priority_md(), _dot_shift()]
+             _pwm(), _pwm_stream(), _z80_window(), _render(), _priority_32x(), _priority_md(), _dot_shift()]
     for name in PIXEL_CHECKS:
         DERIVED_CHECKS[name] = _pixel_check(name)
     return found
 
 
 DERIVED_CHECKS = {}
+RUNNER_ARGS = {}
 
 
 def is_32x(name):
