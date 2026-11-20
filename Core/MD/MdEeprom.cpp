@@ -237,6 +237,11 @@ namespace
 		{ "a24174cdbe188efabda887f4c7ad492d0cb36b74265a90b2af8c2a5b480f4e7f", MdEepromChip::C24C02, MdEepromBoard::Acclaim32 }, //NFL Quarterback Club (World)
 		{ "8bdd2fa68e70f727f6c86f8266ec703457e09c2940cbd8f82c3760e2177b88fe", MdEepromChip::C24C04, MdEepromBoard::Acclaim32 }, //Blockbuster World Video Game Championship II (USA)
 		{ "5b735b443102f771bc7db49dcf34de640c10d212f5cb4af1251d956751f21072", MdEepromChip::C24C04, MdEepromBoard::Acclaim32 }, //NBA Jam: Tournament Edition (World)
+		//32X cartridges with the same EEPROM wiring (reached with RV = 1). NBA Jam TE: MAME's 32X software
+		//list notes "same I2C type as plain MD version"; NFL Quarterback Club: the Mega Drive version's
+		//chip, a judgment call (32x-verification-findings.md S5)
+		{ "7f7e1059671a99405e3782cd9b4e5d4025ee4bb122a89357b95b0fcac512f74f", MdEepromChip::C24C04, MdEepromBoard::Acclaim32 }, //NBA Jam: Tournament Edition (32X) (World)
+		{ "092ad8896ea7784d2feb7f17b1a348562588a361c50de6ade722a5c5cce698d5", MdEepromChip::C24C02, MdEepromBoard::Acclaim32 }, //NFL Quarterback Club (32X) (World)
 		{ "d52223c45d0c29a00003a9782227b775b66640dbfc92bdb9346565c4f97b8cad", MdEepromChip::C24C08, MdEepromBoard::Codemasters }, //Brian Lara Cricket (Europe) (1.0)
 		{ "1b28d7f1a8eb4c43afa06de8ea98290368b6ec00ec0c1c16de27ce33d892a051", MdEepromChip::C24C08, MdEepromBoard::Codemasters }, //Brian Lara Cricket (Europe) (1.1)
 		{ "43e68f99620bb3dd0ff3b28d232ae43c5b6489716c4cde09725ab4b71704937e", MdEepromChip::C24C08, MdEepromBoard::Codemasters }, //Micro Machines: Military (Europe)
