@@ -55,6 +55,7 @@ This fork's addition, not upstream.
     - `mise run test:md-replay`: save-state replay must reproduce the bus trace, chip audio and every field of the final state; `mise run test:md-xarch -- <other runner>`: byte-identical captures across builds/architectures.
     - `mise run test:md-cheats`: Game Genie / Pro Action Replay codes on the bus_map cartridge. `test:md-synthetic` and `test:md-replay` run both FM cores (ymfm, Nuked-OPN2).
     - Feature parity with other Mega Drive emulators: `docs/research/md-feature-parity.md`.
+    - Library-wide testing against oracle emulators (GPGX, PicoDrive, BlastEm, MAME; attract mode, TAS movies, explorer sessions; local then cloud): strategy and materials list in `docs/research/md-oracle-testing-strategy.md`.
     - 32X (plan in `docs/research/32x-feasibility.md`, findings in `docs/research/32x-verification-findings.md`): `mise run test:sh2-cpu` checks the SH-2 core (`Core/MD/Sh2`, ported from ares) against the SH-2 encodings of SingleStepTests `sh4` (Reicast-generated; SH-4-only encodings, TRAPA/RTE/SLEEP and SR.RB bank switches are excluded), plus `--scenarios` for exceptions, interrupts, MAC, and the on-chip DIVU/FRT/DMAC/cache. Downloads about 90 MB into `bin/`. Instruction timing follows the Hitachi SH-1/SH-2 programming manual.
     - `mise run test:md-viewers`: the debugger's palette/tilemap/sprite viewers (`MdVdpTools`) must decode VRAM/CRAM exactly as the VDP renders.
   - Findings from these tools are logged in `docs/research/{nes,gb,snes,sms,gba,pce,md}-verification-findings.md`.
