@@ -23,6 +23,8 @@ namespace Mesen.Interop
 				CpuType.MdM68k => MemoryType.MdMemory,
 				CpuType.MdZ80 => MemoryType.MdZ80Memory,
 				CpuType.McdM68k => MemoryType.McdMemory,
+				CpuType.M32xMaster => MemoryType.M32xMasterMemory,
+				CpuType.M32xSlave => MemoryType.M32xSlaveMemory,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -37,7 +39,7 @@ namespace Mesen.Interop
 				CpuType.Sms => MemoryType.SmsVideoRam,
 				CpuType.Gba => MemoryType.GbaVideoRam,
 				CpuType.Ws => MemoryType.WsWorkRam,
-				CpuType.MdM68k or CpuType.MdZ80 or CpuType.McdM68k => MemoryType.MdVideoRam,
+				CpuType.MdM68k or CpuType.MdZ80 or CpuType.McdM68k or CpuType.M32xMaster or CpuType.M32xSlave => MemoryType.MdVideoRam,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -52,7 +54,7 @@ namespace Mesen.Interop
 				CpuType.Sms => MemoryType.None,
 				CpuType.Gba => MemoryType.GbaSpriteRam,
 				CpuType.Ws => MemoryType.None,
-				CpuType.MdM68k or CpuType.MdZ80 or CpuType.McdM68k => MemoryType.None,
+				CpuType.MdM68k or CpuType.MdZ80 or CpuType.McdM68k or CpuType.M32xMaster or CpuType.M32xSlave => MemoryType.None,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -75,6 +77,7 @@ namespace Mesen.Interop
 				CpuType.Ws => MemoryType.WsPrgRom,
 				CpuType.MdM68k or CpuType.MdZ80 => MemoryType.MdPrgRom,
 				CpuType.McdM68k => MemoryType.McdPrgRam,
+				CpuType.M32xMaster or CpuType.M32xSlave => MemoryType.M32xSdram,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -98,6 +101,7 @@ namespace Mesen.Interop
 				CpuType.MdM68k => MemoryType.MdWorkRam,
 				CpuType.MdZ80 => MemoryType.MdZ80Ram,
 				CpuType.McdM68k => MemoryType.McdPrgRam,
+				CpuType.M32xMaster or CpuType.M32xSlave => MemoryType.M32xSdram,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -121,6 +125,7 @@ namespace Mesen.Interop
 				CpuType.MdM68k => 6,
 				CpuType.MdZ80 => 4,
 				CpuType.McdM68k => 6,
+				CpuType.M32xMaster or CpuType.M32xSlave => 8,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -144,6 +149,7 @@ namespace Mesen.Interop
 				CpuType.MdM68k => 6,
 				CpuType.MdZ80 => 4,
 				CpuType.McdM68k => 6,
+				CpuType.M32xMaster or CpuType.M32xSlave => 2,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -189,6 +195,8 @@ namespace Mesen.Interop
 				CpuType.MdM68k => DebuggerFlags.MdM68kDebuggerEnabled,
 				CpuType.MdZ80 => DebuggerFlags.MdZ80DebuggerEnabled,
 				CpuType.McdM68k => DebuggerFlags.McdM68kDebuggerEnabled,
+				CpuType.M32xMaster => DebuggerFlags.M32xMasterDebuggerEnabled,
+				CpuType.M32xSlave => DebuggerFlags.M32xSlaveDebuggerEnabled,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -209,7 +217,7 @@ namespace Mesen.Interop
 				CpuType.Sms => ConsoleType.Sms,
 				CpuType.Gba => ConsoleType.Gba,
 				CpuType.Ws => ConsoleType.Ws,
-				CpuType.MdM68k or CpuType.MdZ80 or CpuType.McdM68k => ConsoleType.Md,
+				CpuType.MdM68k or CpuType.MdZ80 or CpuType.McdM68k or CpuType.M32xMaster or CpuType.M32xSlave => ConsoleType.Md,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -244,6 +252,8 @@ namespace Mesen.Interop
 				case CpuType.MdM68k:
 				case CpuType.MdZ80:
 				case CpuType.McdM68k:
+				case CpuType.M32xMaster:
+				case CpuType.M32xSlave:
 					return true;
 
 				default:
@@ -314,8 +324,14 @@ namespace Mesen.Interop
 				case MemoryType.MdWorkRam:
 				case MemoryType.MdZ80Ram:
 				case MemoryType.MdSaveRam:
-					//Both Mega Drive CPUs reach these (the Z80 through its bank window)
-					return cpuType == CpuType.MdM68k || cpuType == CpuType.MdZ80;
+					//Both Mega Drive CPUs reach these (the Z80 through its bank window); the 32X SH-2s see
+					//the cartridge ROM
+					return cpuType == CpuType.MdM68k || cpuType == CpuType.MdZ80 || (memType == MemoryType.MdPrgRom && (cpuType == CpuType.M32xMaster || cpuType == CpuType.M32xSlave));
+
+				case MemoryType.M32xSdram:
+				case MemoryType.M32xFrameBuffer:
+				case MemoryType.M32xPalette:
+					return cpuType == CpuType.M32xMaster || cpuType == CpuType.M32xSlave;
 
 				default:
 					//All other types are specific to a single CPU type

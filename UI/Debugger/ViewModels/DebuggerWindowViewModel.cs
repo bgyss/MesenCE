@@ -133,6 +133,8 @@ namespace Mesen.Debugger.ViewModels
 				CpuType.MdM68k => new MdStatusViewModel(),
 				CpuType.MdZ80 => new SmsStatusViewModel(CpuType.MdZ80),
 				CpuType.McdM68k => new MdStatusViewModel(CpuType.McdM68k),
+				CpuType.M32xMaster => new Sh2StatusViewModel(CpuType.M32xMaster),
+				CpuType.M32xSlave => new Sh2StatusViewModel(CpuType.M32xSlave),
 				_ => null
 			};
 

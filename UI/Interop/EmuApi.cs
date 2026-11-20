@@ -287,7 +287,10 @@ namespace Mesen.Interop
 		GgBootRom,
 		McdUsa,
 		McdEurope,
-		McdJapan
+		McdJapan,
+		M32xMasterBios,
+		M32xSlaveBios,
+		M32xVectorBios
 	}
 
 	public struct MissingFirmwareMessage

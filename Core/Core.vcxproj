@@ -139,6 +139,9 @@
     <ClInclude Include="MD\MdEeprom.h" />
     <ClInclude Include="MD\Mcd\McdUnit.h" />
     <ClInclude Include="MD\M32x\M32xUnit.h" />
+    <ClInclude Include="MD\Debugger\Sh2Debugger.h" />
+    <ClInclude Include="MD\Debugger\Sh2DisUtils.h" />
+    <ClInclude Include="MD\Debugger\Sh2TraceLogger.h" />
     <ClInclude Include="MD\M32x\M32xBootRom.h" />
     <ClInclude Include="MD\Mcd\McdPcm.h" />
     <ClInclude Include="MD\Mcd\McdCd.h" />
@@ -1006,6 +1009,9 @@
     <ClCompile Include="MD\MdEeprom.cpp" />
     <ClCompile Include="MD\Mcd\McdUnit.cpp" />
     <ClCompile Include="MD\M32x\M32xUnit.cpp" />
+    <ClCompile Include="MD\Debugger\Sh2Debugger.cpp" />
+    <ClCompile Include="MD\Debugger\Sh2DisUtils.cpp" />
+    <ClCompile Include="MD\Debugger\Sh2TraceLogger.cpp" />
     <ClCompile Include="MD\Mcd\McdPcm.cpp" />
     <ClCompile Include="MD\Mcd\McdCd.cpp" />
     <ClCompile Include="MD\MdM68k.cpp" />

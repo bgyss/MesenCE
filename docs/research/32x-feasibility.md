@@ -2,9 +2,10 @@
 
 Snapshot: branch `sega-cd` at `0e1a17dd`, 2026-11-19.
 
-**Status (2026-11-19): S0 and S1 done.** S1: SH-2 core, 68,140 `sh4` suite tests and 97 scenario
-checks pass (`mise run test:sh2-cpu`). S0: the SH-1/SH-2 programming manual, SH7604 hardware
-manual and Sega 32X hardware manual are checked; the plan's figures hold (findings S0-F2, F6).
+**Status (2026-11-19): S0-S4 done.** S1: SH-2 core (`mise run test:sh2-cpu`). S2/S3: the 32X
+unit, VDP and PWM, MesenCE's replacement boot ROMs; 15 synthetic 32X cases in `test:md-synthetic`;
+Sega's Mars Check Program passes 159 of 161 tests (findings S2). S4: SH-2 debugger, memory types,
+firmware settings, UI. S5: see findings.
 
 ## Decision
 

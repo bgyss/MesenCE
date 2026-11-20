@@ -21,6 +21,7 @@
 #include "GBA/Debugger/GbaDisUtils.h"
 #include "WS/Debugger/WsDisUtils.h"
 #include "MD/Debugger/MdDisUtils.h"
+#include "MD/Debugger/Sh2DisUtils.h"
 #include "Shared/EmuSettings.h"
 
 DisassemblyInfo::DisassemblyInfo()
@@ -84,6 +85,8 @@ void DisassemblyInfo::GetDisassembly(string& out, uint32_t memoryAddr, LabelMana
 		case CpuType::Ws: WsDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
 		case CpuType::MdM68k:
 		case CpuType::McdM68k: MdDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
+		case CpuType::M32xMaster:
+		case CpuType::M32xSlave: Sh2DisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
 		case CpuType::MdZ80: SmsDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
 
 		default:
@@ -123,6 +126,8 @@ EffectiveAddressInfo DisassemblyInfo::GetEffectiveAddress(Debugger* debugger, vo
 		case CpuType::MdM68k:
 		case CpuType::McdM68k:
 		case CpuType::MdZ80:
+		case CpuType::M32xMaster:
+		case CpuType::M32xSlave:
 			return {};
 	}
 
@@ -147,7 +152,9 @@ uint32_t DisassemblyInfo::GetFullOpCode()
 		case CpuType::NecDsp: return _byteCode[0] | (_byteCode[1] << 8) | (_byteCode[2] << 16);
 		case CpuType::Cx4: return _byteCode[1];
 		case CpuType::MdM68k:
-		case CpuType::McdM68k: return (_byteCode[0] << 8) | _byteCode[1];
+		case CpuType::McdM68k:
+		case CpuType::M32xMaster:
+		case CpuType::M32xSlave: return (_byteCode[0] << 8) | _byteCode[1];
 		case CpuType::St018: return _byteCode[0] | (_byteCode[1] << 8) | (_opSize == 4 ? ((_byteCode[2] << 16) | (_byteCode[3] << 24)) : 0);
 		case CpuType::Gba: return _byteCode[0] | (_byteCode[1] << 8) | (_opSize == 4 ? ((_byteCode[2] << 16) | (_byteCode[3] << 24)) : 0);
 		case CpuType::Ws: return WsDisUtils::GetFullOpCode(*this);
@@ -211,6 +218,8 @@ uint8_t DisassemblyInfo::GetOpSize(uint32_t opCode, uint8_t flags, CpuType type,
 		case CpuType::Ws: return WsDisUtils::GetOpSize(cpuAddress, memType, memoryDumper);
 		case CpuType::MdM68k:
 		case CpuType::McdM68k: return MdDisUtils::GetOpSize(cpuAddress, memType, memoryDumper);
+		case CpuType::M32xMaster:
+		case CpuType::M32xSlave: return Sh2DisUtils::GetOpSize();
 		case CpuType::MdZ80: return SmsDisUtils::GetOpSize(opCode, cpuAddress, memType, memoryDumper);
 	}
 
@@ -235,6 +244,8 @@ bool DisassemblyInfo::IsJumpToSub()
 		case CpuType::Ws: return WsDisUtils::IsJumpToSub(GetFullOpCode<CpuType::Ws>());
 		case CpuType::MdM68k:
 		case CpuType::McdM68k: return MdDisUtils::IsJumpToSub(GetFullOpCode<CpuType::MdM68k>());
+		case CpuType::M32xMaster:
+		case CpuType::M32xSlave: return Sh2DisUtils::IsJumpToSub((uint16_t)GetFullOpCode<CpuType::M32xMaster>());
 		case CpuType::MdZ80: return SmsDisUtils::IsJumpToSub(GetOpCode());
 	}
 
@@ -259,6 +270,8 @@ bool DisassemblyInfo::IsReturnInstruction()
 		case CpuType::Ws: return WsDisUtils::IsReturnInstruction(GetFullOpCode<CpuType::Ws>());
 		case CpuType::MdM68k:
 		case CpuType::McdM68k: return MdDisUtils::IsReturnInstruction(GetFullOpCode<CpuType::MdM68k>());
+		case CpuType::M32xMaster:
+		case CpuType::M32xSlave: return Sh2DisUtils::IsReturnInstruction((uint16_t)GetFullOpCode<CpuType::M32xMaster>());
 		case CpuType::MdZ80: return SmsDisUtils::IsReturnInstruction(GetOpCode() | (GetOpSize() > 1 ? (GetByteCode()[1] << 8) : 0));
 	}
 
@@ -267,7 +280,8 @@ bool DisassemblyInfo::IsReturnInstruction()
 
 bool DisassemblyInfo::CanDisassembleNextOp()
 {
-	if(IsUnconditionalJump()) {
+	if(IsUnconditionalJump() && _cpuType != CpuType::M32xMaster && _cpuType != CpuType::M32xSlave) {
+		//(an SH-2 jump is followed by its delay slot)
 		return false;
 	}
 
@@ -298,6 +312,8 @@ bool DisassemblyInfo::IsUnconditionalJump()
 		case CpuType::Ws: return WsDisUtils::IsUnconditionalJump(GetFullOpCode<CpuType::Ws>());
 		case CpuType::MdM68k:
 		case CpuType::McdM68k: return MdDisUtils::IsUnconditionalJump(GetFullOpCode<CpuType::MdM68k>());
+		case CpuType::M32xMaster:
+		case CpuType::M32xSlave: return Sh2DisUtils::IsUnconditionalJump((uint16_t)GetFullOpCode<CpuType::M32xMaster>());
 		case CpuType::MdZ80: return SmsDisUtils::IsUnconditionalJump(GetOpCode());
 	}
 
@@ -327,6 +343,8 @@ bool DisassemblyInfo::IsJump()
 		case CpuType::Ws: return WsDisUtils::IsConditionalJump(GetFullOpCode<CpuType::Ws>());
 		case CpuType::MdM68k:
 		case CpuType::McdM68k: return MdDisUtils::IsConditionalJump(GetFullOpCode<CpuType::MdM68k>());
+		case CpuType::M32xMaster:
+		case CpuType::M32xSlave: return Sh2DisUtils::IsConditionalJump((uint16_t)GetFullOpCode<CpuType::M32xMaster>());
 		case CpuType::MdZ80: return SmsDisUtils::IsConditionalJump(GetOpCode());
 	}
 

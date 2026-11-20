@@ -291,6 +291,8 @@ private:
 
 	unordered_map<string, int64_t>& GetMdM68kTokens();
 	int64_t GetMdM68kTokenValue(int64_t token, EvalResultType& resultType);
+	unordered_map<string, int64_t>& GetSh2Tokens();
+	int64_t GetSh2TokenValue(int64_t token, EvalResultType& resultType);
 	unordered_map<string, int64_t>& GetMdZ80Tokens();
 	int64_t GetMdZ80TokenValue(int64_t token, EvalResultType& resultType);
 

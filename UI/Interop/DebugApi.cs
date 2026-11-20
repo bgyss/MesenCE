@@ -122,7 +122,7 @@ namespace Mesen.Interop
 				CpuType.Sms => GetPpuState<SmsVdpState>(cpuType),
 				CpuType.Gba => GetPpuState<GbaPpuState>(cpuType),
 				CpuType.Ws => GetPpuState<WsPpuState>(cpuType),
-				CpuType.MdM68k or CpuType.MdZ80 or CpuType.McdM68k => GetPpuState<MdVdpState>(cpuType),
+				CpuType.MdM68k or CpuType.MdZ80 or CpuType.McdM68k or CpuType.M32xMaster or CpuType.M32xSlave => GetPpuState<MdVdpState>(cpuType),
 				_ => throw new Exception("Unsupported cpu type")
 			};
 		}
@@ -145,7 +145,7 @@ namespace Mesen.Interop
 				CpuType.Sms => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
 				CpuType.Gba => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
 				CpuType.Ws => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
-				CpuType.MdM68k or CpuType.MdZ80 or CpuType.McdM68k => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
+				CpuType.MdM68k or CpuType.MdZ80 or CpuType.McdM68k or CpuType.M32xMaster or CpuType.M32xSlave => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
 				_ => throw new Exception("Unsupported cpu type")
 			};
 		}
@@ -562,6 +562,7 @@ namespace Mesen.Interop
 				CpuType.Ws => state is WsCpuState,
 				CpuType.MdM68k => state is MdM68kState,
 				CpuType.McdM68k => state is MdM68kState,
+				CpuType.M32xMaster or CpuType.M32xSlave => state is M32xSh2State,
 				CpuType.MdZ80 => state is SmsCpuState,
 				_ => false
 			};
@@ -610,6 +611,8 @@ namespace Mesen.Interop
 		MdMemory,
 		MdZ80Memory,
 		McdMemory,
+		M32xMasterMemory,
+		M32xSlaveMemory,
 
 		SnesPrgRom,
 		SnesWorkRam,
@@ -711,6 +714,11 @@ namespace Mesen.Interop
 		McdPcmRam,
 		McdCdcRam,
 		McdBios,
+
+		M32xSdram,
+		M32xFrameBuffer,
+		M32xPalette,
+		M32xBootRom,
 
 		None,
 	}
@@ -1598,7 +1606,9 @@ namespace Mesen.Interop
 		Ws,
 		MdM68k,
 		MdZ80,
-		McdM68k
+		McdM68k,
+		M32xMaster,
+		M32xSlave
 	}
 
 	public enum StepType

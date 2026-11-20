@@ -1044,6 +1044,16 @@ namespace Mesen.ViewModels
 					OnClick = () => DebuggerWindow.GetOrOpenWindow(CpuType.McdM68k)
 				},
 				new ContextMenuAction() {
+					ActionType = ActionType.OpenM32xMasterDebugger,
+					IsVisible = () => MainWindow.RomInfo.CpuTypes.Contains(CpuType.M32xMaster),
+					OnClick = () => DebuggerWindow.GetOrOpenWindow(CpuType.M32xMaster)
+				},
+				new ContextMenuAction() {
+					ActionType = ActionType.OpenM32xSlaveDebugger,
+					IsVisible = () => MainWindow.RomInfo.CpuTypes.Contains(CpuType.M32xSlave),
+					OnClick = () => DebuggerWindow.GetOrOpenWindow(CpuType.M32xSlave)
+				},
+				new ContextMenuAction() {
 					ActionType = ActionType.OpenGameboyDebugger,
 					Shortcut = () => ConfigManager.Config.Debug.Shortcuts.Get(DebuggerShortcut.OpenGameboyDebugger),
 					IsVisible = () => MainWindow.RomInfo.ConsoleType == ConsoleType.Snes && MainWindow.RomInfo.CpuTypes.Contains(CpuType.Gameboy),

@@ -114,6 +114,10 @@ public static class FirmwareTypeExtensions
 						"7CB849885F5F7ACEFA660675731ED40471144541B809EA62E43E146D2C6BE355" //X'EYE v2.00
 					)
 				};
+			//32X boot ROMs: SHA-256 of the dumps tested with MesenCE (optional: MesenCE has replacements)
+			case FirmwareType.M32xMasterBios: return new("32X_M_BIOS.bin", "[BIOS] 32X Master SH2 (World).bin") { new(0x800, "4C6128229BD24DAE5F11D3F569CA592665F141BEF26CEF937E2CE4D9B548CC3B") };
+			case FirmwareType.M32xSlaveBios: return new("32X_S_BIOS.bin", "[BIOS] 32X Slave SH2 (World).bin") { new(0x400, "7BDE4245CE00C51A23A1CE73A881752E7B14DC12416E175352A3807338E04745") };
+			case FirmwareType.M32xVectorBios: return new("32X_G_BIOS.bin", "[BIOS] 32X M68000 (USA).bin") { new(0x100, "A2D6B6E1544467E27D404634DE6E6B0A54ED4B3BABB6B71739A260E1BE04EBFC") };
 			case FirmwareType.Ymf288AdpcmRom: return new("ymf288_adpcm_rom.bin") { new(0x2000, "53AFD0FA9C62EDA3E2BE939E23F3ADF48A2AF8AD37BB1640261726C5D5ADEBA8") };
 		}
 

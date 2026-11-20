@@ -55,12 +55,72 @@ uint8_t M32xSh2::Peek8(uint32_t addr)
 	return _unit->ShPeek8(addr);
 }
 
-//Debugger hooks: wired to the emulator's debugger in S4 (Sh2Debugger, not written yet); the
-//unit keeps them disabled until then
-void M32xSh2::OnInstructionStart(uint32_t, uint16_t) {}
-void M32xSh2::OnDebugRead(uint32_t, uint32_t, int) {}
-void M32xSh2::OnDebugWrite(uint32_t, uint32_t, int) {}
-void M32xSh2::OnInterruptTaken(uint32_t, uint32_t) {}
+void M32xSh2::OnInstructionStart(uint32_t, uint16_t)
+{
+	Emulator* emu = _unit->GetEmulator();
+	if(_index == 0) {
+		emu->ProcessInstruction<CpuType::M32xMaster>();
+	} else {
+		emu->ProcessInstruction<CpuType::M32xSlave>();
+	}
+}
+
+template<CpuType type>
+static void ReportRead(Emulator* emu, uint32_t addr, uint32_t value, int size)
+{
+	if(size == 1) {
+		uint8_t v = (uint8_t)value;
+		emu->ProcessMemoryRead<type, 1>(addr, v, MemoryOperationType::Read);
+	} else if(size == 2) {
+		uint16_t v = (uint16_t)value;
+		emu->ProcessMemoryRead<type, 2>(addr, v, MemoryOperationType::Read);
+	} else {
+		emu->ProcessMemoryRead<type, 4>(addr, value, MemoryOperationType::Read);
+	}
+}
+
+template<CpuType type>
+static void ReportWrite(Emulator* emu, uint32_t addr, uint32_t value, int size)
+{
+	if(size == 1) {
+		uint8_t v = (uint8_t)value;
+		emu->ProcessMemoryWrite<type, 1>(addr, v, MemoryOperationType::Write);
+	} else if(size == 2) {
+		uint16_t v = (uint16_t)value;
+		emu->ProcessMemoryWrite<type, 2>(addr, v, MemoryOperationType::Write);
+	} else {
+		emu->ProcessMemoryWrite<type, 4>(addr, value, MemoryOperationType::Write);
+	}
+}
+
+//Debugger addresses are physical (29 bits): cache-through addresses show as their cached ones
+void M32xSh2::OnDebugRead(uint32_t addr, uint32_t value, int size)
+{
+	if(_index == 0) {
+		ReportRead<CpuType::M32xMaster>(_unit->GetEmulator(), addr & 0x1FFFFFFF, value, size);
+	} else {
+		ReportRead<CpuType::M32xSlave>(_unit->GetEmulator(), addr & 0x1FFFFFFF, value, size);
+	}
+}
+
+void M32xSh2::OnDebugWrite(uint32_t addr, uint32_t value, int size)
+{
+	if(_index == 0) {
+		ReportWrite<CpuType::M32xMaster>(_unit->GetEmulator(), addr & 0x1FFFFFFF, value, size);
+	} else {
+		ReportWrite<CpuType::M32xSlave>(_unit->GetEmulator(), addr & 0x1FFFFFFF, value, size);
+	}
+}
+
+void M32xSh2::OnInterruptTaken(uint32_t returnPc, uint32_t handlerPc)
+{
+	Emulator* emu = _unit->GetEmulator();
+	if(_index == 0) {
+		emu->ProcessInterrupt<CpuType::M32xMaster>(returnPc & 0x1FFFFFFF, handlerPc & 0x1FFFFFFF, false);
+	} else {
+		emu->ProcessInterrupt<CpuType::M32xSlave>(returnPc & 0x1FFFFFFF, handlerPc & 0x1FFFFFFF, false);
+	}
+}
 
 M32xSh2State M32xSh2::GetDebugState()
 {
@@ -177,6 +237,10 @@ void M32xUnit::Run(uint64_t masterClock)
 		_syncingVdp = false;
 	}
 	uint64_t target = Sh2Target(masterClock);
+	//Debugger hooks only while a debugger is attached (Sh2Core::SetDebugHooks)
+	bool debugging = _console->GetEmulator()->IsDebugging();
+	_sh2[0].SetDebugHooks(debugging);
+	_sh2[1].SetDebugHooks(debugging);
 	if(!_sh2Run) {
 		//RES = 0: both SH-2s are held in reset; time still passes
 		for(int i = 0; i < 2; i++) {

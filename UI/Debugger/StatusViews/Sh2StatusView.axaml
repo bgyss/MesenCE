@@ -1,0 +1,168 @@
+<UserControl
+	xmlns="https://github.com/avaloniaui"
+	xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+	xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+	xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+	xmlns:vm="using:Mesen.Debugger.StatusViews"
+	xmlns:c="using:Mesen.Controls"
+	mc:Ignorable="d" d:DesignWidth="540" d:DesignHeight="350"
+	VerticalAlignment="Stretch"
+	HorizontalAlignment="Stretch"
+	x:DataType="vm:Sh2StatusViewModel"
+	x:Class="Mesen.Debugger.StatusViews.Sh2StatusView"
+>
+	<Design.DataContext>
+		<vm:Sh2StatusViewModel />
+	</Design.DataContext>
+
+	<UserControl.Styles>
+		<StyleInclude Source="/Styles/DebugStatusStyles.xaml" />
+		<Style Selector="WrapPanel StackPanel > TextBlock">
+			<Setter Property="MinWidth" Value="35" />
+		</Style>
+		<Style Selector="WrapPanel StackPanel > TextBox">
+			<Setter Property="Margin" Value="0 1 3 1" />
+		</Style>
+	</UserControl.Styles>
+
+	<ScrollViewer>
+		<StackPanel IsEnabled="{Binding EditAllowed}">
+			<DockPanel>
+				<StackPanel DockPanel.Dock="Right">
+					<TextBlock Margin="0">Stack (R15):</TextBlock>
+					<TextBox
+						VerticalAlignment="Top"
+						TextWrapping="Wrap"
+						Width="90"
+						Height="95"
+						AcceptsReturn="True"
+						IsReadOnly="True"
+						ScrollViewer.VerticalScrollBarVisibility="Visible"
+						Text="{Binding StackPreview}"
+					/>
+				</StackPanel>
+				<WrapPanel DockPanel.Dock="Left">
+					<StackPanel Orientation="Vertical">
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R0:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR0}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R1:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR1}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R2:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR2}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R3:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR3}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R4:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR4}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R5:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR5}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R6:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR6}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R7:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR7}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+					</StackPanel>
+					<StackPanel Orientation="Vertical">
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R8:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR8}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R9:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR9}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R10:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR10}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R11:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR11}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R12:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR12}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R13:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR13}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R14:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR14}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>R15:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegR15}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+					</StackPanel>
+					<StackPanel Orientation="Vertical">
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>PC:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegPC}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>PR:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegPR}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>GBR:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegGBR}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>VBR:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegVBR}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>MACH:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegMACH}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+						<StackPanel Orientation="Horizontal">
+							<TextBlock>MACL:</TextBlock>
+							<c:MesenNumericTextBox Value="{Binding RegMACL}" Hex="True" Max="0xFFFFFFFF" />
+						</StackPanel>
+					</StackPanel>
+				</WrapPanel>
+			</DockPanel>
+			<WrapPanel Margin="0 5 0 0">
+				<StackPanel Orientation="Horizontal">
+					<TextBlock>SR:</TextBlock>
+					<c:MesenNumericTextBox Value="{Binding RegSR}" Hex="True" Max="0x3F3" />
+				</StackPanel>
+				<StackPanel Orientation="Horizontal">
+					<TextBlock>I:</TextBlock>
+					<c:MesenNumericTextBox Value="{Binding IntMask}" Hex="True" Max="0xF" />
+				</StackPanel>
+				<CheckBox IsChecked="{Binding FlagM}" Content="M" />
+				<CheckBox IsChecked="{Binding FlagQ}" Content="Q" />
+				<CheckBox IsChecked="{Binding FlagS}" Content="S" />
+				<CheckBox IsChecked="{Binding FlagT}" Content="T" />
+				<CheckBox IsChecked="{Binding Sleeping}" Content="Sleeping" />
+			</WrapPanel>
+			<WrapPanel Margin="0 5 0 0">
+				<StackPanel Orientation="Horizontal">
+					<TextBlock>Scanline:</TextBlock>
+					<c:MesenNumericTextBox Value="{Binding Scanline}" IsEnabled="False" />
+				</StackPanel>
+				<StackPanel Orientation="Horizontal">
+					<TextBlock>H clock:</TextBlock>
+					<c:MesenNumericTextBox Value="{Binding Cycle}" IsEnabled="False" />
+				</StackPanel>
+			</WrapPanel>
+		</StackPanel>
+	</ScrollViewer>
+</UserControl>

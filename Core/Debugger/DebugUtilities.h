@@ -321,6 +321,8 @@ public:
 			case MemoryType::GbaBootRom:
 			case MemoryType::WsBootRom:
 			case MemoryType::MdTmssRom:
+			case MemoryType::McdBios:
+			case MemoryType::M32xBootRom:
 				return true;
 
 			default:

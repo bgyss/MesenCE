@@ -148,6 +148,16 @@ namespace Mesen.Interop
 				case MemoryType.McdBios:
 					return CpuType.McdM68k;
 
+				case MemoryType.M32xMasterMemory:
+				case MemoryType.M32xSdram:
+				case MemoryType.M32xFrameBuffer:
+				case MemoryType.M32xPalette:
+				case MemoryType.M32xBootRom:
+					return CpuType.M32xMaster;
+
+				case MemoryType.M32xSlaveMemory:
+					return CpuType.M32xSlave;
+
 				default:
 					throw new NotImplementedException("Unsupported cpu type");
 			}
@@ -268,6 +278,8 @@ namespace Mesen.Interop
 				case MemoryType.MdMemory:
 				case MemoryType.MdZ80Memory:
 				case MemoryType.McdMemory:
+				case MemoryType.M32xMasterMemory:
+				case MemoryType.M32xSlaveMemory:
 					return true;
 			}
 			return false;
@@ -297,6 +309,7 @@ namespace Mesen.Interop
 				case MemoryType.MdPrgRom:
 				case MemoryType.MdTmssRom:
 				case MemoryType.McdBios:
+				case MemoryType.M32xBootRom:
 					return true;
 			}
 			return false;
@@ -383,6 +396,9 @@ namespace Mesen.Interop
 				case MemoryType.McdPrgRam:
 				case MemoryType.McdWordRam:
 				case MemoryType.McdBackupRam:
+				case MemoryType.M32xMasterMemory:
+				case MemoryType.M32xSlaveMemory:
+				case MemoryType.M32xSdram:
 					return true;
 			}
 
@@ -408,6 +424,8 @@ namespace Mesen.Interop
 				case MemoryType.MdMemory:
 				case MemoryType.MdZ80Memory:
 				case MemoryType.McdMemory:
+				case MemoryType.M32xMasterMemory:
+				case MemoryType.M32xSlaveMemory:
 					return true;
 			}
 
@@ -616,6 +634,13 @@ namespace Mesen.Interop
 				MemoryType.McdPcmRam => "PCM",
 				MemoryType.McdCdcRam => "CDC",
 				MemoryType.McdBios => "BIOS",
+
+				MemoryType.M32xMasterMemory => "SH2M",
+				MemoryType.M32xSlaveMemory => "SH2S",
+				MemoryType.M32xSdram => "SDRAM",
+				MemoryType.M32xFrameBuffer => "FB",
+				MemoryType.M32xPalette => "PAL",
+				MemoryType.M32xBootRom => "BOOT",
 
 				MemoryType.None => "n/a",
 

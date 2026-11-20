@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "Debugger/ExpressionEvaluator.h"
 #include "MD/Debugger/MdDebugger.h"
+#include "MD/Debugger/Sh2Debugger.h"
 #include "MD/MdTypes.h"
 
 unordered_map<string, int64_t>& ExpressionEvaluator::GetMdM68kTokens()
@@ -126,6 +127,59 @@ int64_t ExpressionEvaluator::GetMdZ80TokenValue(int64_t token, EvalResultType& r
 		case EvalValues::RegI: return s.I;
 		case EvalValues::RegR: return s.R;
 		case EvalValues::RegSP: return s.SP;
+		case EvalValues::RegPC: return s.PC;
+		case EvalValues::PpuFrameCount: return vdp().FrameCount;
+		case EvalValues::PpuCycle: return vdp().HClock;
+		case EvalValues::PpuScanline: return vdp().Scanline;
+		default: return 0;
+	}
+}
+
+//32X SH-2: r0-r15, sp (= r15), sr, pc, plus the VDP position
+unordered_map<string, int64_t>& ExpressionEvaluator::GetSh2Tokens()
+{
+	static unordered_map<string, int64_t> supportedTokens = {
+		{ "r0", EvalValues::R0 },
+		{ "r1", EvalValues::R1 },
+		{ "r2", EvalValues::R2 },
+		{ "r3", EvalValues::R3 },
+		{ "r4", EvalValues::R4 },
+		{ "r5", EvalValues::R5 },
+		{ "r6", EvalValues::R6 },
+		{ "r7", EvalValues::R7 },
+		{ "r8", EvalValues::R8 },
+		{ "r9", EvalValues::R9 },
+		{ "r10", EvalValues::R10 },
+		{ "r11", EvalValues::R11 },
+		{ "r12", EvalValues::R12 },
+		{ "r13", EvalValues::R13 },
+		{ "r14", EvalValues::R14 },
+		{ "r15", EvalValues::R15 },
+		{ "sp", EvalValues::RegSP },
+		{ "sr", EvalValues::RegSR },
+		{ "pc", EvalValues::RegPC },
+		{ "frame", EvalValues::PpuFrameCount },
+		{ "cycle", EvalValues::PpuCycle },
+		{ "scanline", EvalValues::PpuScanline },
+	};
+	return supportedTokens;
+}
+
+int64_t ExpressionEvaluator::GetSh2TokenValue(int64_t token, EvalResultType& resultType)
+{
+	(void)resultType;
+	M32xSh2State& s = (M32xSh2State&)((Sh2Debugger*)_cpuDebugger)->GetState();
+	auto vdp = [this]() -> MdVdpState {
+		MdVdpState state;
+		((Sh2Debugger*)_cpuDebugger)->GetPpuState(state);
+		return state;
+	};
+	if(token >= EvalValues::R0 && token <= EvalValues::R15) {
+		return s.R[token - EvalValues::R0];
+	}
+	switch(token) {
+		case EvalValues::RegSP: return s.R[15];
+		case EvalValues::RegSR: return s.SR;
 		case EvalValues::RegPC: return s.PC;
 		case EvalValues::PpuFrameCount: return vdp().FrameCount;
 		case EvalValues::PpuCycle: return vdp().HClock;

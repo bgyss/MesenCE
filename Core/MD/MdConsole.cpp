@@ -273,8 +273,9 @@ vector<CpuType> MdConsole::GetCpuTypes()
 {
 	if(_mcd) {
 		return { CpuType::MdM68k, CpuType::MdZ80, CpuType::McdM68k };
+	} else if(_m32x) {
+		return { CpuType::MdM68k, CpuType::MdZ80, CpuType::M32xMaster, CpuType::M32xSlave };
 	}
-	//32X: the SH-2s get debugger CPU types in S4 (Sh2Debugger, not written yet)
 	return { CpuType::MdM68k, CpuType::MdZ80 };
 }
 

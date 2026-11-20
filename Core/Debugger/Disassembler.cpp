@@ -610,7 +610,9 @@ void Disassembler::GetLineData(DisassemblyResult& row, CpuType type, MemoryType 
 
 				case CpuType::MdM68k:
 				case CpuType::McdM68k:
-				case CpuType::MdZ80: {
+				case CpuType::MdZ80:
+				case CpuType::M32xMaster:
+				case CpuType::M32xSlave: {
 					CodeDataLogger* cdl = cdlManager->GetCodeDataLogger(row.Address.Type);
 					if(!disInfo.IsInitialized()) {
 						disInfo = DisassemblyInfo(row.Address.Address, 0, lineCpuType, row.Address.Type, _memoryDumper);

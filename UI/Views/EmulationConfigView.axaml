@@ -177,6 +177,19 @@
 						</Grid>
 					</c:OptionSection>
 
+					<c:OptionSection Header="{l:Translate lbl32x}" Icon="Assets/MdIcon.png" >
+						<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,*">
+							<TextBlock Text="Master SH-2 boot ROM" />
+							<c:FirmwareSelect FirmwareType="M32xMasterBios" Grid.Column="1" />
+
+							<TextBlock Text="Slave SH-2 boot ROM" Grid.Row="1" />
+							<c:FirmwareSelect FirmwareType="M32xSlaveBios" Grid.Column="1" Grid.Row="1" />
+
+							<TextBlock Text="68000 vector ROM" Grid.Row="2" />
+							<c:FirmwareSelect FirmwareType="M32xVectorBios" Grid.Column="1" Grid.Row="2" />
+						</Grid>
+					</c:OptionSection>
+
 					<c:OptionSection Header="{l:Translate lblOtherConsoles}" Icon="Assets/Drive.png" >
 						<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,*">
 							<TextBlock Text="ColecoVision - Boot ROM" />

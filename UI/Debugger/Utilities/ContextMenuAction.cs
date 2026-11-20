@@ -568,6 +568,8 @@ namespace Mesen.Debugger.Utilities
 		OpenSpcDebugger,
 		OpenMdZ80Debugger,
 		OpenMcdM68kDebugger,
+		OpenM32xMasterDebugger,
+		OpenM32xSlaveDebugger,
 		[IconFile("Cx4Debugger")]
 		OpenCx4Debugger,
 		[IconFile("NecDspDebugger")]

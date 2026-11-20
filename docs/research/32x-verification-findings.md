@@ -84,7 +84,7 @@ TRAPA 8; SLEEP 3; LDC.L @Rm+,SR/GBR/VBR 3; STC.L SR/GBR/VBR 2; TAS.B 4; AND.B/OR
 bounds) and memory wait states are not in the core: wait states are the bus owner's job
 (`AddCycles`), contention is not modelled (judgement; BlastEm picks middle values instead).
 
-### F5: no BIOS in CI (decision pending)
+### F5: no BIOS in CI (decided in S2)
 
 The 32X boots through three Sega ROMs (68000 vector ROM, master and slave SH-2 boot ROMs). All
 three are on this machine (`~/mame/roms/segacd/32X_{G,M,S}_BIOS.bin`; MD5 `6a5433f6…`,
@@ -167,3 +167,90 @@ DIVU intermediate results on overflow, the extra wait after a DIVU write, multip
 reset, DMAC burst/cycle-steal timing and DACK, address errors, UBC breaks, SCI timing (transfers
 are instant, as in ares), the FRT input capture, and the cycles of exception processing itself
 (the manual's pipeline figures give 9-10 stages; the core charges the stacking accesses only).
+
+## S2: the 32X unit (2026-11-19)
+
+`Core/MD/M32x/M32xUnit.{h,cpp}`: both SH-2s on the unit bus, SDRAM, system and communication
+registers, SH-2 interrupts, the DREQ FIFO, the 68000's view (vector ROM, `$880000`/`$900000`
+cartridge windows, frame buffer, registers at `$A15100`, "MARS" at `$A130EC`), scheduling.
+
+### Sources and decisions
+
+| Point | Source |
+|---|---|
+| Memory maps, register layouts (adapter control, interrupt control, bank set, DREQ, comm, interrupt mask, H count, clear registers) | 32X Hardware Manual figures 3.1-3.2, pp. 19-29 |
+| RES: 0 = SH-2s in reset, set by the 68000's initial program | p. 19 (ares starts the SH-2s at power-on; MesenCE follows the manual, and Sega's BIOS boots with it) |
+| SH-2 interrupt levels 14/12/10/8/6, auto-vectors 64 + level / 2 | pp. 69, 87; SH7604 table 5.3 |
+| V, H, PWM requests latch only while enabled and stay asserted until cleared; CMD is gated by its mask | "Points to be aware of concerning interrupt" (p. 28). Judgment call: the manual describes the masked-after-request case; that the request does not latch while masked is inferred |
+| INTM/INTS ($A15102) are plain read/write bits, writing 0 clears a request | Sega's Mars Check Program V1.0, test 3: writes `$02` with a request pending and expects `$02` (MesenCE read `$03`: fixed) |
+| DREQ FIFO: one 8-word queue, `68S` cleared after `length` words, flushed when 68S is cleared | ares (the manual's two 4-word blocks are not modelled) |
+| SH-2 wait states: boot ROM 1, registers 1, palette 4, cartridge 6, frame buffer read 5 / write 4 | ares `bus-internal.cpp`; judgment call. SDRAM 2 per read, 1 per write: judgment call (ares charges a 12-cycle burst per cache line instead) |
+| SH-2 cartridge reads while RV = 1 return the cartridge instead of waiting | Simplification (the manual: the SH-2 waits until RV = 0) |
+| SH-2 scheduling: the CPU that is behind runs next, one instruction at a time; both catch up to the 68000 after each 68000 instruction and before each 68000 access to the unit | Design (ares syncs the SH-2s every 10 cycles and the 68000 every 50) |
+| The VDP is brought up to date before the SH-2s run, and runs them up to each line's start before raising that line's H/V interrupts | Fix: a 68000 stall (VDP DMA) made the VDP catch up several lines at once and the SH-2s took one merged H interrupt instead of one per line (Mars Check Program tests 55/56; MesenCE lost 18 of 262 per frame) |
+
+### Replacement boot ROMs (F5 decided)
+
+`tools/m32x-boot/gen_boot.py` assembles MesenCE's own boot programs (`Core/MD/M32x/M32xBootRom.h`)
+from the manual's boot protocol (section 5.1, figures 5.1-5.3): cache purge and enable, the MARS
+user header's initial data load, the header's checksum word to comm8, "M_OK" / "S_OK", VBR and the
+start address. The 68000 vector ROM follows "ROM Access When Using the 32X" (vectors at
+`$880200 + 6n`); Sega's ROM additionally holds a small bank-switch routine at `$C0-$FF`, which the
+replacement doesn't (judgment call: no game is known to call it). Not done by the replacements:
+the SDRAM test and clear, security, BSC set-up, and the sleep until the 68000 wakes the SH-2s.
+The Egypt sample renders the same picture with Sega's BIOS and with the replacements.
+
+### Tests
+
+`tests/MD/synthetic/sh2asm.py` (an SH-2 assembler, checked by assembling every instruction form and
+disassembling the result with `Sh2Core::Disassemble`) and `m32x_cases.py`: synthetic 32X
+cartridges that boot through the replacement boot ROMs (runnable in CI), with expected values from
+the manual: boot handshake and IDs, CMD interrupt and its mask, V/H interrupts and HCount, H
+interrupts across a 2048-word 68000 DMA, slave/master SDRAM sharing, DREQ FIFO with SH-2 DMA,
+frame buffer fill and swap, 68000 VDP/palette access, cartridge windows and vector ROM, PWM FIFO
+and timer interrupt. All pass (`mise run test:md-synthetic`); the first 10 also replay identically
+from a save state (`replay_check.py`). Mutation checks: a wrong HCount comparison, the old INTM
+behaviour and the old scheduling each fail their case.
+
+### Sega's Mars Check Program V1.0 (hardware test)
+
+Run locally with the user's BIOS and cartridge dump (161 register and function tests). After the
+two fixes above: 159 pass. Remaining: tests 55/56, "SH2 MASTER/SLAVE H INTERRUPT (MD 1)": with HEN
+= 1 and HCount = 0 the program counts H interrupts over 30 frames and expects `$1E00` (256 per
+frame); MesenCE (like ares and BlastEm, which also raise one per line) gives 262 per frame. Not
+resolved; hypotheses: no H interrupt on six lines around vertical sync, or SH-2 accesses stalled
+while the 68000's VDP DMA holds the bus. Recorded as a known divergence.
+
+## S3: VDP and PWM (2026-11-19)
+
+| Point | Source |
+|---|---|
+| Packed pixel, direct colour and run-length modes; line table; dot shift | Manual pp. 36-45 |
+| Priority: PRI = 0 puts 32X pixels with the through bit in front of the MD planes and the others behind; PRI = 1 the reverse; MD colour code 0 (backdrop) always shows the 32X | Manual figure 3.9 (p. 46), as ares |
+| Frame buffer swap at VBlank (FS takes effect at once in VBlank or with mode 0); FEN during a fill or a pending swap | ares; fill time 7 + 3 x (length + 1) SH-2 cycles is ares' "according to official docs" |
+| Fill wraps within a 256-word row; 8-bit `$00` writes to the frame buffer don't go through; the overwrite image skips zero bytes | ares; the overwrite rule is also in the manual |
+| PWM: a sample every (cycle - 1) SH-2 clocks, 3-word FIFOs (oldest dropped when full), timer interrupt and DREQ1 every TM samples | ares; output level centred on half the cycle, half scale in the mix: judgment call |
+| Composition | The VDP marks backdrop pixels (bit 11) when a 32X is attached; the 32X composites each line at its end in 15-bit colour (bit 15); `MdDefaultVideoFilter` converts both. The sub-pixel offset of the 32X image in H40 (ares: about 3 1/4 pixels) and H32 are not modelled |
+
+Tests: `m32x_render`, `m32x_priority_32x` (PRI = 1, direct colour), `m32x_priority_md` (PRI = 0,
+run-length), `m32x_dot_shift`: pixels of the final picture checked against the expected colours.
+Sega's sample programs (Egypt, Gnu Sierra, Runlength Mode Test, Texture Test, SOJ, Celtic PWM test)
+show their pictures.
+
+## S4: integration (2026-11-19)
+
+- Debugger: `CpuType::M32xMaster` / `M32xSlave` with `Sh2Debugger` (breakpoints, stepping, call
+  stack across delayed branches, code/data logging of SDRAM, trace logger, interrupts),
+  `Sh2DisUtils`, `Sh2TraceLogger`, expression tokens r0-r15/sp/sr/pc. SH-2 hooks run only while a
+  debugger is attached (`Sh2Core::SetDebugHooks`), so emulation pays nothing otherwise; cache
+  hits are reported too. Debugger addresses are physical (29 bits): cache-through addresses show
+  as their cached ones.
+- Memory types `M32xMasterMemory`, `M32xSlaveMemory` (CPU spaces, `$00000000-$0603FFFF`),
+  `M32xSdram`, `M32xFrameBuffer` (both buffers), `M32xPalette`, `M32xBootRom`;
+  `GetLastCpuMemoryType()` moved to `M32xSlaveMemory`. The Sega CD BIOS and the 32X boot ROM now
+  count as ROM for the "uninitialized read" warning (both were reported as uninitialized RAM).
+- UI: debugger menu entries, SH-2 status view, trace logger settings, firmware settings for the
+  three boot ROMs (optional), `*.32x` in the file dialogs and folder scans.
+- Test: `tests/MD/m32x/debugger.lua` via `debugger_check.py` in `test:md-synthetic` (exec and write
+  callbacks on the SH-2s, SDRAM and CPU-space reads and writes, memory sizes); a wrong expectation
+  makes it fail.

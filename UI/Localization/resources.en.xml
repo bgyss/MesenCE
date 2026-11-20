@@ -221,6 +221,7 @@
 			<Control ID="lblColecoVision">ColecoVision</Control>
 			<Control ID="lblWonderSwan">WonderSwan</Control>
 			<Control ID="lblMegaCd">Sega CD / Mega-CD</Control>
+			<Control ID="lbl32x">32X</Control>
 			<Control ID="lblOtherConsoles">Other systems</Control>
 			
 			<Control ID="lblWrongHash">File does not contain the expected data, and may not work correctly.</Control>
@@ -2949,6 +2950,8 @@ E
 			<Value ID="MdM68k">68000</Value>
 			<Value ID="MdZ80">Z80 (MD)</Value>
 			<Value ID="McdM68k">Sega CD sub 68000</Value>
+			<Value ID="M32xMaster">32X master SH-2</Value>
+			<Value ID="M32xSlave">32X slave SH-2</Value>
 		</Enum>
 		
 		<Enum ID="MemoryType">
@@ -3068,6 +3071,12 @@ E
 			<Value ID="McdPcmRam">Sega CD PCM RAM</Value>
 			<Value ID="McdCdcRam">Sega CD CDC Buffer</Value>
 			<Value ID="McdBios">Sega CD BIOS</Value>
+			<Value ID="M32xMasterMemory">32X Master SH-2 Memory</Value>
+			<Value ID="M32xSlaveMemory">32X Slave SH-2 Memory</Value>
+			<Value ID="M32xSdram">32X SDRAM</Value>
+			<Value ID="M32xFrameBuffer">32X Frame Buffer</Value>
+			<Value ID="M32xPalette">32X Palette</Value>
+			<Value ID="M32xBootRom">32X Boot ROM</Value>
 
 			<Value ID="None">None</Value>
 		</Enum>
@@ -3728,6 +3737,8 @@ E
 			<Value ID="OpenSpcDebugger">SPC Debugger</Value>
 			<Value ID="OpenMdZ80Debugger">Z80 Debugger</Value>
 			<Value ID="OpenMcdM68kDebugger">Sega CD Sub CPU Debugger</Value>
+			<Value ID="OpenM32xMasterDebugger">32X Master SH-2 Debugger</Value>
+			<Value ID="OpenM32xSlaveDebugger">32X Slave SH-2 Debugger</Value>
 			<Value ID="OpenSa1Debugger">SA-1 Debugger</Value>
 			<Value ID="OpenSt018Debugger">ST018 Debugger</Value>
 			<Value ID="OpenGsuDebugger">GSU Debugger</Value>

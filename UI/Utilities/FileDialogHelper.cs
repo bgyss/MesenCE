@@ -61,7 +61,7 @@ namespace Mesen.Utilities
 								"*.sms", "*.gg", "*.sg", "*.col",
 								"*.gba",
 								"*.ws", "*.wsc", "*.pc2",
-								"*.md", "*.gen", "*.smd",
+								"*.md", "*.gen", "*.smd", "*.32x",
 								"*.zip", "*.7z",
 								"*.ips", "*.bps"
 							}
@@ -75,7 +75,7 @@ namespace Mesen.Utilities
 						filter.Add(new FilePickerFileType("SG-1000 ROM files") { Patterns = new List<string>() { "*.sg" } });
 						filter.Add(new FilePickerFileType("ColecoVision ROM files") { Patterns = new List<string>() { "*.col" } });
 						filter.Add(new FilePickerFileType("WonderSwan ROM files") { Patterns = new List<string>() { "*.ws", "*.wsc", "*.pc2" } });
-						filter.Add(new FilePickerFileType("Mega Drive / Genesis ROM files") { Patterns = new List<string>() { "*.md", "*.gen", "*.smd", "*.bin" } });
+						filter.Add(new FilePickerFileType("Mega Drive / Genesis ROM files") { Patterns = new List<string>() { "*.md", "*.gen", "*.smd", "*.32x", "*.bin" } });
 						filter.Add(new FilePickerFileType("Sega CD / Mega-CD disc images") { Patterns = new List<string>() { "*.cue" } });
 						filter.Add(new FilePickerFileType("Patch files (IPS/BPS)") { Patterns = new List<string>() { "*.ips", "*.bps" } });
 					} else if(ext == FileDialogHelper.FirmwareExt) {

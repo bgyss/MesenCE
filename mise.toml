@@ -472,6 +472,7 @@ python3 tests/MD/synthetic/audio_compare.py bin/md-synthetic --fm-core nuked
 python3 tests/MD/synthetic/compare.py bin/md-synthetic --fm-core nuked
 python3 tests/MD/midline/check_midline.py bin/md-synthetic
 python3 tests/MD/mcd/debugger_check.py bin/md-synthetic
+python3 tests/MD/m32x/debugger_check.py bin/md-synthetic
 python3 tests/MD/mcd/swap_race.py
 '''
 

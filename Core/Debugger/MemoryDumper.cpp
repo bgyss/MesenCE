@@ -27,6 +27,7 @@
 #include "MD/MdConsole.h"
 #include "MD/MdMemoryManager.h"
 #include "MD/Mcd/McdUnit.h"
+#include "MD/M32x/M32xUnit.h"
 #include "WS/WsMemoryManager.h"
 #include "Shared/Video/VideoDecoder.h"
 #include "Debugger/DebugTypes.h"
@@ -112,6 +113,8 @@ uint32_t MemoryDumper::GetMemorySize(MemoryType type)
 		case MemoryType::MdMemory: return 0x1000000;
 		case MemoryType::MdZ80Memory: return 0x10000;
 		case MemoryType::McdMemory: return 0x1000000;
+		case MemoryType::M32xMasterMemory:
+		case MemoryType::M32xSlaveMemory: return M32xUnit::Sh2DebugSpaceSize;
 		case MemoryType::SnesRegister: return 0x10000;
 		case MemoryType::SmsPort: return 0x100;
 		case MemoryType::WsPort: return 0x10000;
@@ -234,7 +237,9 @@ void MemoryDumper::GetMemoryState(MemoryType type, uint8_t* buffer)
 
 		case MemoryType::MdMemory:
 		case MemoryType::MdZ80Memory:
-		case MemoryType::McdMemory: {
+		case MemoryType::McdMemory:
+		case MemoryType::M32xMasterMemory:
+		case MemoryType::M32xSlaveMemory: {
 			if(_mdConsole) {
 				uint32_t size = GetMemorySize(type);
 				for(uint32_t i = 0; i < size; i++) {
@@ -311,6 +316,12 @@ void MemoryDumper::InternalSetMemoryValues(MemoryType originalMemoryType, uint32
 			case MemoryType::McdMemory:
 				if(_mdConsole->GetMcd()) {
 					_mdConsole->GetMcd()->SubDebugWrite(address, value);
+				}
+				break;
+			case MemoryType::M32xMasterMemory:
+			case MemoryType::M32xSlaveMemory:
+				if(_mdConsole->GetM32x()) {
+					_mdConsole->GetM32x()->ShDebugWrite(address, value);
 				}
 				break;
 			case MemoryType::SpcDspRegisters: _spc->DebugWriteDspReg(address, value); break;
@@ -418,6 +429,8 @@ uint8_t MemoryDumper::InternalGetMemoryValue(MemoryType memoryType, uint32_t add
 		case MemoryType::MdMemory: return _mdConsole->GetMemoryManager()->DebugRead(address);
 		case MemoryType::MdZ80Memory: return _mdConsole->GetMemoryManager()->DebugZ80Read((uint16_t)address);
 		case MemoryType::McdMemory: return _mdConsole->GetMcd() ? _mdConsole->GetMcd()->SubDebugRead(address) : 0;
+		case MemoryType::M32xMasterMemory:
+		case MemoryType::M32xSlaveMemory: return _mdConsole->GetM32x() ? _mdConsole->GetM32x()->ShPeek8(address) : 0;
 
 		default:
 			uint8_t* src = GetMemoryBuffer(memoryType);

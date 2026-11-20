@@ -20,6 +20,20 @@ public struct MdM68kState : BaseState
 	[MarshalAs(UnmanagedType.I1)] public bool Halted;
 }
 
+public struct M32xSh2State : BaseState
+{
+	public UInt64 CycleCount;
+	[MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)] public UInt32[] R;
+	public UInt32 PC;
+	public UInt32 PR;
+	public UInt32 GBR;
+	public UInt32 VBR;
+	public UInt32 MACH;
+	public UInt32 MACL;
+	public UInt32 SR;
+	[MarshalAs(UnmanagedType.I1)] public bool Sleeping;
+}
+
 public struct MdVdpState : BaseState
 {
 	[MarshalAs(UnmanagedType.ByValArray, SizeConst = 24)] public byte[] Regs;
