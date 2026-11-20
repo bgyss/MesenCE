@@ -768,6 +768,15 @@ void MdVdp::FinishLine()
 	}
 }
 
+bool MdVdp::Is32xRefreshWindow(uint64_t clock)
+{
+	//The first 6 pixels after the active display (BlastEm's window: 32x_video.c, "VRAM refresh";
+	//ares reports FEN during the VDP's refresh slots; judgment call, findings S5)
+	uint64_t pos = clock >= _lineStartClock ? (clock - _lineStartClock) % MdTiming::ClocksPerLine : (MdTiming::ClocksPerLine - (_lineStartClock - clock) % MdTiming::ClocksPerLine) % MdTiming::ClocksPerLine;
+	uint32_t end = (IsH40() ? RenderOffsetH40 : RenderOffsetH32) + 2560;
+	return pos >= end && pos < end + 6 * (IsH40() ? 8u : 10u);
+}
+
 bool MdVdp::IsHBlank(uint64_t clock)
 {
 	uint64_t pos = clock >= _lineStartClock ? (clock - _lineStartClock) % MdTiming::ClocksPerLine : (MdTiming::ClocksPerLine - (_lineStartClock - clock) % MdTiming::ClocksPerLine) % MdTiming::ClocksPerLine;

@@ -569,7 +569,9 @@ uint16_t M32xUnit::ReadVdpReg(uint32_t reg)
 		case 0x08: return _fillData;
 		case 0x0A: {
 			uint64_t now = std::max(_sh2[0].GetCycleCount(), _sh2[1].GetCycleCount());
-			return (uint16_t)((_vblank ? 0x8000 : 0) | (InHBlank() ? 0x4000 : 0) | (PaletteBusy() ? 0 : 0x2000) | (FrameBufferBusy(now) ? 2 : 0) | (_fbDisplay ? 1 : 0));
+			//FEN also reads 1 while the frame buffer DRAM is refreshed (Metal Head waits for it)
+			bool fen = FrameBufferBusy(now) || _vdp->Is32xRefreshWindow(now * 7 / 3);
+			return (uint16_t)((_vblank ? 0x8000 : 0) | (InHBlank() ? 0x4000 : 0) | (PaletteBusy() ? 0 : 0x2000) | (fen ? 2 : 0) | (_fbDisplay ? 1 : 0));
 		}
 	}
 	return 0;

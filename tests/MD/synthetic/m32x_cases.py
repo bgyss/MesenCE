@@ -396,6 +396,30 @@ fbw:   .long 0x24000200
     return _case("m32x_frame_buffer", ops, master, frames=4)
 
 
+def _fen_refresh():
+    """FEN reads 1 while the frame buffer DRAM is refreshed, in a short window at the start of each
+    HBlank (findings S5: Metal Head waits for FEN = 1 without a fill; BlastEm's window, ares reports
+    it during the VDP's refresh slots). The master polls FEN with no fill running and reports
+    comm7 = 1 once it has seen FEN = 1, then FEN = 0 again."""
+    master = """
+    mov.w fm,r0
+    mov.w r0,@(0,gbr)       ; FM = 1
+    mov.l fbreg,r8
+fen1:
+    mov.w @(10,r8),r0
+    tst #2,r0
+    bt fen1
+fen0:
+    mov.w @(10,r8),r0
+    tst #2,r0
+    bf fen0
+    mov #1,r0
+    mov.w r0,@(0x2E,gbr)
+""" + IDLE + "fm: .word 0x8000\n"
+    ops = _wait_boot() + [_poll_comm(7, 1)]
+    return _case("m32x_fen_refresh", ops, master)
+
+
 def _vdp_68k():
     """68000 access to the 32X VDP and palette while FM = 0 (manual pp. 14, 24-29): the palette is
     word-accessible ($A15200), the bitmap mode register reads back mode/PRI and bit 15 = 1 on NTSC
@@ -691,7 +715,7 @@ def _pixel_check(name):
 
 def all_cases():
     PIXEL_CHECKS["m32x_render"] = {(40, 100): (0, 255, 0), (280, 100): (0, 0, 255)}
-    found = [_boot(), _cmd_irq(), _vint_hint(), _hint_dma(), _sdram_shared(), _dreq_fifo(), _frame_buffer(), _vdp_68k(), _cart_map(),
+    found = [_boot(), _cmd_irq(), _vint_hint(), _hint_dma(), _sdram_shared(), _dreq_fifo(), _frame_buffer(), _vdp_68k(), _fen_refresh(), _cart_map(),
              _pwm(), _render(), _priority_32x(), _priority_md(), _dot_shift()]
     for name in PIXEL_CHECKS:
         DERIVED_CHECKS[name] = _pixel_check(name)

@@ -147,6 +147,8 @@ public:
 	}
 	//Whether `clock` falls outside the active display part of its line
 	bool IsHBlank(uint64_t clock);
+	//32X: the frame buffer DRAM is refreshed in a short window at the start of HBlank (FEN reads 1)
+	bool Is32xRefreshWindow(uint64_t clock);
 
 	void Run(uint64_t masterClock);
 
