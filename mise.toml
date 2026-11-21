@@ -539,6 +539,15 @@ python3 tests/MD/synthetic/gen.py bin/md-synthetic
 python3 tests/MD/synthetic/xarch_compare.py bin/md-synthetic "$@"
 '''
 
+[tasks."md-corpus"]
+description = "Mega Drive family vs oracle emulators across a ROM library (tools/md-corpus; docs/research/md-oracle-testing-strategy.md): inventory (No-Intro/Redump DATs), run (MesenCE + GPGX + PicoDrive; attract or walker sessions), compare (health, per-frame work RAM state, snapshots, audio), report (bin/md-corpus/report.html). Local only: needs ROMs, DATs and the libretro cores. Usage: mise run md-corpus -- <inventory|run|compare|report> [options]"
+depends = ["headless"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python3 tools/md-corpus/md_corpus.py "$@"
+'''
+
 [tasks."test:md-audio-ref"]
 description = "Mega Drive / 32X audio vs PicoDrive (libretro core from RetroArch, or PICODRIVE_CORE): every ROM in MD_AUDIO_ROMS (or the folder given) runs its attract mode in both; loudness envelopes, per-chip balance and octave-band spectra are compared (tools/audio-compare). Local only: needs the core and ROMs. Usage: mise run test:md-audio-ref -- <rom dir> [--frames N] [--match TEXT]"
 depends = ["headless"]

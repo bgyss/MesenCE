@@ -13,6 +13,9 @@ mesen-headless run --rom ROM --frames N --out NEW_DIR [--input INPUT.json] [--lu
                    [--region auto|ntsc|ntsc-j|pal] [--timeout SECONDS] [--allow-dirty]
                    [--load-state STATE.mss]
                    [--snap-every N]           # snaps/<frame>.png every N frames
+                   [--state-log FILE]         # per-frame CRC32s of every RAM-like memory and the frame (OUT/FILE)
+                   [--state-blocks]           # with --state-log: OUT/FILE.blocks, per-256-byte-block work RAM CRCs
+                   [--dump-at F1,F2,...]      # dumps/<frame>/<MemoryType>.bin at the end of those frames
                    [--trace bus] [--trace-limit EVENTS] [--chip-audio]     # Mega Drive only
                    [--md-model md1va3|md1va6] [--md-pads 6,6]              # Mega Drive only
                    [--md-fm-core ymfm|nuked]                               # Mega Drive only
@@ -84,6 +87,8 @@ Frame numbers are 1-based (entry `"1"` applies to the first emulated frame); por
 | `memory/<MemoryType>.bin` | every registered RAM-like memory (ROM and register views excluded) |
 | `lua.log` | the script log, when `--lua` is given |
 | `snaps/<frame>.png` | the frame buffer every N frames (`--snap-every N`), as `final.png` |
+| `<FILE>` (`--state-log FILE`) | `mesen-state-log/1`, below |
+| `dumps/<frame>/<MemoryType>.bin` | the state log's memories at the end of the listed frames (`--dump-at`) |
 | `trace.txt` | Mega Drive bus trace (`--trace bus`), below |
 | `ym2612.raw`, `psg.raw` | Mega Drive per-chip audio before mixing (`--chip-audio`): s16le stereo at the YM2612 sample rate (master clock / 1008); the manifest's `chip_audio` gives format and rate |
 | `pwm.raw` | 32X PWM as mixed (`--chip-audio` with a 32X attached): s16le stereo, one sample per YM2612 sample |
@@ -95,6 +100,17 @@ Frame numbers are 1-based (entry `"1"` applies to the first emulated frame); por
 `--trace-limit` events are written (default 5,000,000); the manifest's `trace` record gives
 the event count, the limit and `truncated`, and a truncated trace makes the capture
 `"qualified": false`.
+
+`mesen-state-log/1` (`--state-log`, any console) is text: a `# mesen-state-log/1` line, a `#`
+line naming the columns, then one line per frame: `frame clock polled pc subpc <CRC32 per
+memory> frame`, all hex except the decimal frame number. `polled` is 1 when the game read its
+controllers during the frame (the lag flag), `pc`/`subpc` the Mega Drive 68000 and Sega CD sub
+68000 PC at the end of the frame (0 elsewhere). The memories are every RAM-like `MemoryType` the
+console registers (ROM, BIOS, register views and CPU address spaces excluded), in enum order;
+`frame` is the CRC32 of the console's raw frame buffer. With `--state-blocks` (Mega Drive),
+`FILE.blocks` holds, per frame, 256 little-endian uint16 values: the low 16 bits of the CRC32 of
+each 256-byte block of 68000 work RAM, in 68000 byte order. `tools/md-corpus` compares these logs
+between runs and with the oracles' (`tools/libretro-capture/capture.py --state-log`).
 
 The manifest binds: schema version; emulator commit and dirty flag; `qualified`; the exact
 command; ROM SHA-256 and size (the ROM is not copied); input and Lua SHA-256; console and

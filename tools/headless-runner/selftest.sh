@@ -65,6 +65,12 @@ mdcode=$?
 set -e
 check "MD: Lua endFrame callbacks fire and the 68000 state is readable" '[ $mdcode -eq 0 ] && grep -q "\"stop_code\": 0" "$work/md-lua/manifest.json" && grep -q "pc=" "$work/md-lua/lua.log"'
 
+#--state-log / --state-blocks / --dump-at (tools/md-corpus): one line and 512 block bytes per frame,
+#and the dumped work RAM hashes to the logged CRC32 and block hashes of its frame
+"$bin" run --rom "$work/md/render_h40.md" --frames 60 --out "$work/md-state" --state-log state.log --state-blocks --dump-at 30,60 --allow-dirty
+check "MD: --state-log/--state-blocks/--dump-at agree with each other; output validates" \
+  'python3 tests/headless/state_log_check.py "$work/md-state" && "$bin" validate "$work/md-state" >/dev/null 2>&1'
+
 mkdir -p "$work/compat/home"
 cat >"$work/compat/stop.lua" <<'EOF'
 local n = 0

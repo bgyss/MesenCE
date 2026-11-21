@@ -2,8 +2,8 @@
 """Compares a MesenCE run's audio with a reference emulator's, without listening to it.
 
 Inputs: a mesen-headless run directory recorded with --chip-audio (audio.wav plus ym2612.raw,
-psg.raw and, with a 32X, pwm.raw) and a reference WAV of the same ROM and input script (e.g.
-tools/libretro-capture/capture.py with PicoDrive).
+psg.raw and, with a 32X, pwm.raw; with the Sega CD unit, pcm.raw and cdda.raw) and a reference
+WAV of the same ROM and input script (e.g. tools/libretro-capture/capture.py with PicoDrive).
 
 Method. Both mixes are reduced to loudness envelopes (RMS in 50 ms windows, DC removed per window)
 and aligned by cross-correlation (boot times differ between emulators). Chips play mostly
@@ -42,8 +42,9 @@ except ImportError:
     sys.exit("compare.py needs numpy (python3 -m pip install numpy)")
 
 WINDOW = 0.05
-# MesenCE's mix weights (MdApu::FinishSample at the default volumes): FM 1, PSG 1/2, PWM 1
-MESEN_WEIGHTS = {"ym2612": 1.0, "psg": 0.5, "pwm": 1.0}
+# MesenCE's mix weights (MdApu::FinishSample at the default volumes): FM 1, PSG 1/2, PWM 1, and the
+# Sega CD's PCM and CD audio unscaled
+MESEN_WEIGHTS = {"ym2612": 1.0, "psg": 0.5, "pwm": 1.0, "pcm": 1.0, "cdda": 1.0}
 
 
 def read_wav(path):
@@ -139,6 +140,11 @@ def compare(run, ref_path, max_lag_seconds):
     for name in ("ym2612", "psg", "pwm"):
         if (run / (name + ".raw")).exists():
             chips[name] = envelope(read_raw(run / (name + ".raw")), chip_rate)
+    # Sega CD streams run at their own rates (manifest chip_audio.pcm / .cdda)
+    for name in ("pcm", "cdda"):
+        info = manifest["chip_audio"].get(name)
+        if info and (run / info["file"]).exists():
+            chips[name] = envelope(read_raw(run / info["file"]), info["sample_rate_hz"])
     mesen_mix, mesen_rate = read_wav(run / "audio.wav")
     mix = envelope(mesen_mix, mesen_rate)
     ref_signal, ref_rate = read_wav(ref_path)

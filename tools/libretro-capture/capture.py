@@ -8,6 +8,17 @@ entry). Output: OUT/audio.wav (the core's mix, 16-bit stereo) and OUT/manifest.j
 
     capture.py CORE ROM OUT --frames N [--input input.json] [--system DIR] [--option key=value]
                [--snap-every N]   # OUT/snaps/NNNNNN.png (frame numbers as mesen-headless)
+               [--state-log FILE] # OUT/FILE: per-frame CRC32s, mesen-state-log/1 layout (below)
+               [--state-blocks]   # with --state-log: OUT/FILE.blocks, as mesen-headless --state-blocks
+               [--dump-at F1,F2]  # OUT/dumps/<frame>/<region>.bin
+
+State log: the same layout as mesen-headless --state-log (docs/headless.md), with the memories a
+libretro core exposes: MdWorkRam (RETRO_MEMORY_SYSTEM_RAM) and, where the core gives it,
+MdVideoRam (RETRO_MEMORY_VIDEO_RAM), both as the core stores them (GPGX and PicoDrive keep 68000
+memory as host-order 16-bit words, i.e. byte-swapped on little-endian hosts; --swap-words undoes
+that before hashing and dumping). polled, pc and subpc are "-": a libretro host can't see them.
+The frame column is the CRC32 of the core's raw video buffer (its own pixel format), useful only
+within one core.
 
 Nothing here is specific to MesenCE; it implements the small part of the libretro API that a core
 needs to run headless.
@@ -103,17 +114,28 @@ def to_rgb(data, width, height, pitch, fmt):
 
 
 def load_script(path):
-    """frame -> bitmask of libretro joypad buttons for pad 1, held until the next entry."""
+    """frame (1-based, as mesen-headless) -> {port index: bitmask of libretro joypad buttons};
+    a port's buttons hold until its next entry."""
     if not path:
         return {}
     data = json.loads(pathlib.Path(path).read_text())
     events = {}
     for frame, pads in data.get("frames", {}).items():
-        mask = 0
-        for button in pads.get("1", []):
-            mask |= 1 << JOYPAD[MD_TO_RETRO[button.upper()]]
-        events[int(frame)] = mask
+        for port, names in pads.items():
+            mask = 0
+            for button in names:
+                mask |= 1 << JOYPAD[MD_TO_RETRO[button.upper()]]
+            events.setdefault(int(frame), {})[int(port) - 1] = mask
     return events
+
+
+RETRO_MEMORY_SYSTEM_RAM, RETRO_MEMORY_VIDEO_RAM = 2, 3
+
+
+def swap_words(data):
+    b = bytearray(data)
+    b[0::2], b[1::2] = data[1::2], data[0::2]
+    return bytes(b)
 
 
 def main():
@@ -126,7 +148,12 @@ def main():
     ap.add_argument("--system", default="")
     ap.add_argument("--option", action="append", default=[])
     ap.add_argument("--snap-every", type=int, default=0)
+    ap.add_argument("--state-log")
+    ap.add_argument("--state-blocks", action="store_true")
+    ap.add_argument("--dump-at", default="")
+    ap.add_argument("--swap-words", action="store_true")
     args = ap.parse_args()
+    dump_at = {int(f) for f in args.dump_at.split(",") if f}
 
     out = pathlib.Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -167,8 +194,11 @@ def main():
             value = options.get(var.key)
             if value is None:
                 return False
-            option_values[var.key] = C.c_char_p(value)
-            C.cast(data, C.POINTER(Variable))[0].value = option_values[var.key].value
+            # The core keeps the pointer: hand it a buffer this host keeps alive (assigning bytes to
+            # the c_char_p field would point it at a temporary copy)
+            if var.key not in option_values:
+                option_values[var.key] = C.create_string_buffer(value)
+            C.cast(data, C.POINTER(C.c_void_p))[1] = C.cast(option_values[var.key], C.c_void_p).value
             return True
         if cmd == ENV_GET_VARIABLE_UPDATE:
             C.cast(data, C.POINTER(C.c_bool))[0] = False
@@ -188,17 +218,20 @@ def main():
         samples.extend(C.c_int16(right).value.to_bytes(2, "little", signed=True))
 
     script = load_script(args.input)
-    buttons = [0]
+    buttons = [0, 0]
+    last_video = [b"", 0]
 
     def input_state(port, device, index, button_id):
-        if port != 0 or device != DEVICE_JOYPAD:
+        if port > 1 or device != DEVICE_JOYPAD:
             return 0
         if button_id == DEVICE_ID_JOYPAD_MASK:
-            return buttons[0]
-        return 1 if buttons[0] >> button_id & 1 else 0
+            return buttons[port]
+        return 1 if buttons[port] >> button_id & 1 else 0
 
     def video(data, width, height, pitch):
         n = frame_no[0] + 1  # mesen-headless numbers frames from 1
+        if data and args.state_log:
+            last_video[0] = C.string_at(data, pitch * height)
         if args.snap_every and data and n % args.snap_every == 0:
             snaps.mkdir(exist_ok=True)
             raw = C.string_at(data, pitch * height)
@@ -225,11 +258,48 @@ def main():
     av = AvInfo()
     core.retro_get_system_av_info(C.byref(av))
 
+    core.retro_get_memory_data.restype = C.c_void_p
+    core.retro_get_memory_size.restype = C.c_size_t
+    regions = []
+    for name, memory_id in (("MdWorkRam", RETRO_MEMORY_SYSTEM_RAM), ("MdVideoRam", RETRO_MEMORY_VIDEO_RAM)):
+        if core.retro_get_memory_data(memory_id) and core.retro_get_memory_size(memory_id):
+            regions.append((name, memory_id))
+
+    def read_region(memory_id):
+        # Re-read the pointer each time: a core may move its buffers
+        data = C.string_at(core.retro_get_memory_data(memory_id), core.retro_get_memory_size(memory_id))
+        return swap_words(data) if args.swap_words else data
+
+    log = blocks = None
+    if args.state_log:
+        log = open(out / pathlib.Path(args.state_log).name, "w")
+        if args.state_blocks:
+            blocks = open(out / (pathlib.Path(args.state_log).name + ".blocks"), "wb")
+        log.write("# mesen-state-log/1 libretro\n# frame clock polled pc subpc %s frame\n" % " ".join(n for n, _ in regions))
+
     for frame in range(args.frames):
-        if frame in script:
-            buttons[0] = script[frame]
+        # Script frame numbers are 1-based like mesen-headless: entry "1" applies to the first retro_run
+        for port, mask in script.get(frame + 1, {}).items():
+            buttons[port] = mask
         frame_no[0] = frame
         core.retro_run()
+        n = frame + 1
+        if log:
+            mem = {name: read_region(m) for name, m in regions}
+            crcs = " ".join("%08x" % zlib.crc32(mem[name]) for name, _ in regions)
+            log.write("%d - - - - %s %08x\n" % (n, crcs, zlib.crc32(last_video[0])))
+            if blocks:
+                wram = mem.get("MdWorkRam", b"")
+                blocks.write(struct.pack("<256H", *(zlib.crc32(wram[i * 256:(i + 1) * 256]) & 0xFFFF if (i + 1) * 256 <= len(wram) else 0 for i in range(256))))
+        if n in dump_at:
+            d = out / "dumps" / str(n)
+            d.mkdir(parents=True, exist_ok=True)
+            for name, m in regions:
+                (d / (name + ".bin")).write_bytes(read_region(m))
+    if log:
+        log.close()
+    if blocks:
+        blocks.close()
 
     core.retro_unload_game()
     core.retro_deinit()
@@ -242,7 +312,7 @@ def main():
         w.writeframes(bytes(samples))
     (out / "manifest.json").write_text(json.dumps({
         "core": args.core, "rom": args.rom, "frames": args.frames, "fps": av.timing.fps,
-        "sample_rate": av.timing.sample_rate, "options": {k.decode(): v.decode() for k, v in options.items()},
+        "sample_rate": av.timing.sample_rate, "swap_words": args.swap_words, "options": {k.decode(): v.decode() for k, v in options.items()},
         "log": log_lines[-50:]}, indent=1))
     return 0
 

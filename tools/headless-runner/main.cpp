@@ -50,11 +50,14 @@
 #include "Utilities/magic_enum.hpp"
 #include "MD/MdConsole.h"
 #include "MD/MdApu.h"
+#include "MD/MdM68k.h"
 #include "MD/MdEeprom.h"
 #include "MD/Mcd/McdUnit.h"
 #include "MD/M32x/M32xUnit.h"
 #include "Shared/BaseControlManager.h"
 #include "Utilities/Sha256.h"
+#include "Utilities/CRC32.h"
+#include "Debugger/DebugUtilities.h"
 
 #ifndef MESEN_GIT_COMMIT
 	#define MESEN_GIT_COMMIT "unknown"
@@ -351,6 +354,116 @@ public:
 	}
 };
 
+// --state-log FILE: one line per frame with CRC32s of every RAM-like memory and of the frame buffer,
+// for comparing runs frame by frame (tools/md-corpus); --dump-at F1,F2,...: full copies of those
+// memories at the end of the listed frames, in dumps/<frame>/<MemoryType>.bin.
+// Format mesen-state-log/1: a "# mesen-state-log/1" line, a "#" header naming the columns, then
+// "frame clock polled pc subpc <crc per region...> frame" in hex. polled = the game read its pads
+// during the frame; pc/subpc = 68000 (and Sega CD sub 68000) PC at the end of the frame.
+// --state-blocks (with --state-log, Mega Drive): FILE.blocks, binary, per frame the low 16 bits of
+// the CRC32 of each 256-byte block of 68000 work RAM (256 little-endian uint16), so a comparison can
+// tell which part of RAM differs and ignore blocks that only differ by timing (the stack).
+static vector<MemoryType> StateLogRegions(Emulator& emu)
+{
+	vector<MemoryType> regions;
+	for(auto type : magic_enum::enum_values<MemoryType>()) {
+		string name(magic_enum::enum_name(type));
+		if(name.find("Rom") != string::npos || name.find("Register") != string::npos || name.find("Bios") != string::npos || name == "None") {
+			continue;
+		}
+		//CPU address spaces (MdMemory, McdMemory, ...) are views, not storage
+		if(DebugUtilities::IsRelativeMemory(type)) {
+			continue;
+		}
+		ConsoleMemoryInfo mem = emu.GetMemory(type);
+		if(mem.Memory && mem.Size > 0) {
+			regions.push_back(type);
+		}
+	}
+	return regions;
+}
+
+class StateLogListener final : public INotificationListener
+{
+	Emulator& _emu;
+	std::ofstream _log;
+	vector<MemoryType> _regions;
+	std::set<uint32_t> _dumpAt;
+	fs::path _dumpDir;
+	std::ofstream _blocks;
+
+public:
+	StateLogListener(Emulator& emu, const fs::path& logPath, bool blocks, std::set<uint32_t> dumpAt, const fs::path& dumpDir)
+		: _emu(emu), _regions(StateLogRegions(emu)), _dumpAt(std::move(dumpAt)), _dumpDir(dumpDir)
+	{
+		if(blocks && !logPath.empty()) {
+			_blocks.open(fs::path(logPath.string() + ".blocks"), std::ios::binary);
+		}
+		if(!logPath.empty()) {
+			_log.open(logPath);
+			_log << "# mesen-state-log/1\n# frame clock polled pc subpc";
+			for(MemoryType type : _regions) {
+				_log << " " << magic_enum::enum_name(type);
+			}
+			_log << " frame\n";
+		}
+	}
+
+	void ProcessNotification(ConsoleNotificationType type, void*) override
+	{
+		if(type != ConsoleNotificationType::PpuFrameDone) {
+			return;
+		}
+		uint32_t frame = _emu.GetFrameCount();
+		if(_log.is_open()) {
+			BaseControlManager* control = _emu.GetConsole()->GetControlManager();
+			uint32_t pc = 0, subPc = 0;
+			if(MdConsole* md = dynamic_cast<MdConsole*>(_emu.GetConsole().get())) {
+				pc = md->GetM68k()->GetState().PC;
+				if(md->GetMcd()) {
+					subPc = md->GetMcd()->GetCpu().GetState().PC;
+				}
+			}
+			char buf[64];
+			snprintf(buf, sizeof(buf), "%u %llx %d %x %x", frame, (unsigned long long)_emu.GetMasterClock(), control && control->WasInputRead() ? 1 : 0, pc, subPc);
+			_log << buf;
+			for(MemoryType type : _regions) {
+				ConsoleMemoryInfo mem = _emu.GetMemory(type);
+				snprintf(buf, sizeof(buf), " %08x", CRC32::GetCRC((uint8_t*)mem.Memory, mem.Size));
+				_log << buf;
+			}
+			PpuFrameInfo ppu = _emu.GetPpuFrame();
+			snprintf(buf, sizeof(buf), " %08x\n", CRC32::GetCRC(ppu.FrameBuffer, ppu.FrameBufferSize));
+			_log << buf;
+		}
+		if(_blocks.is_open()) {
+			ConsoleMemoryInfo wram = _emu.GetMemory(MemoryType::MdWorkRam);
+			uint8_t out[512] = {};
+			for(uint32_t i = 0; i < 256 && (i + 1) * 256 <= wram.Size; i++) {
+				uint16_t crc = (uint16_t)CRC32::GetCRC((uint8_t*)wram.Memory + i * 256, 256);
+				out[i * 2] = crc & 0xFF;
+				out[i * 2 + 1] = crc >> 8;
+			}
+			_blocks.write((const char*)out, sizeof(out));
+		}
+		if(_dumpAt.count(frame)) {
+			fs::path dir = _dumpDir / std::to_string(frame);
+			fs::create_directories(dir);
+			for(MemoryType type : _regions) {
+				ConsoleMemoryInfo mem = _emu.GetMemory(type);
+				std::ofstream f(dir / (string(magic_enum::enum_name(type)) + ".bin"), std::ios::binary);
+				f.write((const char*)mem.Memory, mem.Size);
+			}
+		}
+	}
+
+	void Close()
+	{
+		_log.close();
+		_blocks.close();
+	}
+};
+
 static bool ParseRegion(const string& s, ConsoleRegion& out)
 {
 	if(s == "auto") {
@@ -372,7 +485,7 @@ static int Usage()
 	std::cerr << "usage:\n"
 					 "  mesen-headless run --rom ROM --frames N --out NEW_DIR [--input INPUT.json] [--lua SCRIPT.lua]\n"
 					 "                     [--region auto|ntsc|ntsc-j|pal] [--timeout SECONDS] [--allow-dirty]\n"
-					 "                     [--snap-every N]\n"
+					 "                     [--snap-every N] [--state-log FILE [--state-blocks]] [--dump-at F1,F2,...]\n"
 					 "  mesen-headless validate OUT_DIR\n"
 					 "  mesen-headless doctor\n";
 	return ExitUsage;
@@ -398,6 +511,9 @@ static int Run(const vector<string>& args, const string& commandLine)
 	vector<string> batteryPaths;
 	string mdMcdDisc, mdMcdBios;
 	bool saveBattery = false;
+	string stateLogPath;
+	bool stateBlocks = false;
+	std::set<uint32_t> dumpAt;
 	for(size_t i = 0; i < args.size(); i++) {
 		auto next = [&]() -> string {
 			if(i + 1 >= args.size()) {
@@ -451,6 +567,16 @@ static int Run(const vector<string>& args, const string& commandLine)
 			saveBattery = true;
 		} else if(args[i] == "--trace-limit") {
 			traceLimit = std::stoull(next());
+		} else if(args[i] == "--state-log") {
+			stateLogPath = next();
+		} else if(args[i] == "--state-blocks") {
+			stateBlocks = true;
+		} else if(args[i] == "--dump-at") {
+			std::stringstream list(next());
+			string item;
+			while(std::getline(list, item, ',')) {
+				dumpAt.insert((uint32_t)std::stoul(item));
+			}
 		} else if(args[i] == "--allow-dirty") {
 			allowDirty = true;
 		} else {
@@ -754,6 +880,17 @@ static int Run(const vector<string>& args, const string& commandLine)
 			emu.GetNotificationManager()->RegisterNotificationListener(snaps);
 		}
 
+		shared_ptr<StateLogListener> stateLog;
+		if(!stateLogPath.empty() || !dumpAt.empty()) {
+			//The log goes inside the output directory (listed and hashed like every artifact)
+			fs::path logPath = stateLogPath.empty() ? fs::path() : outDir / fs::path(stateLogPath).filename();
+			stateLog.reset(new StateLogListener(emu, logPath, stateBlocks, dumpAt, outDir / "dumps"));
+			emu.GetNotificationManager()->RegisterNotificationListener(stateLog);
+			if(!stateLogPath.empty()) {
+				manifest["state_log"] = { { "file", logPath.filename().string() }, { "format", "mesen-state-log/1" }, { "blocks", stateBlocks } };
+			}
+		}
+
 		fs::path wav = outDir / "audio.wav";
 		emu.GetSoundMixer()->StartRecording(wav.string());
 		auto start = std::chrono::steady_clock::now();
@@ -805,6 +942,9 @@ static int Run(const vector<string>& args, const string& commandLine)
 				//A truncated trace is not a qualified capture
 				manifest["qualified"] = false;
 			}
+		}
+		if(stateLog) {
+			stateLog->Close();
 		}
 		if(scriptId >= 0) {
 			string log = emu.InternalGetDebugger()->GetScriptManager()->GetScriptLog(scriptId);

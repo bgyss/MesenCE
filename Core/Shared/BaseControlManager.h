@@ -46,6 +46,8 @@ public:
 	void ProcessEndOfFrame();
 
 	void SetInputReadFlag();
+	//Whether the game has read its input since the last end of frame (headless state log)
+	bool WasInputRead() { return _wasInputRead; }
 	uint32_t GetLagCounter();
 	void ResetLagCounter();
 
