@@ -1,7 +1,7 @@
 # Mega Drive / Sega CD / 32X / Sega CD 32X: automated testing against oracle emulators
 
-Status: strategy and methodology (2026-11-20). Nothing in this document is implemented
-unless it says **exists**. It plans how to compare MesenCE's Mega Drive family against
+Status: strategy and methodology (2026-11-20). P0-P2 are implemented (section 0.1); the rest is
+plan unless it says **exists**. It plans how to compare MesenCE's Mega Drive family against
 reference emulators across a whole commercial library, mostly without anyone playing the games
 by hand. Locally first, then in the cloud. It builds on the tools the M/S phases already
 produced (see "What already exists").
@@ -67,6 +67,28 @@ findings entry.
 A first full pass is about 100 core-hours (estimate in section 11.4). That's one night on the
 local machine. **The cloud is not needed for the first pass.** It pays off for repeated passes
 on every change and for running fix agents in parallel.
+
+### 0.1 Status (2026-11-20)
+
+Decided by the user: local runs first, the cloud (AWS) tabled as an aspirational goal; automated
+TASVideos fetching allowed, done as respectfully as possible (P3); the pipeline before Sega CD 32X.
+
+Implemented (`tools/md-corpus`, `mise run md-corpus -- inventory|run|compare|report`):
+- **P0:** inventory against the No-Intro and Redump DATs, one preferred version per title.
+- **P1:** `mesen-headless --state-log/--state-blocks/--dump-at`; the same in
+  `tools/libretro-capture/capture.py`. L2 compares 68000 work RAM in 256-byte blocks with offset
+  tracking (section 2.5). VRAM/CRAM/VSRAM from the oracles' save states and the colour
+  calibration cartridge are not done: snapshots are compared in VDP colour steps instead.
+- **P2:** the first library pass (attract mode, 1,212 titles, 35 minutes locally) and its ranked
+  report. Results and the bug they found: `md-verification-findings.md`, C1.
+
+Deviations from the plan, all recorded in C1: GPGX runs with its default options (some options
+break it in the libretro host); MesenCE's Sega CD sessions start from formatted backup RAM, as
+the oracles do; known library-wide mix-level differences (Sega CD PCM, PSG) are subtracted before
+audio flags.
+
+Next: the open clusters in C1 (MesenCE-only crashes, HardBall save RAM, 32X candidates); then P3
+(TAS import) and P4 (goldens).
 
 ## 1. What already exists
 

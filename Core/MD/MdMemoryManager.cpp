@@ -48,6 +48,13 @@ void MdMemoryManager::Init(Emulator* emu, MdConsole* console, vector<uint8_t>& r
 	while(size < _rom.size()) {
 		size <<= 1;
 	}
+	//Sonic & Knuckles on its own: $200000-$3FFFFF is its lock-on slot, not a mirror of its ROM. S&K
+	//reads the header at $200100 to detect a cartridge on top, and a mirror made it find its own.
+	//The empty slot reads $FF here, as GPGX (md_cart.c); the hardware's bus value isn't measured.
+	//Padding at load keeps ROM reads branch-free. (Lock-on dumps are larger than 2 MiB.)
+	if(_rom.size() == 0x200000 && memcmp(&_rom[0x150], "SONIC & KNUCKLES", 16) == 0) {
+		size = 0x400000;
+	}
 	_rom.resize(size, 0xFF);
 	_romMask = size - 1;
 

@@ -604,3 +604,109 @@ pulse covers exactly one envelope step. (Earlier KNOWN texts said "well under on
 - **Test:** `z80_busack_reset` (`extra_cases.py`, `test:md-synthetic`).
 - **Judgment call:** reset re-asserted after a grant follows MAME (reads 1); BlastEm keeps the
   grant.
+
+## C1: library-wide comparison against GPGX and PicoDrive (2026-11-20)
+
+Plan: [`md-oracle-testing-strategy.md`](md-oracle-testing-strategy.md), phases P0-P2. Tooling:
+`tools/md-corpus` (`mise run md-corpus -- inventory|run|compare|report`).
+
+### What was built
+
+- **Inventory** (`inventory.py`): hashes every image under the ROM folders (raw, `.zip`, `.7z`;
+  discs by their first track, cut out of single-BIN dumps at the next track's INDEX 00 or 01) and
+  matches it against the No-Intro (Mega Drive 2026-11-20, 32X 2026-10-10) and Redump (Mega-CD
+  2026-05-28) DATs. One preferred version per title: USA, World, Europe, Japan; plain releases
+  before compilations and re-releases; latest revision; no betas, prototypes, pirates or
+  unlicensed dumps.
+  - Local library: Mega Drive 1,813 images (1,757 verified, 1,130 preferred), 32X 71 (56, 40),
+    Sega CD 31 discs (22 matched Redump, 30 preferred), Sega CD 32X 12 discs (12, 12).
+- **`mesen-headless --state-log FILE [--state-blocks] [--dump-at F,...]`**
+  (`docs/headless.md`): per frame, CRC32 of every RAM-like memory and of the frame buffer, the
+  pad-polled flag (`BaseControlManager::WasInputRead`, a read-only getter), the 68000 and sub
+  68000 PC; with `--state-blocks`, 256 hashes of 256-byte work RAM blocks per frame. Checked in
+  `test:headless` (`tests/headless/state_log_check.py`: the dumped work RAM hashes to the logged
+  CRC32 and blocks). No measurable cost: Sonic 2, 3,600 frames in 6.5 s with or without it.
+- **Oracle side** (`tools/libretro-capture/capture.py`): the same log, blocks and dumps from the
+  memory a libretro core exposes (work RAM; PicoDrive also VRAM), `--swap-words`, port 2 input.
+- **Runner, comparison, report** (`runner.py`, `compare.py`, `report.py`): sessions run in
+  MesenCE, GPGX (MD, Sega CD) and PicoDrive (all four systems); each session is compared as soon
+  as its runs finish (health, per-frame work RAM agreement with offset tracking, snapshots in VDP
+  colour steps, audio through `tools/audio-compare`); `bin/md-corpus/report.html` ranks them.
+
+### Facts established on the way
+
+- **Byte order:** GPGX and PicoDrive keep 68000 work RAM as host-order words (byte-swapped on
+  little-endian hosts). After swapping, Sonic 2's work RAM at frame 600 equals MesenCE's in
+  65,534 of 65,536 bytes (PicoDrive) and 65,496 (GPGX, which runs 2 frames behind there).
+- **Whole-RAM CRCs are too coarse:** they stop matching after about 150 frames in Sonic 2 even
+  though the games stay in step. The remaining differences are the stack (`$FFFD9E`) and tables
+  caught mid-update: each emulator ends its frame at a different point of the game's code
+  (MesenCE at the wrap to line 0). Hence the per-block hashes, the noisy-block mask and the
+  offset tracking in `compare.py`. With them, the three emulators agree on 243-256 of 256
+  blocks over Sonic 2's attract mode, with offsets drifting by up to 3 frames during loads.
+- **Colour:** MesenCE's three ladders (`MdDefaultVideoFilter.h`) fall on one 15-step scale
+  (normal k = step 2k, shadow k = k, highlight k = 7 + k); GPGX and PicoDrive output RGB565 on a
+  linear ladder topped at 232. Comparing in steps took Sonic 2's MesenCE-vs-oracle snapshot
+  difference from 0.04-0.06 (raw RGB) to 0.001-0.01, the same as GPGX vs PicoDrive.
+- **`capture.py` fixes:** the input entry for frame `"1"` was applied on the second
+  `retro_run` (oracle input one frame late; harmless for the attract-mode audio runs it was
+  written for, wrong for input replays); option values were handed to the core as a temporary
+  buffer (now kept alive).
+- **GPGX in `capture.py`** (judgment call, not understood): setting `region_detect`, `bios`,
+  `force_dtack` or `addr_error` at load leaves GPGX silent, and `overscan` hangs it. The
+  defaults are what the comparison wants (BIOS off, overscan off), so GPGX runs with defaults
+  and auto region. MesenCE and PicoDrive get the region from the DAT name. A region mismatch
+  would show as an early state divergence; none was seen.
+- **Sega CD backup RAM:** with blank backup RAM, Road Rash stops on "BACKUP RAM NOT
+  INITIALIZED", while the oracles start from a formatted image. MesenCE's Sega CD sessions now
+  start from the same image GPGX creates (zeros plus the BIOS's 64-byte format block;
+  `runner.BRAM_FORMAT`, byte-identical to 17 of 22 GPGX files). That is a test-condition fix,
+  not an emulator bug.
+
+### First library pass: attract mode, 3,600 frames (35 min, 10 cores)
+
+1,212 titles, 3,584 runs, one nonzero exit. Clean (no flag): Mega Drive 1,040/1,130, 32X 23/40,
+Sega CD 11/30 (the other 19 have audio flags only), Sega CD 32X 0/12 (not emulated).
+
+| Group | Titles | Status |
+|---|---|---|
+| Lock-on window mirrored | Sonic & Knuckles | **Fixed** (below) |
+| MesenCE crashes (68000 PC in garbage: `$FFFFFFFB`, `$30040000`, `$45454544`), black or frozen, oracles fine | Fatal Rewind and its Japanese release The Killing Game Show (same game), Star Odyssey, Sesame Street Counting Cafe, Madden NFL 98, Buck Rogers, both Radica Arcade Legends units, European Club Soccer, Marvel Land | Open: one investigation each, possibly shared causes |
+| Save RAM | HardBall III ("First time initialization complete. Press RESET"), HardBall '95 ("SRAM failure") | Open: probably the cartridge's save RAM mapping |
+| 32X black or single-oracle divergence | 36 Great Holes, Brutal, WWF WrestleMania Arcade, WWF Raw, Spider-Man Web of Fire | Open, candidates (PicoDrive is the only oracle) |
+| 32X ECCO CinePak demo black | | Expected: Sega's boot ROM rejects it (32X findings, S5) |
+| Attract demos drift to other scenes after 25-55 s (sports titles: FIFA 97/98, NHL 98, NBA, MLBPA, Cal Ripken, World Heroes, ...) | 15 | Timing; low priority until a strict session shows a functional difference |
+| Phantasy Star Fukkokuban | | Unsupported: the Master System game on a Mega Drive cartridge (needs the console's Master System mode); MesenCE refuses to load it |
+| Sega CD 32X | 12 discs | Unsupported (strategy 10.1) |
+
+Library-wide mix levels (judgment calls on both sides, no hardware measurement), recorded as
+known offsets in `compare.py` (`KNOWN_LEVEL_DB`) so per-title outliers still flag:
+- **Sega CD PCM:** relative to FM, GPGX's PCM is a median 7.2 dB louder than MesenCE's
+  (20 titles, 4.8-9.3 dB, one at -1.4). CD audio agrees (median +0.3 dB over 14 titles).
+  MesenCE mixes PCM unscaled (S2 judgment call). Not changed.
+- **PSG:** GPGX's PSG is a median 2.8 dB below MesenCE's relative to FM (217 titles, p10
+  -6.5 dB, p90 +0.8 dB), consistent with the 1-2 dB S5 saw on the Sonic games.
+
+### Sonic & Knuckles: lock-on window mirrored (fixed)
+
+- **Symptom:** standalone Sonic & Knuckles showed its "NO WAY?" screen (the screen for an
+  unsupported cartridge locked on top) where GPGX and PicoDrive show the title. md-corpus
+  flagged it from frame 6 (state, both oracles) with a snapshot difference of 0.35-0.50.
+- **Cause:** `MdMemoryManager` mirrors every ROM up to the next power of two across
+  `$000000-$3FFFFF`. The bus trace shows S&K reading `$200100-$20010F`, its lock-on slot, and
+  finding its own header there ("SEGA GENESIS").
+- **Sources:**
+  - GPGX `core/cart_hw/md_cart.c`: for a cartridge named "SONIC & KNUCKLES", "disable ROM
+    mirroring at $200000-$3fffff (normally mapped to external cartridge)", with the buffer
+    padded with `$FF`.
+  - MAME `src/devices/bus/megadrive/sk.cpp` maps the slot to the attached cartridge when there
+    is one. With the slot empty its handler appears to fall through to the device's own ROM
+    (not verified: `MD_ADDR` and the ROM size aren't in that file). Read as behaviour only.
+  - Real hardware boots S&K alone to its own title, which requires the slot not to read "SEGA".
+- **Fix:** a 2 MiB ROM named "SONIC & KNUCKLES" at `$150` is padded to 4 MiB with `$FF` at load,
+  so no read path changes (no hot-path cost). The lock-on dumps (2.5-4 MiB) are unchanged.
+- **Judgment call:** `$FF` is GPGX's value. The empty slot's bus value isn't measured; S&K only
+  needs it not to read "SEGA".
+- **Tests:** `cart_sk_lock_on_empty` and the control `cart_2m_mirror` (`extra_cases.py`,
+  `test:md-synthetic`). The old build reads `$5345` and fails the first; both pass now.
+  md-corpus: S&K is now clean against both oracles (snapshot difference 0.004 vs GPGX).

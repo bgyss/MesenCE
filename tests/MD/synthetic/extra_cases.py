@@ -52,6 +52,24 @@ def _bank_mapper():
     return Case("mapper_ssf2_banks", ops, rom_size=0x500000, rom_data=rom_data, capture_frames=2)
 
 
+def _sk_lock_on(name, title, expected):
+    """Sonic & Knuckles on its own: the lock-on window $200000-$3FFFFF is empty.
+
+    S&K decides whether a cartridge sits on top of it by reading the header at $200100-$20010F
+    ("SEGA ..."). MesenCE mirrored every ROM up to the next power of two over $000000-$3FFFFF, so a
+    2 MiB S&K saw its own header there and showed its "NO WAY?" screen (found by md-corpus against
+    GPGX and PicoDrive, which both show the title). A 2 MiB ROM whose overseas name ($150) is
+    "SONIC & KNUCKLES" now reads $FF there, as GPGX (md_cart.c: "disable ROM mirroring at
+    $200000-$3fffff (normally mapped to external cartridge)", padded with $FF); any other 2 MiB ROM
+    is still mirrored (the control case). The $FF value is GPGX's; the empty slot's bus value is not
+    measured (judgment call: S&K only needs it not to read "SEGA").
+    """
+    rom_data = tuple((0x150 + i, c) for i, c in enumerate(title.ljust(48).encode()))
+    ops = (Operation(READ, 2, 0x200100, expected, compare_mask=0xFFFF),
+           Operation(READ, 2, 0x000100, 0x5345, compare_mask=0xFFFF))
+    return Case(name, ops, rom_size=0x200000, rom_data=rom_data, capture_frames=2)
+
+
 def _z80_busack_reset():
     """BUSREQ/BUSACK ($A11100 bit 8, 0 = the 68000 has the Z80 bus) with the Z80 held in reset.
 
@@ -362,5 +380,7 @@ def write_assets(out_dir):
 
 
 def all_cases():
-    return ([_pad6_across_frame(), _bank_mapper(), _z80_busack_reset()] + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)] +
+    return ([_pad6_across_frame(), _bank_mapper(), _z80_busack_reset(),
+             _sk_lock_on("cart_sk_lock_on_empty", "SONIC & KNUCKLES", 0xFFFF),
+             _sk_lock_on("cart_2m_mirror", "NATIVEKIT BUS TEST", 0x5345)] + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)] +
             _accessory_cases() + _mcd_cases() + _m32x_cases())
