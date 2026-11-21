@@ -3,9 +3,11 @@ sessions.
 
 Movies are not fetched: TASVideos' robots.txt disallows automated movie downloads
 (`/*?handler=Download`) for every client and blocks AI agents (Claude-Code among them) from the
-whole site. Download the movies yourself (publication pages, "Download") into a folder, then:
+whole site. Download the movies yourself (publication pages, "Download") into bin/md-corpus/movies
+(git-ignored), then:
 
-    md_corpus.py tas import FOLDER...      # parse, match each movie's ROM hash to corpus.json
+    md_corpus.py tas import [FOLDER...]    # parse, match each movie's ROM hash to corpus.json
+                                           # (default folder: bin/md-corpus/movies)
     md_corpus.py tas list                  # imported movies, their titles and status
     md_corpus.py run --session tas         # run every imported movie in MesenCE and the oracles
 
@@ -149,6 +151,9 @@ def import_movies(paths, out, sha1=None):
     for p in paths:
         p = pathlib.Path(p).expanduser()
         files += sorted(f for f in (p.rglob("*") if p.is_dir() else [p]) if f.suffix.lower() in (".bk2", ".gmv"))
+    if not files:
+        print("no .bk2/.gmv movies in %s" % ", ".join(str(p) for p in paths))
+        return 0
     rows = []
     for f in files:
         data = f.read_bytes()

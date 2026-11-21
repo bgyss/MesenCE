@@ -598,7 +598,7 @@ me the paths. Priorities: **P1** blocks the first pass, **P2** widens coverage, 
 | 8 | **Save files** for late-game content where useful (SRAM/backup RAM from your own play) | `.srm`/`.brm` | Sessions that start later in RPGs | P3 |
 | 9 | **Oracle builds:** RetroArch GPGX and PicoDrive cores (present); the nativekit checkout (present at `~/src/nativekit`); MAME (`brew install mame` or Nix) | — | Third and fourth voters | P2 (MAME) |
 | 10 | **BizHawk** on a Linux box or VM, for TASes that desync in libretro GPGX | release archive | TAS reference environment | P3 |
-| 11 | **TAS movies** from TASVideos publications (Genesis, Sega CD, 32X), downloaded by hand: robots.txt disallows automated downloads | `.bk2`/`.gmv` files in one folder (any names); then `md_corpus.py tas import FOLDER` | Whole-game sessions; the movie's ROM hash must match a dump in the library | P2 |
+| 11 | **TAS movies** from TASVideos publications (Genesis, Sega CD, 32X), downloaded by hand: robots.txt disallows automated downloads | `.bk2`/`.gmv` files in `bin/md-corpus/movies` (any names, subfolders allowed); then `md_corpus.py tas import` | Whole-game sessions; the movie's ROM hash must match a dump in the library | P2 |
 | 12 | **Cloud account and a private bucket** (S3, R2 or B2), and where you want runs (one VM vs batch); a budget cap | credentials kept outside the repo (mise `[env]` in `mise.local.toml` or a secrets manager) | Section 11 | P3 (after the local pass) |
 | 13 | **Hardware** (optional): a Mega Drive (+ Sega CD, 32X) with a flash cart and a capture device | — | Ground truth for disputed clusters | optional |
 | 14 | **Your priorities:** titles you care most about, and known-broken titles you've seen | a list | Ranking | P2 |

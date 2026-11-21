@@ -6,7 +6,8 @@ under one output root (default bin/md-corpus); every stage is restartable, and f
 reused (a run directory with its done marker is not run again).
 
     md_corpus.py inventory ROM_DIR... --dat DAT_OR_ZIP... [--out ROOT]
-    md_corpus.py tas import MOVIE_FILE_OR_DIR... [--sha1 ROM_SHA1]   # .bk2/.gmv you downloaded (tas.py)
+    md_corpus.py tas import [MOVIE_FILE_OR_DIR...] [--sha1 ROM_SHA1]   # .bk2/.gmv you downloaded (tas.py;
+                                                                      #  default: OUT/movies)
     md_corpus.py tas list
     md_corpus.py run   [--session attract|walker|tas] [--frames N] [--system md,32x,mcd] [--match TEXT]
                        [--all] [--limit N] [--jobs N] [--oracles gpgx,picodrive] [--no-compare] [--rerun] [--out ROOT]
@@ -66,7 +67,8 @@ def cmd_tas(args):
     import tas
     out = pathlib.Path(args.out)
     if args.action == "import":
-        return tas.import_movies(args.movies, out, args.sha1 or None)
+        movies = args.movies or [out / "movies"]  # default: bin/md-corpus/movies (the download folder)
+        return tas.import_movies(movies, out, args.sha1 or None)
     return tas.list_movies(out)
 
 
@@ -101,7 +103,7 @@ def main():
 
     p = sub.add_parser("tas")
     p.add_argument("action", choices=["import", "list"])
-    p.add_argument("movies", nargs="*")
+    p.add_argument("movies", nargs="*", help="movie files or folders (default: OUT/movies, i.e. bin/md-corpus/movies)")
     p.add_argument("--sha1", default="", help="the ROM's SHA-1, for movies without one (.gmv)")
     p.set_defaults(fn=cmd_tas)
 
