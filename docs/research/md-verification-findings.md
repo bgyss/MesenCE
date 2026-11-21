@@ -933,3 +933,54 @@ Checked by `tas_selftest.py` (both formats round-trip a random 500-frame input) 
 `.bk2` made from the Arcade Legends walker input, 3- and 6-button: same verdict and snapshots as
 the walker session. The `.gmv` layout is from the format notes, not yet checked on a real movie.
 
+
+## C4: first published TAS movies (2026-11-21)
+
+22 movies downloaded by hand (7 BizHawk `.bk2`, 15 Gens `.gmv`; Sonic 1-3 and lock-ons, Phantasy
+Star II/IV, The Lion King, Shinobi III, Prince of Persia). The first import matched none of them.
+
+### Import fixes (tooling)
+
+- **BizHawk's "SHA1" is an MD5.** Genplus-gx movies write the ROM's MD5 (32 hex digits) in the
+  `SHA1` header line (all 7 here). The import now matches 32-digit hashes against the cartridges'
+  MD5s (computed once, cached in `cache/md5.json` by SHA-1). All 7 matched.
+- **`.gmv` names no ROM.** Each movie's ROM now comes from `movies/roms.txt` ("file = corpus
+  title or SHA-1"), or `--sha1` as before. GoodGen names on the publication pages map to No-Intro
+  ones by revision.
+- **`.gmv` header, checked on these 15 files:** version letter at $0F (all "A"); the pad types at
+  $14/$15 are per port (Phantasy Star IV: "36", a 3-button P1). The import had used 6-button for
+  both if either was "6". Flags at $16 (bit 7 save state, bit 6 PAL, bit 5 three players; $1F/$5F
+  here); a comment, not the game name, from $18. Pad types now go per port to all three emulators
+  (`--md-pads P1,P2`, `capture.py --pads P1,P2`, PicoDrive `input1`/`input2`).
+- **BizHawk's region is a number** in SyncSettings.json (`"Region": 0`, auto-detect; 1 Japan
+  NTSC, 2 Japan PAL, 3 USA, 4 Europe), which the import had not read. When a movie leaves it to
+  auto-detection, the region is now what GPGX and Gens pick from the header ($1F0: USA, then Japan,
+  then Europe), not the corpus entry's. Sonic 1 Rev A ("(Japan, Europe, Korea)", header "JUE")
+  runs as NTSC USA, not PAL. A `.gmv` without the PAL flag runs NTSC, USA or Japan by the header.
+- `run --session tas --match` also matches the movie file name and id.
+
+One movie (Phantasy Star IV "macroglitch") resets during play and stays unsupported.
+
+### Results so far (three movies through all emulators)
+
+- **Sonic 3 competition (Gens, 7,263 frames):** MesenCE and PicoDrive play the whole race (finish
+  1'41"93 and 1'41"95; work RAM agreement 1.0). GPGX misses the one-frame Start press that skips
+  the SEGA screen at frame 58, stays on the title and starts a 1-player game. A one-frame Start
+  press is accepted at frames 58 and 62 in MesenCE and PicoDrive, at 60 and 64 in GPGX. With the
+  movie's input two frames later, GPGX plays it exactly like MesenCE (finish 1'41"93).
+  **Libretro GPGX acts on this game's pad reads two frames later.** GPGX samples the pads once per
+  frame, just before VINT (`system.c`), and its first frame after power-on ends before the first
+  VINT. MesenCE and PicoDrive read the pad when the game does.
+- **Sonic 1 100% (BizHawk Genplus-gx, 60,053 frames):** all three stay in step for the whole
+  movie, unshifted (agreement 1.0 / 0.996, no divergence), through Star Light Zone. So the GPGX
+  lag depends on the game (where it reads the pads). A fixed per-emulator input shift would
+  desync this one. Not applied; choosing a shift per movie (GPGX against PicoDrive, never
+  against MesenCE) is open.
+- **Phantasy Star II "game end glitch" (BizHawk, 10,252 frames, Japan):** all three reach the
+  ending and return to the title.
+- **Sonic 1 (Gens, aglar):** desyncs around frame 7,500 identically in all three emulators, on
+  both revisions (Rev A gets further: Marble Zone with 3 lives at frame 6,000). An old Gens movie
+  that depended on Gens itself, not a MesenCE finding. It still serves as a three-way
+  comparison input.
+
+No MesenCE divergence in these three movies.

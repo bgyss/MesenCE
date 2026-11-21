@@ -178,12 +178,13 @@ def run_one(job):
         out_dir.rename(out_dir.with_name(out_dir.name + ".stale-%d" % int(time.time())))
     region = entry["region"]
     pads = entry.get("pads", 3)
+    pads2 = entry.get("pads2", pads)  # port 2 (a .gmv records each port's type)
     timeout = max(120, frames / 60 * 4)
     if emu == "mesen":
         # mesen-headless creates the directory itself and refuses an existing non-empty one
         cmd = [str(MESEN), "run", "--rom", str(rom), "--frames", str(frames), "--out", str(out_dir), "--allow-dirty",
                "--state-log", "state.log", "--state-blocks", "--snap-every", str(snap_every), "--chip-audio",
-               "--md-pads", "%d,%d" % (pads, pads), "--region", region, "--timeout", str(int(timeout))]
+               "--md-pads", "%d,%d" % (pads, pads2), "--region", region, "--timeout", str(int(timeout))]
         if entry["system"] in ("mcd", "mcd32x"):
             bios = BIOS_DIR / MCD_BIOS.get(region, MCD_BIOS["ntsc"])
             cmd += ["--md-mcd-bios", str(bios), "--battery", str(formatted_bram(sysdir.parent.parent))]
@@ -199,11 +200,11 @@ def run_one(job):
             # defaults already match (BIOS off, overscan off); the region is auto-detected from the
             # header (a mismatch with MesenCE's forced region shows as an early state divergence).
             cmd += ["--option", "genesis_plus_gx_no_sprite_limit=disabled", "--option", "genesis_plus_gx_audio_filter=disabled"]
-            if pads == 6:
-                cmd += ["--pads", "6"]
+            if 6 in (pads, pads2):
+                cmd += ["--pads", "%d,%d" % (pads, pads2)]
         else:
             cmd += ["--option", "picodrive_region=" + PICO_REGION[region], "--option", "picodrive_input1=%d button pad" % pads,
-                    "--option", "picodrive_input2=%d button pad" % pads, "--pads", str(pads), "--option", "picodrive_sprlim=disabled",
+                    "--option", "picodrive_input2=%d button pad" % pads2, "--pads", "%d,%d" % (pads, pads2), "--option", "picodrive_sprlim=disabled",
                     "--option", "picodrive_audio_filter=disabled", "--option", "picodrive_overclk68k=disabled",
                     "--option", "picodrive_ramcart=disabled"]
     if input_path:
@@ -253,9 +254,9 @@ def run_tas(args, out, oracles):
     sysdir, build = system_dir(out), mesen_build()
     jobs, entries = [], []
     for m in tas.load_movies(out):
-        if m["status"] != "ok" or (args.match and args.match.lower() not in m["title"].lower()):
+        if m["status"] != "ok" or (args.match and args.match.lower() not in (m["title"] + " " + m["id"] + " " + pathlib.Path(m["file"]).name).lower()):
             continue
-        e = dict(corpus[m["entry"]], id=m["id"], rom_id=m["entry"], region=m["region"], pads=m["pads"],
+        e = dict(corpus[m["entry"]], id=m["id"], rom_id=m["entry"], region=m["region"], pads=m["pads"], pads2=m.get("pads2", m["pads"]),
                  source={"kind": "tas", "file": m["file"], "movie_sha1": m["movie_sha1"]})
         entries.append(e)
         jobs += session_jobs(e, out / "runs" / "tas" / m["id"], out, oracles, m["frames"],
