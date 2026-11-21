@@ -43,7 +43,6 @@ void MdMemoryManager::Init(Emulator* emu, MdConsole* console, vector<uint8_t>& r
 
 	_rom = romData;
 	InitEeprom(romData);
-	_hasBankMapper = romData.size() > 0x400000 || (romData.size() > 0x110 && memcmp(&romData[0x100], "SEGA SSF", 8) == 0);
 	//The dump's own size: _rom is padded to a power of two below
 	uint32_t dumpSize = (uint32_t)_rom.size();
 	uint32_t size = 1;
@@ -59,6 +58,7 @@ void MdMemoryManager::Init(Emulator* emu, MdConsole* console, vector<uint8_t>& r
 	}
 	_rom.resize(size, 0xFF);
 	_romMask = size - 1;
+	InitMapper(dumpSize);
 
 	_workRam = new uint8_t[0x10000];
 	_z80Ram = new uint8_t[0x2000];
@@ -98,7 +98,17 @@ void MdMemoryManager::Init(Emulator* emu, MdConsole* console, vector<uint8_t>& r
 			{ 0x180, "T-50086", 0x200001, 0x203FFF, true }, //PGA Tour Golf
 			{ 0x180, "ACLD007", 0x200001, 0x200FFF, true }, //Winter Challenge
 		};
-		for(const HeaderlessSram& entry : headerless) {
+		if(_mapper == CartMapper::Sf004) {
+			//SF-004: 32 KiB on the odd bytes of $200000-$20FFFF, while register $D00 bit 7 is set (GPGX
+			//sram.c and md_cart.c mapper_sf004_w; PicoDrive carthw.cfg). GPGX also mirrors it over
+			//$200000-$2FFFFF; Star Odyssey only uses $200001 up (judgment call: no mirror here).
+			_saveRamOddOnly = true;
+			_saveRamStart = 0x200000;
+			_saveRamEnd = 0x20FFFF;
+			_saveRamSize = 0x8000;
+		}
+		for(size_t n = 0; n < sizeof(headerless) / sizeof(headerless[0]) && !_saveRamSize; n++) {
+			const HeaderlessSram& entry = headerless[n];
 			size_t len = strlen(entry.Text);
 			//The name is matched at its offset; a product code anywhere in the 14-byte field
 			size_t span = entry.Field == 0x180 ? 14 : len;
@@ -137,11 +147,11 @@ void MdMemoryManager::Init(Emulator* emu, MdConsole* console, vector<uint8_t>& r
 		//Battery RAM above the ROM is enabled at power-on; RAM overlapping the ROM needs $A130F1.
 		//(Against the dump's size: HardBall '95's RAM at $300001 is above its 3 MiB ROM but inside
 		//the 4 MiB padding, and stayed disabled: "SRAM failure".)
-		_state.SramEnabled = _saveRamStart >= dumpSize;
+		_state.SramEnabled = _saveRamStart >= dumpSize && _mapper != CartMapper::Sf004;
 	}
 	_hasCartSave = _saveRam || _eeprom;
 
-	_emu->RegisterMemory(MemoryType::MdPrgRom, _rom.data(), (uint32_t)_rom.size());
+	_emu->RegisterMemory(MemoryType::MdPrgRom, _rom.data(), _romMask + 1);
 	_emu->RegisterMemory(MemoryType::MdWorkRam, _workRam, 0x10000);
 	_emu->RegisterMemory(MemoryType::MdZ80Ram, _z80Ram, 0x2000);
 	if(_saveRam) {
@@ -209,6 +219,136 @@ void MdMemoryManager::TraceDevice(uint64_t clock, MdBusDevice device, MdBusOp op
 	if(_console->HasBusObserver()) {
 		_console->NotifyBus({ clock, device, op, (uint8_t)(device == MdBusDevice::Vdp ? 2 : 1), address, value });
 	}
+}
+
+void MdMemoryManager::InitMapper(uint32_t dumpSize)
+{
+	auto productHas = [this](const char* text) {
+		size_t len = strlen(text);
+		for(size_t i = 0; i + len <= 12; i++) {
+			if(memcmp(&_rom[0x182 + i], text, len) == 0) {
+				return true;
+			}
+		}
+		return false;
+	};
+
+	_mapper = CartMapper::None;
+	if(dumpSize > 0x400000 || (dumpSize > 0x110 && memcmp(&_rom[0x100], "SEGA SSF", 8) == 0)) {
+		_mapper = CartMapper::Sega;
+	} else if(dumpSize > 0x200 && _rom[0x180] == 'S' && _rom[0x181] == 'F' && productHas("004")) {
+		//Super Fighter Team's boards name themselves in the type field: "SF-004" (GPGX md_cart.c)
+		_mapper = CartMapper::Sf004;
+	} else if(dumpSize == 0x400000) {
+		//Radica units, by header checksum and the sum of the words from $200 (GPGX md_cart.c's
+		//rom_database, mapper_64k_radica_r). Sensible Soccer Plus (128 KiB banks, battery RAM) and
+		//the bad Volume 1 dump are left out: neither is in the test library.
+		static constexpr uint16_t radica[][2] = {
+			{ 0x24F4, 0xFC84 }, //Volume 1
+			{ 0xD951, 0x78D0 }, //Volume 2
+			{ 0x0000, 0x1F25 }, //Volume 3 - Super Sonic Gold edition
+			{ 0x1ADD, 0xA838 }, //Street Fighter II CE edition
+			{ 0x104F, 0x32E9 }, //Street Fighter II CE edition (PAL)
+		};
+		uint16_t checksum = (_rom[0x18E] << 8) | _rom[0x18F];
+		uint16_t sum = 0;
+		for(uint32_t i = 0x200; i + 1 < dumpSize; i += 2) {
+			sum += (_rom[i] << 8) | _rom[i + 1];
+		}
+		for(auto& entry : radica) {
+			if(checksum == entry[0] && sum == entry[1]) {
+				_mapper = CartMapper::Radica;
+			}
+		}
+	}
+
+	for(int i = 0; i < 8; i++) {
+		_romBank[i] = i;
+	}
+	if(_mapper == CartMapper::Sf004) {
+		//An empty page past the ROM for what the board leaves unmapped
+		_emptyPage = (uint16_t)((_romMask + 1) >> 16);
+		_rom.resize(_rom.size() + 0x10000, 0xFF);
+		_sf004Locked = false;
+		_sf004Regs[0] = 0;
+		_sf004Regs[1] = 0x80;
+		_sf004Regs[2] = 0;
+	}
+	UpdateRomPages();
+}
+
+void MdMemoryManager::UpdateRomPages()
+{
+	uint16_t pageMask = (uint16_t)(_romMask >> 16);
+	for(int i = 0; i < 64; i++) {
+		_romPage[i] = i & pageMask;
+	}
+	switch(_mapper) {
+		case CartMapper::Sega:
+			for(int i = 0; i < 64; i++) {
+				_romPage[i] = (uint16_t)(((_romBank[i >> 3] << 3) | (i & 0x07)) & pageMask);
+			}
+			break;
+
+		case CartMapper::Sf004: {
+			//GPGX md_cart.c mapper_sf004_w and PicoDrive carthw.c carthw_sf004_write8 agree on the
+			//registers and on the mirrored mode. Where they differ, this follows GPGX (judgment call):
+			//ROM off ($E00 bit 5) unmaps $000000-$1FFFFF, and the "in a row" mode maps five 256 KiB
+			//banks to $000000-$13FFFF and nothing above (PicoDrive: eight banks, ROM off ignored).
+			//$200000-$3FFFFF shows nothing but the battery RAM.
+			uint8_t mode = _sf004Regs[1];
+			uint16_t first = ((_sf004Regs[2] >> 4) & 0x07) << 2;
+			for(int i = 0; i < 64; i++) {
+				uint16_t page = _emptyPage;
+				if(i < 0x20 && !(mode & 0x20)) {
+					if(mode & 0x40) {
+						page = i < 0x14 ? ((first + i) & 0x1F & pageMask) : _emptyPage;
+					} else {
+						page = (first + (i & 0x03)) & pageMask;
+					}
+				}
+				_romPage[i] = page;
+			}
+			break;
+		}
+
+		case CartMapper::Radica:
+			//_romBank[0] holds the selected 64 KiB bank: page i shows bank (index | i), the board
+			//ORs the index into VA21-VA16 (GPGX mapper_64k_radica_r)
+			for(int i = 0; i < 64; i++) {
+				_romPage[i] = (_romBank[0] | i) & pageMask;
+			}
+			break;
+
+		default:
+			break;
+	}
+}
+
+void MdMemoryManager::WriteSf004(uint32_t addr, uint8_t value)
+{
+	//Writes to $000000-$00FFFF; A11-A8 select the register. Once $E00 bit 7 is written as 0, the
+	//registers ignore writes until the next power-on (GPGX, PicoDrive).
+	uint8_t reg = (addr >> 8) & 0x0F;
+	if(_sf004Locked || reg < 0x0D) {
+		return;
+	}
+	_sf004Regs[reg - 0x0D] = value;
+	if(reg == 0x0D) {
+		_state.SramEnabled = value & 0x80;
+		return;
+	}
+	if(reg == 0x0E && !(value & 0x80)) {
+		_sf004Locked = true;
+	}
+	UpdateRomPages();
+}
+
+void MdMemoryManager::ReadRadica(uint32_t addr)
+{
+	//Any read of $A13000-$A130FF selects the bank from A6-A1 (GPGX: !TIME read16 handler)
+	_romBank[0] = (addr >> 1) & 0x3F;
+	UpdateRomPages();
 }
 
 void MdMemoryManager::InitEeprom(vector<uint8_t>& romData)
@@ -279,7 +419,7 @@ uint8_t MdMemoryManager::ReadCartByte(uint32_t addr)
 			return ReadSaveRam(addr);
 		}
 	}
-	return _rom[MapRom(addr) & _romMask];
+	return _rom[MapRom(addr)];
 }
 
 uint8_t MdMemoryManager::ReadCartBus(uint32_t addr)
@@ -423,6 +563,10 @@ void MdMemoryManager::M68kWrite(bool upper, bool lower, uint32_t addr, uint16_t 
 				} else if(!_m32x->IsRv()) {
 					break;
 				}
+			}
+			if(_mapper == CartMapper::Sf004 && addr < 0x10000) {
+				//A word write's low byte reaches the board (GPGX, PicoDrive)
+				WriteSf004(addr, lower ? (uint8_t)value : (uint8_t)(value >> 8));
 			}
 			if(_eeprom) {
 				if(upper) {
@@ -651,6 +795,15 @@ uint16_t MdMemoryManager::ReadControlRegister(uint32_t addr, uint16_t openBus)
 		return (openBus & 0xFEFF) | (_state.Z80BusRequested && !_state.Z80Reset ? 0 : 0x0100);
 	} else if(addr >= 0xA14000 && addr < 0xA14004 && _hasTmss) {
 		return (_state.Tmss[addr & 0x02] << 8) | _state.Tmss[(addr & 0x02) | 1];
+	} else if((addr & 0xFFFF00) == 0xA13000) {
+		if(_mapper == CartMapper::Sf004) {
+			//The bank at $000000 ($00, $10 ... $70) on the low byte (GPGX mapper_sf004_r)
+			return ((_romPage[0] >> 2) & 0x07) << 4;
+		} else if(_mapper == CartMapper::Radica) {
+			//GPGX returns $FFFF, PicoDrive 0 (the menu doesn't use the value)
+			ReadRadica(addr);
+			return 0xFFFF;
+		}
 	}
 	return openBus;
 }
@@ -676,11 +829,13 @@ void MdMemoryManager::WriteControlRegister(uint32_t addr, uint8_t value, bool up
 			}
 			_state.Z80Reset = reset;
 		}
-	} else if(addr == 0xA130F1) {
+	} else if(addr == 0xA130F1 && _mapper != CartMapper::Sf004) {
+		//(The SF-004 board ignores $A130F1: register $D00 switches its battery RAM)
 		_state.SramEnabled = value & 0x01;
 		_state.SramWriteProtected = value & 0x02;
-	} else if(_hasBankMapper && addr >= 0xA130F3 && addr <= 0xA130FF && (addr & 1)) {
+	} else if(_mapper == CartMapper::Sega && addr >= 0xA130F3 && addr <= 0xA130FF && (addr & 1)) {
 		_romBank[(addr - 0xA130F1) >> 1] = value & 0x3F;
+		UpdateRomPages();
 	} else if(addr >= 0xA14000 && addr < 0xA14004) {
 		if(_hasTmss) {
 			_state.Tmss[addr & 0x03] = value;
@@ -834,7 +989,10 @@ void MdMemoryManager::DebugWrite(uint32_t addr, uint8_t value)
 		if(_saveRam && _state.SramEnabled && IsSaveRamAddress(addr)) {
 			WriteSaveRam(addr, value);
 		} else {
-			_rom[addr & _romMask] = value;
+			uint32_t romAddr = MapRom(addr);
+			if(romAddr <= _romMask) {
+				_rom[romAddr] = value;
+			}
 		}
 	} else if(addr >= 0xE00000) {
 		_workRam[addr & 0xFFFF] = value;
@@ -881,7 +1039,8 @@ AddressInfo MdMemoryManager::GetAbsoluteAddress(uint32_t relAddr)
 			}
 			return { (int32_t)offset, MemoryType::MdSaveRam };
 		}
-		return { (int32_t)(MapRom(relAddr) & _romMask), MemoryType::MdPrgRom };
+		uint32_t romAddr = MapRom(relAddr);
+		return romAddr <= _romMask ? AddressInfo { (int32_t)romAddr, MemoryType::MdPrgRom } : AddressInfo { -1, MemoryType::None };
 	} else if(relAddr >= 0xE00000) {
 		return { (int32_t)(relAddr & 0xFFFF), MemoryType::MdWorkRam };
 	} else if(relAddr >= 0xA00000 && relAddr < 0xA04000) {
@@ -894,11 +1053,11 @@ int32_t MdMemoryManager::GetRelativeAddress(AddressInfo& absAddress)
 {
 	switch(absAddress.Type) {
 		case MemoryType::MdPrgRom:
-			if(_hasBankMapper) {
-				//The window currently showing that bank, if any
-				for(int i = 0; i < 8; i++) {
-					if(_romBank[i] == (uint32_t)absAddress.Address >> 19) {
-						return (i << 19) | (absAddress.Address & 0x7FFFF);
+			if(_mapper != CartMapper::None) {
+				//The first page currently showing that part of the ROM, if any
+				for(int i = 0; i < 64; i++) {
+					if(_romPage[i] == (uint32_t)absAddress.Address >> 16) {
+						return (i << 16) | (absAddress.Address & 0xFFFF);
 					}
 				}
 				return -1;
@@ -959,8 +1118,10 @@ void MdMemoryManager::Serialize(Serializer& s)
 	SV(_state.SramEnabled);
 	SV(_state.SramWriteProtected);
 	SV(_state.TmssUnlocked);
-	SV(_hasBankMapper);
 	SVArray(_romBank, 8);
+	SVArray(_romPage, 64);
+	SVArray(_sf004Regs, 3);
+	SV(_sf004Locked);
 	SVArray(_state.Tmss, 4);
 	SVArray(_state.Io.Data, 3);
 	SVArray(_state.Io.Ctrl, 3);

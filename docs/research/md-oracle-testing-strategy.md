@@ -87,8 +87,20 @@ break it in the libretro host); MesenCE's Sega CD sessions start from formatted 
 the oracles do; known library-wide mix-level differences (Sega CD PCM, PSG) are subtracted before
 audio flags.
 
-Next: the open clusters in C1 (MesenCE-only crashes, HardBall save RAM, 32X candidates); then P3
-(TAS import) and P4 (goldens).
+- **P3 (2026-11-21), partly:** `.bk2`/`.gmv` converters and `md_corpus.py tas import|list`,
+  `run --session tas` (each movie's own length, region and pad type; 6-button pads in all three
+  emulators). Self-test: `tools/md-corpus/tas_selftest.py`; an end-to-end run of a `.bk2` written
+  from a walker input reproduces the walker session.
+  - **Fetching is not automated, a deviation from the decision above.** TASVideos' robots.txt
+    (read 2026-11-21) disallows `/*?handler=Download` (the movie downloads) for every client,
+    asks for a 60-second crawl delay, and blocks AI agents, Claude-Code among them, from the
+    whole site. Respecting it means the movies are downloaded by hand and imported from a folder
+    (material 11 in section 12). Nothing in md-corpus contacts the site.
+  - Not done yet: a run of real published movies (none downloaded), the TAS goal check (ending
+    reached in the oracle), the BizHawk reference environment.
+
+Next: the open clusters in C2 (European Club Soccer, 32X candidates); real TAS movies once
+downloaded; P4 (goldens).
 
 ## 1. What already exists
 
@@ -586,9 +598,10 @@ me the paths. Priorities: **P1** blocks the first pass, **P2** widens coverage, 
 | 8 | **Save files** for late-game content where useful (SRAM/backup RAM from your own play) | `.srm`/`.brm` | Sessions that start later in RPGs | P3 |
 | 9 | **Oracle builds:** RetroArch GPGX and PicoDrive cores (present); the nativekit checkout (present at `~/src/nativekit`); MAME (`brew install mame` or Nix) | — | Third and fourth voters | P2 (MAME) |
 | 10 | **BizHawk** on a Linux box or VM, for TASes that desync in libretro GPGX | release archive | TAS reference environment | P3 |
-| 11 | **Cloud account and a private bucket** (S3, R2 or B2), and where you want runs (one VM vs batch); a budget cap | credentials kept outside the repo (mise `[env]` in `mise.local.toml` or a secrets manager) | Section 11 | P3 (after the local pass) |
-| 12 | **Hardware** (optional): a Mega Drive (+ Sega CD, 32X) with a flash cart and a capture device | — | Ground truth for disputed clusters | optional |
-| 13 | **Your priorities:** titles you care most about, and known-broken titles you've seen | a list | Ranking | P2 |
+| 11 | **TAS movies** from TASVideos publications (Genesis, Sega CD, 32X), downloaded by hand: robots.txt disallows automated downloads | `.bk2`/`.gmv` files in one folder (any names); then `md_corpus.py tas import FOLDER` | Whole-game sessions; the movie's ROM hash must match a dump in the library | P2 |
+| 12 | **Cloud account and a private bucket** (S3, R2 or B2), and where you want runs (one VM vs batch); a budget cap | credentials kept outside the repo (mise `[env]` in `mise.local.toml` or a secrets manager) | Section 11 | P3 (after the local pass) |
+| 13 | **Hardware** (optional): a Mega Drive (+ Sega CD, 32X) with a flash cart and a capture device | — | Ground truth for disputed clusters | optional |
+| 14 | **Your priorities:** titles you care most about, and known-broken titles you've seen | a list | Ranking | P2 |
 
 **Tricky-titles shortlist for the Mega Drive library** (accuracy-sensitive, worth having
 first): Sonic 1-3 & Knuckles, Sonic 3D, Vectorman 1-2, Gunstar Heroes, Alien Soldier,

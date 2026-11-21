@@ -6,7 +6,9 @@ under one output root (default bin/md-corpus); every stage is restartable, and f
 reused (a run directory with its done marker is not run again).
 
     md_corpus.py inventory ROM_DIR... --dat DAT_OR_ZIP... [--out ROOT]
-    md_corpus.py run   [--session attract|walker] [--frames N] [--system md,32x,mcd] [--match TEXT]
+    md_corpus.py tas import MOVIE_FILE_OR_DIR... [--sha1 ROM_SHA1]   # .bk2/.gmv you downloaded (tas.py)
+    md_corpus.py tas list
+    md_corpus.py run   [--session attract|walker|tas] [--frames N] [--system md,32x,mcd] [--match TEXT]
                        [--all] [--limit N] [--jobs N] [--oracles gpgx,picodrive] [--no-compare] [--rerun] [--out ROOT]
     md_corpus.py compare [--out ROOT] [--jobs N] [--keep-audio] [--force]
     md_corpus.py report  [--out ROOT]
@@ -60,6 +62,14 @@ def cmd_report(args):
     return report.write_report(args)
 
 
+def cmd_tas(args):
+    import tas
+    out = pathlib.Path(args.out)
+    if args.action == "import":
+        return tas.import_movies(args.movies, out, args.sha1 or None)
+    return tas.list_movies(out)
+
+
 def cmd_diff(args):
     import report
     return report.write_diff(args)
@@ -76,7 +86,7 @@ def main():
     p.set_defaults(fn=cmd_inventory)
 
     p = sub.add_parser("run")
-    p.add_argument("--session", default="attract", choices=["attract", "walker"])
+    p.add_argument("--session", default="attract", choices=["attract", "walker", "tas"])
     p.add_argument("--frames", type=int, default=3600)
     p.add_argument("--system", default="md,32x,mcd")
     p.add_argument("--match", default="")
@@ -88,6 +98,12 @@ def main():
     p.add_argument("--no-compare", action="store_true", help="keep the audio; compare later with `compare`")
     p.add_argument("--rerun", action="store_true", help="run the selected sessions again even if this build already ran them")
     p.set_defaults(fn=cmd_run)
+
+    p = sub.add_parser("tas")
+    p.add_argument("action", choices=["import", "list"])
+    p.add_argument("movies", nargs="*")
+    p.add_argument("--sha1", default="", help="the ROM's SHA-1, for movies without one (.gmv)")
+    p.set_defaults(fn=cmd_tas)
 
     p = sub.add_parser("compare")
     p.add_argument("--jobs", type=int, default=os.cpu_count())

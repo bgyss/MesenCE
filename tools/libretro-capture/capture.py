@@ -152,6 +152,8 @@ def main():
     ap.add_argument("--state-blocks", action="store_true")
     ap.add_argument("--dump-at", default="")
     ap.add_argument("--swap-words", action="store_true")
+    ap.add_argument("--pads", type=int, choices=(3, 6), default=0,
+                    help="Mega Drive pad type on both ports (GPGX and PicoDrive: RETRO_DEVICE_SUBCLASS(JOYPAD, 0/1))")
     args = ap.parse_args()
     dump_at = {int(f) for f in args.dump_at.split(",") if f}
 
@@ -255,6 +257,10 @@ def main():
     if not core.retro_load_game(C.byref(info)):
         print("retro_load_game failed:\n" + "\n".join(log_lines), file=sys.stderr)
         return 1
+    if args.pads:
+        device = ((1 if args.pads == 3 else 2) << 8) | 1  # RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 0 or 1)
+        for port in (0, 1):
+            core.retro_set_controller_port_device(port, device)
     av = AvInfo()
     core.retro_get_system_av_info(C.byref(av))
 

@@ -50,15 +50,38 @@ private:
 	vector<uint8_t> _rom;
 	uint32_t _romMask = 0;
 
-	//Sega's bank-switching mapper (Super Street Fighter II, large homebrew): the 68000's cartridge
-	//space is eight 512 KiB windows; $A130F3/5/7/9/B/D/F select the ROM bank shown in windows 1-7
-	//(window 0 is fixed to bank 0). Enabled for ROMs over 4 MiB or a "SEGA SSF" system name.
-	bool _hasBankMapper = false;
+	//Cartridge boards that bank-switch the ROM. With one, every 64 KiB page of $000000-$3FFFFF shows
+	//the ROM page in _romPage (a ROM offset >> 16, already masked to the ROM's size).
+	//- Sega: Sega's mapper (Super Street Fighter II, large homebrew): eight 512 KiB windows;
+	//  $A130F3/5/7/9/B/D/F select the bank shown in windows 1-7 (window 0 is fixed to bank 0).
+	//  ROMs over 4 MiB or a "SEGA SSF" system name.
+	//- Sf004: Super Fighter Team's SF-004 board (Star Odyssey), see WriteSf004.
+	//- Radica: the Radica Arcade Legends units, see ReadRadica.
+	enum class CartMapper : uint8_t
+	{
+		None,
+		Sega,
+		Sf004,
+		Radica
+	};
+	CartMapper _mapper = CartMapper::None;
+	uint16_t _romPage[64] = {};
+	//A page of $FF past the ROM, shown where a board maps nothing (SF-004)
+	uint16_t _emptyPage = 0;
 	uint8_t _romBank[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+	//SF-004 registers written at $00xD00 (bit 7: battery RAM on), $00xE00 (bit 7: registers stay
+	//writable, bit 6: five banks in a row instead of one mirrored, bit 5: ROM off) and $00xF00
+	//(bits 6-4: the bank at $000000)
+	uint8_t _sf004Regs[3] = {};
+	bool _sf004Locked = false;
 	__forceinline uint32_t MapRom(uint32_t addr)
 	{
-		return _hasBankMapper ? (((uint32_t)_romBank[(addr >> 19) & 0x07] << 19) | (addr & 0x7FFFF)) : addr;
+		return _mapper != CartMapper::None ? (((uint32_t)_romPage[(addr >> 16) & 0x3F] << 16) | (addr & 0xFFFF)) : (addr & _romMask);
 	}
+	void InitMapper(uint32_t dumpSize);
+	void UpdateRomPages();
+	void WriteSf004(uint32_t addr, uint8_t value);
+	void ReadRadica(uint32_t addr);
 	//Serial EEPROM saves (MdEeprom.h): the chip, and where its lines sit on the cartridge bus
 	unique_ptr<MdEepromDevice> _eeprom;
 	uint32_t _eepromReadAddr = 0xFFFFFFFF;
@@ -118,7 +141,11 @@ public:
 
 	void Init(Emulator* emu, MdConsole* console, vector<uint8_t>& romData, MdM68k* m68k, MdZ80* z80, MdVdp* vdp, MdApu* apu, MdControlManager* controlManager, bool isPal, bool isOverseas, bool hasTmss);
 
-	void SetMcd(McdUnit* mcd, bool mode2) { _mcd = mcd; _mcdMode2 = mode2; }
+	void SetMcd(McdUnit* mcd, bool mode2)
+	{
+		_mcd = mcd;
+		_mcdMode2 = mode2;
+	}
 	void SetM32x(M32xUnit* m32x) { _m32x = m32x; }
 	//Cartridge word at a ROM offset (the 32X's SH-2 and 68000 cartridge windows)
 	uint16_t ReadCartWord(uint32_t addr);

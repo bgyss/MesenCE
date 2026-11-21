@@ -125,6 +125,32 @@ def region_from_name(name):
     return "auto"
 
 
+def header_regions(field):
+    """Regions a cartridge header's $1F0 field allows: letters (J, U, E) or a hex digit (bit 0
+    Japan, bit 2 Americas, bit 3 Europe)."""
+    field = field.strip()
+    found = set()
+    for c in field[:3]:
+        if c in "JUE":
+            found.add({"J": "ntsc-j", "U": "ntsc", "E": "pal"}[c])
+    if not found and field[:1] and field[0] in "0123456789ABCDEF":
+        bits = int(field[0], 16)
+        found = {r for bit, r in ((0, "ntsc-j"), (2, "ntsc"), (3, "pal")) if bits & (1 << bit)}
+    return found
+
+
+def cart_region(name, data):
+    """The region from the name, except that a "World" image whose header allows only other
+    regions runs in one of those (Arcade Legends Street Fighter II, "(World)", is PAL-only: "E")."""
+    region = region_from_name(name)
+    tags = " ".join(re.findall(r"\(([^)]*)\)", name))
+    if region == "ntsc" and "World" in tags and not re.search(r"\b(USA|Brazil)\b", tags) and len(data) >= 0x200:
+        allowed = header_regions(data[0x1F0:0x200].decode("ascii", "replace"))
+        if allowed and region not in allowed:
+            region = "pal" if "pal" in allowed else "ntsc-j"
+    return region
+
+
 def title_key(name):
     return re.sub(r"\s*\(.*$", "", name).strip().lower()
 
@@ -222,6 +248,10 @@ def scan(roots, dats, cache_path):
                     hit = index.get(sha1)
                     shown = member or path.name
                     name = hit[0] if hit else pathlib.Path(shown).stem
+                    header = b""
+                    if "(World)" in name:  # only these consult the header (cart_region)
+                        header = bytes(0x1F0) + bytes.fromhex(cached(path, "h:%s" % member, lambda member=member: (
+                            path.read_bytes() if member is None else read_member(path, member))[0x1F0:0x200].hex()))
                     dat = hit[2] if hit else None
                     is32x = (dat and "32X" in dat) or pathlib.Path(shown).suffix.lower() == ".32x" or "32X" in console
                     flags = []
@@ -229,7 +259,7 @@ def scan(roots, dats, cache_path):
                         flags.append("goodtools-modified")
                     entries.append({
                         "sha1": sha1, "system": "32x" if is32x else "md", "title": name, "dat": dat, "verified": bool(hit),
-                        "path": str(path), "member": member, "size": size, "region": region_from_name(name if hit else shown),
+                        "path": str(path), "member": member, "size": size, "region": cart_region(name if hit else shown, header),
                         "flags": flags, "folder": folder})
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(json.dumps(cache))

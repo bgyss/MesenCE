@@ -672,7 +672,7 @@ Sega CD 11/30 (the other 19 have audio flags only), Sega CD 32X 0/12 (not emulat
 |---|---|---|
 | Lock-on window mirrored | Sonic & Knuckles | **Fixed** (below) |
 | MesenCE crashes or hangs, oracles fine | Fatal Rewind, The Killing Game Show, Sesame Street Counting Cafe | **Fixed** (C2: interrupt enable latency and acknowledge priority) |
-| Unsupported cartridge hardware | Star Odyssey (SF-004 mapper), both Radica Arcade Legends units | Open (C2) |
+| Unsupported cartridge hardware | Star Odyssey (SF-004 mapper), both Radica Arcade Legends units | **Fixed** (C3: the two boards) |
 | MesenCE crashes, black or frozen, oracles fine | Madden NFL 98, Buck Rogers | **Fixed** (C2: header-less battery RAM) |
 | | European Club Soccer | Open (late divergence) |
 | | Marvel Land | Not a bug (C2: false black flag) |
@@ -857,7 +857,7 @@ failures left:
   agree on the registers, the reset state and the read value. They differ on the ROM-off mode
   and the mode 1 layout.
 - **Status:** a mapper to add (it touches the ROM read path, like the Sega mapper in B3), not an
-  accuracy fix. Not done in C2.
+  accuracy fix. Not done in C2; added in C3.
 
 ### Tooling added on the way
 
@@ -868,3 +868,68 @@ failures left:
 - **`frozen_from`:** when MesenCE freezes, the comparison records the frame the freeze began and
   ranks by it. The state tracker couldn't date it: frozen RAM still matched the oracles' slowly
   changing RAM at some offset, so Fatal Rewind (frozen at 314) was reported as diverging at 1727.
+
+## C3: cartridge boards: SF-004 and Radica (2026-11-21)
+
+### The boards
+
+MesenCE's ROM mapping is now a table of 64 KiB pages for $000000-$3FFFFF
+(`MdMemoryManager::_romPage`, used only when a board is detected; `MapRom` stays one branch). Sega's
+mapper (B3) fills it from its eight 512 KiB windows. Two boards are added:
+
+- **SF-004** (Super Fighter Team; Star Odyssey). Detected by the header's type field ("SF-004", as
+  GPGX). Registers, reset state, bank read-back and battery RAM follow GPGX `md_cart.c`
+  (`mapper_sf004_w/_r`) and PicoDrive `carthw.c` (`carthw_sf004_*`), which agree on them:
+  - `$00xD00` bit 7: 32 KiB battery RAM on the odd bytes of `$200000-$20FFFF` (`$A130F1` is
+    ignored on this board).
+  - `$00xE00`: bit 7 clear locks the registers until power-on; bit 6 maps five 256 KiB banks in a
+    row from the selected one; otherwise the selected bank is mirrored over `$000000-$1FFFFF`.
+  - `$00xF00` bits 6-4: the bank. Reading `$A130xx` returns it in bits 6-4.
+  - **Judgment calls**, where the oracles differ (GPGX followed, the main Mega Drive oracle):
+    `$E00` bit 5 unmaps the ROM, and the "in a row" mode leaves `$140000-$1FFFFF` unmapped
+    (PicoDrive: eight banks, bit 5 ignored). Unmapped pages read `$FF`. GPGX also mirrors the
+    battery RAM over `$200000-$2FFFFF`; MesenCE maps it once. Z80 bank-window writes don't reach
+    the registers (GPGX's do). Star Odyssey's sessions don't exercise any of these.
+- **Radica** (Arcade Legends units). Detected by header checksum plus the sum of the words from
+  `$200`, as GPGX's `rom_database` (Volumes 1-3 and both Street Fighter II editions). Any read of
+  `$A130xx` selects index = A6-A1, and page *i* then shows ROM page (index | *i*) (GPGX
+  `mapper_64k_radica_r`; PicoDrive maps the bank linearly, which is the same for every game on
+  these units). Such a read returns `$FFFF` (GPGX; PicoDrive 0; the menu ignores it). Not added:
+  the Sensible Soccer Plus unit (128 KiB banks and battery RAM), which isn't in the library.
+
+### Results
+
+- **Star Odyssey:** boots; attract and walker sessions clean against both oracles (was black from
+  frame 1).
+- **Arcade Legends Sega Mega Drive:** the menu runs, and the walker starts Sonic the Hedgehog; both
+  sessions clean (was frozen on a black screen from frame 250).
+- **Arcade Legends Street Fighter II:** the menu and the game run in all three emulators. MesenCE
+  and PicoDrive agree; GPGX takes another path through the menus in the walker session (state
+  divergence at frame 1257; GPGX vs PicoDrive 1396), the sports-demo timing class.
+- **md-corpus region fix:** that unit's DAT name says "(World)" but its header allows Europe only
+  ("E"). md-corpus ran MesenCE and PicoDrive in NTSC, where the game stops at its "PAL and French
+  SECAM only" screen; GPGX picks the region from the header and ran the game. A "(World)" image
+  whose header excludes NTSC now runs in a region the header allows (`inventory.cart_region`;
+  changes this title and one non-primary G-LOC beta).
+- **Test:** `tests/MD/cart/mapper_boards.py` (in `test:md-synthetic`): an SF-004 and a Radica
+  cartridge with the program copied into every bank; 24 reads of markers, registers and battery
+  RAM against the behaviour above. Both fail on the old build.
+
+### Library re-run (C3 build)
+
+All 1,200 sessions, `md_corpus.py diff`: regressed 0; fixed Star Odyssey and both Radica units.
+Changed: Fahrenheit (Sega CD 32X, unsupported) lost its `mesen-black` flag; it stays flagged
+unsupported. Clean against both oracles: Mega Drive 1,054/1,130, 32X 23/40, Sega CD 11/30.
+Speed: `mesen-headless` on Sonic the Hedgehog, 6,000 frames, four runs each: 10.36-10.47 s
+against 10.34-10.73 s for the C2 build (no measurable change).
+
+### TAS import (P3, tooling)
+
+`tools/md-corpus/tas.py`: `.bk2` (BizHawk) and `.gmv` (Gens) movies to md-corpus sessions,
+matched to the corpus by the movie's ROM SHA-1; `run --session tas`. Movies starting from a save
+state or save RAM, or resetting during the movie, are imported as unsupported. Movies are
+downloaded by hand: TASVideos' robots.txt disallows automated movie downloads (strategy 0.1).
+Checked by `tas_selftest.py` (both formats round-trip a random 500-frame input) and an end-to-end
+`.bk2` made from the Arcade Legends walker input, 3- and 6-button: same verdict and snapshots as
+the walker session. The `.gmv` layout is from the format notes, not yet checked on a real movie.
+
