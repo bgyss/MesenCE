@@ -5,6 +5,11 @@ runs/<kind>-<frames>/<entry id>/ with one sub-directory per emulator (mesen, gpg
 each holding the emulator's outputs and a run.json written last (the done marker: an emulator
 whose run.json exists is not run again).
 
+Runs are keyed by the mesen-headless build (SHA-256 of the binary, in MesenCE's run.json). A
+session last run with another build is run again, all emulators (its audio went when it was
+compared); its previous result moves to results/<session>/history/<id>.<build>.json, which
+`md_corpus.py diff` compares with the new one.
+
 Same conditions everywhere (strategy section 2.2): the region comes from the corpus entry, not
 auto-detection; 3-button pads; TMSS off; no sprite-limit removal, overclocking, filters or
 overscan in the oracles; the same Sega CD BIOS file in every emulator. Differences that remain,
@@ -12,6 +17,7 @@ by design: PicoDrive boots 32X games without Sega's boot ROMs (it has no option 
 MesenCE uses them (MESEN_32X_BIOS_DIR).
 """
 import concurrent.futures
+import hashlib
 import json
 import os
 import pathlib
@@ -136,8 +142,34 @@ def session_input(kind, frames, session_dir):
     return path
 
 
+def mesen_build():
+    """The build key: the first 16 hex digits of mesen-headless' SHA-256."""
+    return hashlib.sha256(MESEN.read_bytes()).hexdigest()[:16]
+
+
+def invalidate_if_stale(sdir, rdir, build, force=False):
+    """A session run with another mesen-headless build: keep its result in history, remove its runs.
+    Also removes leftovers of earlier manual re-runs (*.stale-*, *.silent-*)."""
+    done = sdir / "mesen" / "run.json"
+    for leftover in sdir.glob("*.*-*"):
+        if leftover.is_dir():
+            shutil.rmtree(leftover)
+    if not done.exists():
+        return
+    old = json.loads(done.read_text()).get("build", "unknown")
+    if old == build and not force:
+        return
+    result = rdir / (sdir.name + ".json")
+    if result.exists():
+        (rdir / "history").mkdir(exist_ok=True)
+        result.rename(rdir / "history" / ("%s.%s.json" % (sdir.name, old)))
+    for emu_dir in sdir.iterdir():
+        if emu_dir.is_dir():
+            shutil.rmtree(emu_dir)
+
+
 def run_one(job):
-    emu, entry, rom, out_dir, frames, input_path, snap_every, sysdir = job
+    emu, entry, rom, out_dir, frames, input_path, snap_every, sysdir, build = job
     done = out_dir / "run.json"
     if done.exists():
         return emu, entry["id"], json.loads(done.read_text())
@@ -182,6 +214,8 @@ def run_one(job):
     out_dir.mkdir(parents=True, exist_ok=True)
     result = {"emulator": emu, "exit": code, "wall_seconds": round(time.time() - start, 2), "command": cmd, "stderr": err,
               "frames": frames, "rom": str(rom)}
+    if emu == "mesen":
+        result["build"] = build
     done.write_text(json.dumps(result, indent=1))
     return emu, entry["id"], result
 
@@ -197,6 +231,7 @@ def run_corpus(args):
     entries = select(load_corpus(out), args)
     session = "%s-%d" % (args.session, args.frames)
     sysdir = system_dir(out)
+    build = mesen_build()
     jobs = []
     for e in entries:
         sdir = out / "runs" / session / e["id"]
@@ -209,8 +244,8 @@ def run_corpus(args):
             continue
         input_path = session_input(args.session, args.frames, sdir)
         for emu in ["mesen"] + [o for o in oracles if e["system"] in ORACLE_SYSTEMS[o]]:
-            jobs.append((emu, e, rom, sdir / emu, args.frames, input_path, args.snap_every, sysdir))
-    print("%d titles, %d runs (%s) with %d jobs" % (len(entries), len(jobs), session, args.jobs), flush=True)
+            jobs.append((emu, e, rom, sdir / emu, args.frames, input_path, args.snap_every, sysdir, build))
+    print("%d titles, %d runs (%s) with %d jobs, mesen-headless build %s" % (len(entries), len(jobs), session, args.jobs, build), flush=True)
     # One worker per session: its emulators run one after the other, then the session is compared
     # at once (unless --no-compare), so its audio files can go before the next session's are written
     by_session = {}
@@ -221,8 +256,13 @@ def run_corpus(args):
     rdir.mkdir(parents=True, exist_ok=True)
 
     def work(session_jobs):
-        results = [run_one(j) for j in session_jobs]
         sdir = session_jobs[0][3].parent
+        invalidate_if_stale(sdir, rdir, build, args.rerun)
+        complete = all((j[3] / "run.json").exists() for j in session_jobs)
+        if complete and (rdir / (sdir.name + ".json")).exists():
+            # Already run and compared with this build (comparing again would find the audio gone)
+            return [run_one(j) for j in session_jobs]
+        results = [run_one(j) for j in session_jobs]
         if not args.no_compare:
             r = compare.compare_session(sdir, keep_audio=False)
             if r:

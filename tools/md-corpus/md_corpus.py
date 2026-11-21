@@ -7,9 +7,10 @@ reused (a run directory with its done marker is not run again).
 
     md_corpus.py inventory ROM_DIR... --dat DAT_OR_ZIP... [--out ROOT]
     md_corpus.py run   [--session attract|walker] [--frames N] [--system md,32x,mcd] [--match TEXT]
-                       [--all] [--limit N] [--jobs N] [--oracles gpgx,picodrive] [--no-compare] [--out ROOT]
+                       [--all] [--limit N] [--jobs N] [--oracles gpgx,picodrive] [--no-compare] [--rerun] [--out ROOT]
     md_corpus.py compare [--out ROOT] [--jobs N] [--keep-audio] [--force]
     md_corpus.py report  [--out ROOT]
+    md_corpus.py diff    [--session NAME]   # verdicts changed since the previous mesen-headless build
 
 `run` needs bin/mesen-headless (mise run headless) and the libretro cores (RetroArch's, or
 GPGX_CORE / PICODRIVE_CORE). Sega CD runs need a BIOS (MESEN_MCD_BIOS_DIR, default
@@ -59,6 +60,11 @@ def cmd_report(args):
     return report.write_report(args)
 
 
+def cmd_diff(args):
+    import report
+    return report.write_diff(args)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default=os.environ.get("MD_CORPUS_OUT", str(ROOT / "bin/md-corpus")))
@@ -80,6 +86,7 @@ def main():
     p.add_argument("--oracles", default="gpgx,picodrive")
     p.add_argument("--snap-every", type=int, default=300)
     p.add_argument("--no-compare", action="store_true", help="keep the audio; compare later with `compare`")
+    p.add_argument("--rerun", action="store_true", help="run the selected sessions again even if this build already ran them")
     p.set_defaults(fn=cmd_run)
 
     p = sub.add_parser("compare")
@@ -90,6 +97,10 @@ def main():
 
     p = sub.add_parser("report")
     p.set_defaults(fn=cmd_report)
+
+    p = sub.add_parser("diff")
+    p.add_argument("--session", default="")
+    p.set_defaults(fn=cmd_diff)
 
     args = ap.parse_args()
     args.out = str(pathlib.Path(args.out).expanduser().resolve())

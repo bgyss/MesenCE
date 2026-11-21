@@ -22,6 +22,32 @@ FLAG_HELP = {
 }
 
 
+def write_diff(args):
+    """`md_corpus.py diff`: every session whose verdict changed between its latest history entry
+    (the previous mesen-headless build) and its current result."""
+    out = pathlib.Path(args.out)
+    rows = {"fixed": [], "regressed": [], "changed": []}
+    for session_dir in sorted((out / "results").iterdir()):
+        history = session_dir / "history"
+        if not history.exists() or (args.session and session_dir.name != args.session):
+            continue
+        for current in sorted(session_dir.glob("*.json")):
+            olds = sorted(history.glob(current.stem + ".*.json"), key=lambda p: p.stat().st_mtime)
+            if not olds:
+                continue
+            new, old = json.loads(current.read_text()), json.loads(olds[-1].read_text())
+            if new["flags"] == old["flags"]:
+                continue
+            kind = "fixed" if old["score"] and not new["score"] else "regressed" if new["score"] > old["score"] else "changed"
+            rows[kind].append("%-9s %-6s %-50.50s %4d -> %-4d %s -> %s" % (
+                session_dir.name, new["system"], new["title"], old["score"], new["score"], ",".join(old["flags"]) or "-", ",".join(new["flags"]) or "-"))
+    for kind in ("regressed", "fixed", "changed"):
+        print("%s (%d)" % (kind, len(rows[kind])))
+        for r in rows[kind]:
+            print("  " + r)
+    return 1 if rows["regressed"] else 0
+
+
 def load(out):
     results = {}
     for f in sorted((out / "results").glob("*/*.json")):
@@ -43,6 +69,9 @@ def snap_pair(out, session, r):
 
 def fmt_state(r):
     parts = []
+    frozen = r["health"].get("mesen", {}).get("frozen_from")
+    if frozen:
+        parts.append("<b>MesenCE frozen from frame %d</b>" % frozen)
     for pair, p in r["state"].items():
         if not p:
             continue

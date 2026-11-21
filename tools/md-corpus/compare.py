@@ -75,6 +75,14 @@ def health(run, log, is_mesen):
         tail_frame = set(log["frame"][-FROZEN_FRAMES:])
         if len(tail_ram) == 1 and len(tail_frame) == 1:
             flags.append("frozen")
+            # Where the freeze began: the state tracker can't date it (frozen RAM still matches
+            # the oracles' slowly changing RAM at some offset; Fatal Rewind froze at 314 and was
+            # reported as diverging at 1727)
+            ram, frame = log.get("MdWorkRam", log["frame"]), log["frame"]
+            start = len(frame) - 1
+            while start > 0 and ram[start - 1] == ram[-1] and frame[start - 1] == frame[-1]:
+                start -= 1
+            frozen_from = start + 1
         if is_mesen and "polled" in log and len(log["polled"]) > NO_INPUT_FRAMES:
             polled = [p == "1" for p in log["polled"]]
             if any(polled) and not any(polled[-NO_INPUT_FRAMES:]):
@@ -82,8 +90,11 @@ def health(run, log, is_mesen):
     snaps = sorted((run / "snaps").glob("*.png")) if (run / "snaps").exists() else []
     if snaps and float(image(snaps[-1], run.name).max()) < 0.06:
         flags.append("black")
-    return {"exit": result["exit"], "wall_seconds": result["wall_seconds"], "flags": flags,
-            "frames_logged": len(log["frame"]) if log else 0}
+    out = {"exit": result["exit"], "wall_seconds": result["wall_seconds"], "flags": flags,
+           "frames_logged": len(log["frame"]) if log else 0}
+    if "frozen" in flags:
+        out["frozen_from"] = frozen_from
+    return out
 
 
 MESEN_STEPS = np.array([0, 29, 52, 70, 87, 101, 116, 130, 144, 158, 172, 187, 206, 228, 255], dtype=np.float32)
@@ -230,6 +241,7 @@ def compare_session(sdir, keep_audio, previous=None):
     logs = {e: read_log(sdir / e) for e in emus}
     blocks = {e: read_blocks(sdir / e) for e in emus}
     out = {"id": entry["id"], "title": entry["title"], "system": entry["system"], "region": entry["region"],
+           "mesen_build": json.loads((sdir / "mesen" / "run.json").read_text()).get("build"),
            "health": {e: health(sdir / e, logs[e], e == "mesen") for e in emus}, "state": {}, "visual": {}}
     oracles = [e for e in emus if e != "mesen"]
     for o in oracles:
@@ -297,7 +309,11 @@ def verdict(r, oracles, main):
 def score(r):
     s = sum(SCORES.get(f, 0) for f in r["flags"])
     diverged = [p["diverged_at"] for k, p in r["state"].items() if k.startswith("mesen~") and p and p["diverged_at"]]
-    if diverged and any(f.startswith("state-diverges") for f in r["flags"]):
+    if not any(f.startswith("state-diverges") for f in r["flags"]):
+        diverged = []
+    if "mesen-frozen" in r["flags"] and r["health"]["mesen"].get("frozen_from"):
+        diverged.append(r["health"]["mesen"]["frozen_from"])
+    if diverged:
         s += max(0, 20 - min(diverged) // 300)  # earlier divergence hides more
     return s
 
