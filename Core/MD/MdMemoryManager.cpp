@@ -44,6 +44,8 @@ void MdMemoryManager::Init(Emulator* emu, MdConsole* console, vector<uint8_t>& r
 	_rom = romData;
 	InitEeprom(romData);
 	_hasBankMapper = romData.size() > 0x400000 || (romData.size() > 0x110 && memcmp(&romData[0x100], "SEGA SSF", 8) == 0);
+	//The dump's own size: _rom is padded to a power of two below
+	uint32_t dumpSize = (uint32_t)_rom.size();
 	uint32_t size = 1;
 	while(size < _rom.size()) {
 		size <<= 1;
@@ -78,13 +80,35 @@ void MdMemoryManager::Init(Emulator* emu, MdConsole* console, vector<uint8_t>& r
 			_saveRamEnd = end | 1;
 			_saveRamSize = (_saveRamOddOnly || _saveRamEvenOnly) ? ((_saveRamEnd - _saveRamStart + 1) / 2) : (_saveRamEnd - _saveRamStart + 1);
 		}
+	} else if(dumpSize > 0x160) {
+		//Cartridges with battery RAM but no "RA" header, by their overseas name at $150 (PicoDrive's
+		//carthw.cfg "bad headers" entries; GPGX reaches the same range through its default for
+		//header-less ROMs up to 2 MiB). Both byte lanes.
+		struct HeaderlessSram
+		{
+			const char* Name;
+			uint32_t Start;
+			uint32_t End;
+		};
+		static constexpr HeaderlessSram headerless[] = {
+			{ "  HardBall III", 0x200000, 0x20FFFF },
+		};
+		for(const HeaderlessSram& entry : headerless) {
+			if(memcmp(&_rom[0x150], entry.Name, strlen(entry.Name)) == 0) {
+				_saveRamStart = entry.Start;
+				_saveRamEnd = entry.End;
+				_saveRamSize = entry.End - entry.Start + 1;
+			}
+		}
 	}
 	if(_saveRamSize) {
 		_saveRam = new uint8_t[_saveRamSize];
 		memset(_saveRam, 0xFF, _saveRamSize);
 		_emu->GetBatteryManager()->LoadBattery(".srm", _saveRam, _saveRamSize);
 		//Battery RAM above the ROM is enabled at power-on; RAM overlapping the ROM needs $A130F1.
-		_state.SramEnabled = _saveRamStart >= _rom.size();
+		//(Against the dump's size: HardBall '95's RAM at $300001 is above its 3 MiB ROM but inside
+		//the 4 MiB padding, and stayed disabled: "SRAM failure".)
+		_state.SramEnabled = _saveRamStart >= dumpSize;
 	}
 	_hasCartSave = _saveRam || _eeprom;
 
@@ -138,7 +162,7 @@ void MdMemoryManager::SyncAfterM68kInstruction()
 	if(_m32x) {
 		_m32x->Run(_masterClock);
 	}
-	_m68k->SetInterruptLevel(_vdp->GetM68kInterruptLevel());
+	_m68k->SetInterruptLevel(_vdp->GetM68kInterruptLevel(_masterClock));
 	if(_vdp->IsZ80InterruptActive()) {
 		_z80->SetIrqSource(SmsIrqSource::Vdp);
 	} else {

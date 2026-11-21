@@ -70,6 +70,34 @@ def _sk_lock_on(name, title, expected):
     return Case(name, ops, rom_size=0x200000, rom_data=rom_data, capture_frames=2)
 
 
+def _sram_cases():
+    """Battery RAM that MesenCE left unmapped (found by md-corpus, findings C1/C2).
+
+    cart_sram_above_padded_rom: HardBall '95's layout, a 3 MiB ROM with an "RA" header for
+    odd-byte RAM at $300001-$30FFFF. RAM above the ROM is enabled at power-on, but MesenCE compared
+    with the ROM padded to 4 MiB, so the RAM stayed off and the game reported "SRAM failure".
+    cart_sram_headerless_hardball3: HardBall III has battery RAM but no "RA" header; PicoDrive
+    (carthw.cfg, "bad headers") and GPGX (default for header-less ROMs up to 2 MiB) map 64 KiB at
+    $200000-$20FFFF, both lanes. Without it the game stops on "First time initialization
+    complete. Press RESET to continue."
+    """
+    ra = b"RA" + bytes((0xF8, 0x20)) + (0x300001).to_bytes(4, "big") + (0x30FFFF).to_bytes(4, "big")
+    above = Case("cart_sram_above_padded_rom",
+                 (Operation(WRITE, 1, 0x300001, 0x5A),
+                  Operation(READ, 1, 0x300001, 0x5A, compare_mask=0xFF),
+                  Operation(WRITE, 1, 0x300003, 0xA5),
+                  Operation(READ, 1, 0x300003, 0xA5, compare_mask=0xFF)),
+                 rom_size=0x300000, rom_data=tuple((0x1B0 + i, b) for i, b in enumerate(ra)), capture_frames=2)
+    name = tuple((0x150 + i, c) for i, c in enumerate(b"  HardBall III".ljust(48)))
+    headerless = Case("cart_sram_headerless_hardball3",
+                      (Operation(WRITE, 2, 0x200000, 0x1234),
+                       Operation(READ, 2, 0x200000, 0x1234, compare_mask=0xFFFF),
+                       Operation(WRITE, 2, 0x20FFFE, 0x5678),
+                       Operation(READ, 2, 0x20FFFE, 0x5678, compare_mask=0xFFFF)),
+                      rom_size=0x200000, rom_data=name, capture_frames=2)
+    return [above, headerless]
+
+
 def _z80_busack_reset():
     """BUSREQ/BUSACK ($A11100 bit 8, 0 = the 68000 has the Z80 bus) with the Z80 held in reset.
 
@@ -382,5 +410,5 @@ def write_assets(out_dir):
 def all_cases():
     return ([_pad6_across_frame(), _bank_mapper(), _z80_busack_reset(),
              _sk_lock_on("cart_sk_lock_on_empty", "SONIC & KNUCKLES", 0xFFFF),
-             _sk_lock_on("cart_2m_mirror", "NATIVEKIT BUS TEST", 0x5345)] + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)] +
+             _sk_lock_on("cart_2m_mirror", "NATIVEKIT BUS TEST", 0x5345)] + _sram_cases() + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)] +
             _accessory_cases() + _mcd_cases() + _m32x_cases())

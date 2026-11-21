@@ -324,7 +324,7 @@ void MdVdp::EndFrame()
 	_emu->ProcessEvent(EventType::StartFrame, CpuType::MdM68k);
 }
 
-uint8_t MdVdp::GetM68kInterruptLevel()
+uint8_t MdVdp::GetAssertedLevel()
 {
 	if(_state.VIntPending && (_state.Regs[1] & 0x20)) {
 		return 6;
@@ -336,6 +336,21 @@ uint8_t MdVdp::GetM68kInterruptLevel()
 		return 2;
 	}
 	return 0;
+}
+
+uint8_t MdVdp::GetM68kInterruptLevel(uint64_t instructionEndClock)
+{
+	uint8_t level = GetAssertedLevel();
+	if(_irqEnableHold) [[unlikely]] {
+		//An interrupt enabled by a register write in the instruction's last bus cycle reaches the
+		//68000 too late for it to be sampled at the end of that instruction: it is taken after the
+		//next one (see WriteRegister)
+		_irqEnableHold = false;
+		if(level > _irqHoldLevel && instructionEndClock - _irqEnableClock < IrqEnableLatency) {
+			return _irqHoldLevel;
+		}
+	}
+	return level;
 }
 
 void MdVdp::TriggerExternalInterrupt(uint64_t clock)
@@ -352,10 +367,16 @@ void MdVdp::TriggerExternalInterrupt(uint64_t clock)
 
 void MdVdp::AcknowledgeInterrupt(uint8_t level)
 {
-	if(level == 6) {
-		_state.VIntPending = false;
-	} else if(level == 4) {
-		_state.HIntPending = false;
+	if(level == 6 || level == 4) {
+		//The VDP doesn't see which level the 68000 acknowledges: an acknowledge clears the enabled
+		//pending interrupt with the highest priority, VINT first. When a level 4 acknowledge comes
+		//after VINT was enabled with a VBlank still pending, it clears VINT and HINT stays pending
+		//(GPGX vdp_68k_irq_ack, "VINT has higher priority (Fatal Rewind)"; BlastEm vdp_int_ack).
+		if(_state.VIntPending && (_state.Regs[1] & 0x20)) {
+			_state.VIntPending = false;
+		} else if(_state.HIntPending && (_state.Regs[0] & 0x10)) {
+			_state.HIntPending = false;
+		}
 	} else if(level == 2) {
 		_extIntPending = false;
 	}
@@ -463,6 +484,21 @@ void MdVdp::WriteRegister(uint8_t reg, uint8_t value)
 		_state.HvLatched = true;
 	} else if(reg == 0 && !(value & 0x02)) {
 		_state.HvLatched = false;
+	}
+	if(reg <= 1) {
+		//Enabling an interrupt that is already pending: the VDP raises the 68000's IPL lines with
+		//a delay, so a write in the last bus cycle of an instruction is seen one instruction later
+		//(GPGX m68k_set_irq_delay: "IRQ latency (Fatal Rewind, Sesame's Street Counting Cafe)";
+		//BlastEm and PicoDrive also delay it). A MOVE.L's first word lands a bus cycle earlier and
+		//is seen at once (GPGX's MOVE.L exception).
+		uint8_t before = GetAssertedLevel();
+		_state.Regs[reg] = value;
+		if(GetAssertedLevel() > before) {
+			_irqEnableHold = true;
+			_irqHoldLevel = before;
+			_irqEnableClock = _memoryManager->GetMasterClock();
+		}
+		return;
 	}
 	_state.Regs[reg] = value;
 }
@@ -989,6 +1025,9 @@ void MdVdp::Serialize(Serializer& s)
 	SVArray(_lineSpritePixels, 320);
 	SVArray(_lineSpritePriority, 320);
 	SV(_vintRaisedThisFrame);
+	SV(_irqEnableHold);
+	SV(_irqHoldLevel);
+	SV(_irqEnableClock);
 	SV(_extIntPending);
 	SV(_lightgunClock);
 	SV(_lightgunPort);

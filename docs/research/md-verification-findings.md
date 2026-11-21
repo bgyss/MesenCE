@@ -671,8 +671,10 @@ Sega CD 11/30 (the other 19 have audio flags only), Sega CD 32X 0/12 (not emulat
 | Group | Titles | Status |
 |---|---|---|
 | Lock-on window mirrored | Sonic & Knuckles | **Fixed** (below) |
-| MesenCE crashes (68000 PC in garbage: `$FFFFFFFB`, `$30040000`, `$45454544`), black or frozen, oracles fine | Fatal Rewind and its Japanese release The Killing Game Show (same game), Star Odyssey, Sesame Street Counting Cafe, Madden NFL 98, Buck Rogers, both Radica Arcade Legends units, European Club Soccer, Marvel Land | Open: one investigation each, possibly shared causes |
-| Save RAM | HardBall III ("First time initialization complete. Press RESET"), HardBall '95 ("SRAM failure") | Open: probably the cartridge's save RAM mapping |
+| MesenCE crashes or hangs, oracles fine | Fatal Rewind, The Killing Game Show, Sesame Street Counting Cafe | **Fixed** (C2: interrupt enable latency and acknowledge priority) |
+| Unsupported cartridge hardware | Star Odyssey (SF-004 mapper) | Open (C2) |
+| MesenCE crashes, black or frozen, oracles fine | Madden NFL 98, Buck Rogers, both Radica Arcade Legends units, European Club Soccer, Marvel Land | Open: one investigation each |
+| Save RAM | HardBall III ("First time initialization complete. Press RESET"), HardBall '95 ("SRAM failure") | **Fixed** (C2) |
 | 32X black or single-oracle divergence | 36 Great Holes, Brutal, WWF WrestleMania Arcade, WWF Raw, Spider-Man Web of Fire | Open, candidates (PicoDrive is the only oracle) |
 | 32X ECCO CinePak demo black | | Expected: Sega's boot ROM rejects it (32X findings, S5) |
 | Attract demos drift to other scenes after 25-55 s (sports titles: FIFA 97/98, NHL 98, NBA, MLBPA, Cal Ripken, World Heroes, ...) | 15 | Timing; low priority until a strict session shows a functional difference |
@@ -710,3 +712,118 @@ known offsets in `compare.py` (`KNOWN_LEVEL_DB`) so per-title outliers still fla
 - **Tests:** `cart_sk_lock_on_empty` and the control `cart_2m_mirror` (`extra_cases.py`,
   `test:md-synthetic`). The old build reads `$5345` and fails the first; both pass now.
   md-corpus: S&K is now clean against both oracles (snapshot difference 0.004 vs GPGX).
+
+## C2: interrupts enabled while pending; save RAM detection (2026-11-21)
+
+Clusters from C1, worked one at a time: reproduction from the md-corpus session, then MesenCE's
+bus trace (`--load-state` a few frames before the failure, `--trace bus`) against nativekit's
+BlastEm trace (NMDT v2) of the same ROM, then sources, a synthetic test and a library re-run
+(`md_corpus.py diff`: verdicts changed since the previous build).
+
+### Fatal Rewind / The Killing Game Show, Sesame Street Counting Cafe: interrupt enable (fixed)
+
+- **Symptom:** Fatal Rewind (and its Japanese release, The Killing Game Show) crashed at frame
+  314: the 68000 ran to `$FFFFFFFB` (line-F exception through vector `$FFFFFFFF`, then a double
+  fault). Sesame Street Counting Cafe stopped at frame 1031 in a loop waiting for its VBlank
+  counter. GPGX, PicoDrive and BlastEm run both.
+- **Fatal Rewind, step by step:**
+  - The game leaves VINT disabled over several VBlanks (register 1 = `$44`), so a VBlank stays
+    pending. Mid-display (line ~143) it runs, at `$22486-$224A8`: `move #$2000,sr`;
+    `move.w #$8014,$C00004` (HINT on; the HINT counter has expired); `move.w #$8164,$C00004`
+    (VINT on); `jmp $2B7AC`, which installs the VINT handler's pointer (`$FFE03E`) later.
+  - MesenCE took HINT straight after the first write, cleared HINT on the acknowledge, then took
+    the stale VINT after the second write. Its handler called through `$FFE03E` = 0.
+  - BlastEm's trace: no interrupt after the first write; HINT after the second (return address
+    `$224A8`); no VINT at all. HINT runs again after `rte` (return `$2B7AC`).
+- **Sesame Street:** the game enables VINT with a VBlank pending, `move.w #$8174,$C00004` at
+  `$202A`, and updates its copy of register 1 in the next instruction. Its VINT handler restores
+  register 1 from that copy after each DMA. MesenCE took VINT one instruction early (BlastEm one
+  instruction later), so the handler restored `$14` (VINT off) and the game waited forever.
+  - In MesenCE the write was followed by a DRAM refresh stall here: 42 master clocks between the
+    write and the instruction's end, not 28, which the first version of the fix missed.
+- **Sources:**
+  - GPGX `m68kcpu.c` `m68k_set_irq_delay`: "IRQ latency (Fatal Rewind, Sesame's Street Counting
+    Cafe)", one instruction, none for MOVE.L. `vdp_ctrl.c` `vdp_68k_irq_ack`: "VINT has higher
+    priority (Fatal Rewind)", clearing VINT pending when it is enabled.
+  - BlastEm `vdp.c` `vdp_int_ack`: clears VINT pending if pending and enabled, else HINT;
+    "Fatal Rewind depends on this due to some buggy code".
+  - PicoDrive `videoport.c`: a write enabling a pending interrupt raises it delayed ("make it
+    delayed").
+  - All three set VINT and HINT pending whatever the enable bits, and keep them until
+    acknowledged (MesenCE already did).
+- **Fix** (`MdVdp`):
+  - `AcknowledgeInterrupt`: a level 4 or 6 acknowledge clears the enabled pending interrupt with
+    the highest priority (VINT, else HINT), not the level taken.
+  - `WriteRegister` (registers 0 and 1): a write that raises the asserted level is seen by the
+    68000 one instruction later when it falls within two bus cycles (56 master clocks) of the
+    instruction's end. That covers a MOVE.W (28 clocks after its write, 42 with a refresh stall)
+    and not the first word of a MOVE.L (56 or more, GPGX's exception).
+  - `GetM68kInterruptLevel` takes the instruction's end clock. The hold costs one predictable
+    branch per instruction (`[[unlikely]]`). It is saved in save states. Speed: Sonic 2, 3,600
+    frames headless, 6.09-6.27 s before and 6.16-6.17 s after (four runs each; noise).
+- **Judgment calls:**
+  - The window is derived from bus-cycle counts, not measured on hardware.
+  - On the "HINT then VINT" sequence the oracles disagree. BlastEm and PicoDrive take HINT and
+    drop VINT; GPGX takes VINT (its delayed register 1 write raises the level before the 68000
+    samples HINT). MesenCE follows BlastEm and PicoDrive. Under GPGX's order Fatal Rewind's code
+    at `$224A0` would crash, and the game runs on hardware.
+- **Test:** `tests/MD/vdp/irq_enable_pending.py` (`test:md-synthetic`), on two cartridges:
+  - **A**, the game's sequence after a VBlank with VINT off: HINT handler once, VINT handler
+    never.
+  - **B**, VINT alone, swept over 40 refresh phases (0-39 NOPs before the write): the stale VINT
+    is taken, after the next instruction.
+  - Before the fix both fail. With the first (28-clock) window, B fails in 5 of 40 phases. GPGX
+    and PicoDrive give B's expected values in all 40 phases; on A, PicoDrive matches and GPGX
+    takes VINT (above).
+- **Library:** all three titles clean against both oracles; no other verdict changed
+  (`md_corpus.py diff` over 1,212 titles).
+
+### HardBall '95: battery RAM above a padded ROM (fixed)
+
+- **Symptom:** "Cartridge Error Message: SRAM failure".
+- **Cause:** its header ("RA", `$F820`) describes odd-byte RAM at `$300001-$30FFFF`, above its
+  3 MiB ROM. Battery RAM above the ROM is enabled at power-on (B-series findings), but
+  `MdMemoryManager` compared the start with the ROM size after padding to 4 MiB, so the RAM stayed
+  disabled.
+- **Fix:** compare with the dump's own size.
+- **Test:** `cart_sram_above_padded_rom` (`extra_cases.py`). The old build reads `$FF`.
+
+### HardBall III: battery RAM without a header (fixed)
+
+- **Symptom:** "First time initialization complete. Press RESET to continue." on every boot.
+- **Cause:** the cartridge has battery RAM but no "RA" header.
+- **Sources:**
+  - PicoDrive `carthw.cfg` lists it under "bad headers" (`check_str = 0x150, "  HardBall III"`,
+    `sram_range = 0x200000,0x20ffff`).
+  - GPGX's `sram.c` maps 64 KiB at `$200000-$20FFFF` for any header-less ROM up to 2 MiB.
+  - MAME's software list has no entry.
+- **Fix:** a table of header-less battery RAM by overseas name (`MdMemoryManager::Init`), with
+  this entry; both byte lanes.
+- **Judgment call:** a per-title table, as PicoDrive, rather than GPGX's blanket default. The
+  default would replace the ROM mirror at `$200000` for every small header-less cartridge; that
+  is a separate change to measure on the library first (open).
+- **Test:** `cart_sram_headerless_hardball3`. The old build reads `$FF`/`$0`.
+
+### Star Odyssey: SF-004 mapper (open, unsupported hardware)
+
+- **Symptom:** black from frame 1; the 68000 ends at `$30040000`.
+- **Cause:** the boot code reads `$A13001/5/9` and builds addresses from the values. The
+  cartridge is Super Fighter Team's SF-004 board: 8 x 256 KiB banks, mode, lock and save RAM
+  registers written at `$00xD00/$00xE00/$00xF00`, and the selected bank's index (high nibble)
+  read at `$A130xx`.
+- **Sources:** GPGX `mapper_sf004_r/w` (selected by the header), PicoDrive `carthw.cfg`
+  (`[Star Odyssey]`, `hw = sf004_mapper`) and `carthw.c`, MAME `md_rom_starodys_device`. They
+  agree on the registers, the reset state and the read value. They differ on the ROM-off mode
+  and the mode 1 layout.
+- **Status:** a mapper to add (it touches the ROM read path, like the Sega mapper in B3), not an
+  accuracy fix. Not done in C2.
+
+### Tooling added on the way
+
+- **Build keys:** md-corpus keys runs by the mesen-headless build. A session last run by another
+  build is run again, and its old result is kept in `results/<session>/history/`.
+  `md_corpus.py diff` lists the titles whose verdict changed (regressed / fixed / changed) and
+  exits 1 on a regression.
+- **`frozen_from`:** when MesenCE freezes, the comparison records the frame the freeze began and
+  ranks by it. The state tracker couldn't date it: frozen RAM still matched the oracles' slowly
+  changing RAM at some offset, so Fatal Rewind (frozen at 314) was reported as diverging at 1727.

@@ -69,6 +69,19 @@ private:
 	uint8_t _lineSpritePriority[320] = {};
 	bool _vintRaisedThisFrame = false;
 
+	//A register write that enabled a pending interrupt (see WriteRegister): the level asserted
+	//before it, and when it happened
+	bool _irqEnableHold = false;
+	uint8_t _irqHoldLevel = 0;
+	uint64_t _irqEnableClock = 0;
+	//The write is in the instruction's last bus cycle when fewer than two 68000 bus cycles (8 clocks)
+	//separate it from the instruction's end: a MOVE.W ends one prefetch (4 clocks) after its write,
+	//plus a DRAM refresh stall when one falls there (measured: 28 or 42 master clocks); the first
+	//word of a MOVE.L is followed by a second write and the prefetch (56 or more)
+	static constexpr uint64_t IrqEnableLatency = 8 * 7;
+
+	uint8_t GetAssertedLevel();
+
 	//External interrupt (HL input from a control port, level 2) and the pending light gun hit
 	bool _extIntPending = false;
 	uint64_t _lightgunClock = UINT64_MAX;
@@ -156,7 +169,7 @@ public:
 	uint16_t ReadPort(uint8_t port, uint16_t openBus = 0);
 	void WritePort(uint8_t port, uint16_t value, bool upper, bool lower);
 
-	uint8_t GetM68kInterruptLevel();
+	uint8_t GetM68kInterruptLevel(uint64_t instructionEndClock);
 	//HL input (control port TH falling with the port's HL enable): level 2 interrupt if enabled in
 	//register 11, H/V counter latch if enabled in register 0
 	void TriggerExternalInterrupt(uint64_t clock);
