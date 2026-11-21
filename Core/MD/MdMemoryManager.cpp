@@ -80,25 +80,54 @@ void MdMemoryManager::Init(Emulator* emu, MdConsole* console, vector<uint8_t>& r
 			_saveRamEnd = end | 1;
 			_saveRamSize = (_saveRamOddOnly || _saveRamEvenOnly) ? ((_saveRamEnd - _saveRamStart + 1) / 2) : (_saveRamEnd - _saveRamStart + 1);
 		}
-	} else if(dumpSize > 0x160) {
-		//Cartridges with battery RAM but no "RA" header, by their overseas name at $150 (PicoDrive's
-		//carthw.cfg "bad headers" entries; GPGX reaches the same range through its default for
-		//header-less ROMs up to 2 MiB). Both byte lanes.
+	} else if(dumpSize > 0x190) {
+		//Cartridges with battery RAM but no "RA" header: by the overseas name at $150 (PicoDrive's
+		//carthw.cfg "bad headers") or a product code within $180-$18D (GPGX sram.c, "autodetect
+		//games with missing header infos")
 		struct HeaderlessSram
 		{
-			const char* Name;
+			uint16_t Field;
+			const char* Text;
 			uint32_t Start;
 			uint32_t End;
+			bool OddOnly;
 		};
 		static constexpr HeaderlessSram headerless[] = {
-			{ "  HardBall III", 0x200000, 0x20FFFF },
+			{ 0x150, "  HardBall III", 0x200000, 0x20FFFF, false },
+			{ 0x180, "T-50286", 0x200001, 0x203FFF, true }, //Buck Rogers - Countdown to Doomsday
+			{ 0x180, "T-50086", 0x200001, 0x203FFF, true }, //PGA Tour Golf
+			{ 0x180, "ACLD007", 0x200001, 0x200FFF, true }, //Winter Challenge
 		};
 		for(const HeaderlessSram& entry : headerless) {
-			if(memcmp(&_rom[0x150], entry.Name, strlen(entry.Name)) == 0) {
-				_saveRamStart = entry.Start;
-				_saveRamEnd = entry.End;
-				_saveRamSize = entry.End - entry.Start + 1;
+			size_t len = strlen(entry.Text);
+			//The name is matched at its offset; a product code anywhere in the 14-byte field
+			size_t span = entry.Field == 0x180 ? 14 : len;
+			bool found = false;
+			for(size_t i = 0; i + len <= span && !found; i++) {
+				found = memcmp(&_rom[entry.Field + i], entry.Text, len) == 0;
 			}
+			if(found) {
+				_saveRamOddOnly = entry.OddOnly;
+				_saveRamStart = entry.Start & ~1;
+				_saveRamEnd = entry.End | 1;
+				_saveRamSize = (_saveRamEnd - _saveRamStart + 1) / (entry.OddOnly ? 2 : 1);
+				break;
+			}
+		}
+		//Any other header-less ROM up to 2 MiB gets 64 KiB at $200000-$20FFFF, both lanes, as GPGX's
+		//sram.c ("by default, enable backup RAM for ROM smaller than 2MB"; PicoDrive maps a header-less
+		//default at $200000 too). Madden NFL 98 keeps its rosters there (odd bytes from $200001)
+		//and looped forever without it. Not for Sonic & Knuckles, whose $200000 is its lock-on slot,
+		//nor Pugsy (T-113016), which GPGX excludes.
+		bool lockOn = memcmp(&_rom[0x150], "SONIC & KNUCKLES", 16) == 0;
+		bool excluded = false;
+		for(size_t i = 0; i + 8 <= 14 && !excluded; i++) {
+			excluded = memcmp(&_rom[0x180 + i], "T-113016", 8) == 0;
+		}
+		if(!_saveRamSize && dumpSize <= 0x200000 && !lockOn && !excluded) {
+			_saveRamStart = 0x200000;
+			_saveRamEnd = 0x20FFFF;
+			_saveRamSize = 0x10000;
 		}
 	}
 	if(_saveRamSize) {

@@ -275,6 +275,11 @@ def verdict(r, oracles, main):
     oracle_flags = [set(r["health"][o]["flags"]) for o in oracles]
     for f in ("failed", "frozen", "black"):
         if f in mh and not any(f in of for of in oracle_flags):
+            # A dark frame just under the threshold in MesenCE and just above it in the oracles
+            # (Marvel Land) is not a finding: black also needs the last snapshots to differ
+            v = r["visual"].get("mesen~" + main) if main else None
+            if f == "black" and v and v["last"] < 0.05:
+                continue
             flags.append("mesen-" + f)
     if "no-input" in mh:
         flags.append("mesen-no-input")

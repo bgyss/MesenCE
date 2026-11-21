@@ -672,8 +672,10 @@ Sega CD 11/30 (the other 19 have audio flags only), Sega CD 32X 0/12 (not emulat
 |---|---|---|
 | Lock-on window mirrored | Sonic & Knuckles | **Fixed** (below) |
 | MesenCE crashes or hangs, oracles fine | Fatal Rewind, The Killing Game Show, Sesame Street Counting Cafe | **Fixed** (C2: interrupt enable latency and acknowledge priority) |
-| Unsupported cartridge hardware | Star Odyssey (SF-004 mapper) | Open (C2) |
-| MesenCE crashes, black or frozen, oracles fine | Madden NFL 98, Buck Rogers, both Radica Arcade Legends units, European Club Soccer, Marvel Land | Open: one investigation each |
+| Unsupported cartridge hardware | Star Odyssey (SF-004 mapper), both Radica Arcade Legends units | Open (C2) |
+| MesenCE crashes, black or frozen, oracles fine | Madden NFL 98, Buck Rogers | **Fixed** (C2: header-less battery RAM) |
+| | European Club Soccer | Open (late divergence) |
+| | Marvel Land | Not a bug (C2: false black flag) |
 | Save RAM | HardBall III ("First time initialization complete. Press RESET"), HardBall '95 ("SRAM failure") | **Fixed** (C2) |
 | 32X black or single-oracle divergence | 36 Great Holes, Brutal, WWF WrestleMania Arcade, WWF Raw, Spider-Man Web of Fire | Open, candidates (PicoDrive is the only oracle) |
 | 32X ECCO CinePak demo black | | Expected: Sega's boot ROM rejects it (32X findings, S5) |
@@ -803,6 +805,45 @@ BlastEm trace (NMDT v2) of the same ROM, then sources, a synthetic test and a li
   default would replace the ROM mirror at `$200000` for every small header-less cartridge; that
   is a separate change to measure on the library first (open).
 - **Test:** `cart_sram_headerless_hardball3`. The old build reads `$FF`/`$0`.
+
+### Header-less battery RAM: Buck Rogers, Madden NFL 98, and GPGX's default (fixed)
+
+- **Buck Rogers - Countdown to Doomsday:** stopped reading its pads with a stray "000FE000 03" on
+  screen. GPGX matches its product code (T-50286) and gives it 16 KiB on the odd bytes of
+  `$200001-$203FFF`, as for PGA Tour Golf (T-50086) and Winter Challenge (ACLD007,
+  `$200001-$200FFF`). PicoDrive has no entry: its header-less fallback maps `$200000-$203FFF`.
+  These three are now in the table, matched within the product field (`$180-$18D`).
+- **Madden NFL 98:** frozen from frame 24 in an endless table search at `$462E0`. The table comes
+  from MOVEP reads of `$204575-$2046B5`: rosters in battery RAM, no header.
+- **GPGX's default:** any header-less ROM up to 2 MiB gets 64 KiB at `$200000-$20FFFF`, both
+  lanes, initialised to `$FF` (`sram.c`: "by default, enable backup RAM for ROM smaller than
+  2MB"). PicoDrive also maps a header-less default at `$200000`. MesenCE now does the same, except
+  for Sonic & Knuckles (its lock-on slot) and Pugsy (T-113016, excluded by GPGX). GPGX also
+  excludes Sonic 2; the library showed no reason to.
+- **Measured on the library** (the reason to take the default rather than more table entries):
+  re-run of all 1,212 titles, `md_corpus.py diff`: no regression. Madden NFL 98, FIFA Soccer 97
+  and NHL 98 (attract demos that diverged without their battery RAM) became clean.
+- **Judgment call:** the default follows two emulators and the library, not a hardware rule.
+  Cartridges without battery RAM read a mirror of their ROM at `$200000` on hardware. No game in
+  the library depends on that mirror there (S&K, the one that did, is excluded).
+- **Tests:** `cart_sram_headerless_product` (Buck Rogers' layout) and
+  `cart_sram_headerless_default` (RAM at `$200000` and `$204575`, ROM mirror again at `$210100`).
+  Both fail on the old build. `cart_2m_mirror` now checks the mirror at `$210100`.
+
+### Remaining Mega Drive findings after C2
+
+1,051 of 1,130 titles are clean against both oracles (attract mode, 3,600 frames). MesenCE-only
+failures left:
+- **Unsupported cartridge hardware:**
+  - Star Odyssey (SF-004, below).
+  - Both Radica Arcade Legends units: their 4 MiB images start at `$3F0300`, a menu that selects
+    games through Radica's bank switching.
+  - Phantasy Star Fukkokuban: the console's Master System mode.
+- **European Club Soccer:** departs from both oracles in its last 10 seconds (snapshot difference
+  0.52 at frame 3600). Open.
+- **Marvel Land** was a false "black" flag: its last frame is nearly black in all three emulators
+  (difference 0.003). `mesen-black` now also requires the last snapshots to differ (> 0.05).
+- **The rest:** state divergences in sports attract demos (timing, ranked low) and audio flags.
 
 ### Star Odyssey: SF-004 mapper (open, unsupported hardware)
 

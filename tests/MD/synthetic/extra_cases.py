@@ -52,7 +52,7 @@ def _bank_mapper():
     return Case("mapper_ssf2_banks", ops, rom_size=0x500000, rom_data=rom_data, capture_frames=2)
 
 
-def _sk_lock_on(name, title, expected):
+def _sk_lock_on(name, title, expected, address=0x200100):
     """Sonic & Knuckles on its own: the lock-on window $200000-$3FFFFF is empty.
 
     S&K decides whether a cartridge sits on top of it by reading the header at $200100-$20010F
@@ -61,11 +61,12 @@ def _sk_lock_on(name, title, expected):
     GPGX and PicoDrive, which both show the title). A 2 MiB ROM whose overseas name ($150) is
     "SONIC & KNUCKLES" now reads $FF there, as GPGX (md_cart.c: "disable ROM mirroring at
     $200000-$3fffff (normally mapped to external cartridge)", padded with $FF); any other 2 MiB ROM
-    is still mirrored (the control case). The $FF value is GPGX's; the empty slot's bus value is not
+    is still mirrored (the control case reads a marker at ROM $010100 through its mirror at
+    $210100: a header-less ROM of 2 MiB or less has battery RAM at $200000-$20FFFF, C2). The $FF value is GPGX's; the empty slot's bus value is not
     measured (judgment call: S&K only needs it not to read "SEGA").
     """
-    rom_data = tuple((0x150 + i, c) for i, c in enumerate(title.ljust(48).encode()))
-    ops = (Operation(READ, 2, 0x200100, expected, compare_mask=0xFFFF),
+    rom_data = tuple((0x150 + i, c) for i, c in enumerate(title.ljust(48).encode())) + ((0x10100, 0x53), (0x10101, 0x45))
+    ops = (Operation(READ, 2, address, expected, compare_mask=0xFFFF),
            Operation(READ, 2, 0x000100, 0x5345, compare_mask=0xFFFF))
     return Case(name, ops, rom_size=0x200000, rom_data=rom_data, capture_frames=2)
 
@@ -80,6 +81,12 @@ def _sram_cases():
     (carthw.cfg, "bad headers") and GPGX (default for header-less ROMs up to 2 MiB) map 64 KiB at
     $200000-$20FFFF, both lanes. Without it the game stops on "First time initialization
     complete. Press RESET to continue."
+    cart_sram_headerless_default: any other header-less ROM up to 2 MiB gets 64 KiB at
+    $200000-$20FFFF, both lanes (GPGX's default; Madden NFL 98, FIFA Soccer 97 and NHL 98 keep
+    data there with no header).
+    cart_sram_headerless_product: battery RAM matched by product code, as GPGX's "autodetect games
+    with missing header infos" (Buck Rogers - Countdown to Doomsday, T-50286: 16 KiB on the odd
+    bytes of $200001-$203FFF, 1 MiB ROM). Without it the game stopped reading its pads.
     """
     ra = b"RA" + bytes((0xF8, 0x20)) + (0x300001).to_bytes(4, "big") + (0x30FFFF).to_bytes(4, "big")
     above = Case("cart_sram_above_padded_rom",
@@ -95,7 +102,21 @@ def _sram_cases():
                        Operation(WRITE, 2, 0x20FFFE, 0x5678),
                        Operation(READ, 2, 0x20FFFE, 0x5678, compare_mask=0xFFFF)),
                       rom_size=0x200000, rom_data=name, capture_frames=2)
-    return [above, headerless]
+    product = tuple((0x180 + i, c) for i, c in enumerate(b"GM T-50286 -00"))
+    by_product = Case("cart_sram_headerless_product",
+                      (Operation(WRITE, 1, 0x200001, 0x5A),
+                       Operation(READ, 1, 0x200001, 0x5A, compare_mask=0xFF),
+                       Operation(WRITE, 1, 0x203FFF, 0xA5),
+                       Operation(READ, 1, 0x203FFF, 0xA5, compare_mask=0xFF)),
+                      rom_size=0x100000, rom_data=product, capture_frames=2)
+    default = Case("cart_sram_headerless_default",
+                   (Operation(WRITE, 2, 0x200000, 0x1357),
+                    Operation(READ, 2, 0x200000, 0x1357, compare_mask=0xFFFF),
+                    Operation(WRITE, 1, 0x204575, 0x9A),
+                    Operation(READ, 1, 0x204575, 0x9A, compare_mask=0xFF),
+                    Operation(READ, 2, 0x210100, 0x5345, compare_mask=0xFFFF)),
+                   rom_size=0x200000, rom_data=((0x10100, 0x53), (0x10101, 0x45)), capture_frames=2)
+    return [above, headerless, by_product, default]
 
 
 def _z80_busack_reset():
@@ -410,5 +431,5 @@ def write_assets(out_dir):
 def all_cases():
     return ([_pad6_across_frame(), _bank_mapper(), _z80_busack_reset(),
              _sk_lock_on("cart_sk_lock_on_empty", "SONIC & KNUCKLES", 0xFFFF),
-             _sk_lock_on("cart_2m_mirror", "NATIVEKIT BUS TEST", 0x5345)] + _sram_cases() + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)] +
+             _sk_lock_on("cart_2m_mirror", "NATIVEKIT BUS TEST", 0x5345, 0x210100)] + _sram_cases() + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)] +
             _accessory_cases() + _mcd_cases() + _m32x_cases())
