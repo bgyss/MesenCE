@@ -248,20 +248,133 @@ def run_corpus(args):
 
 def run_tas(args, out, oracles):
     """Every imported movie with status ok (tas.py), as session tas: its own frame count, region and
-    pads; the session directory is named after the movie."""
+    pads; the session directory is named after the movie. GPGX gets the movie's input shifted by
+    the offset calibrate_tas picked (against PicoDrive, never MesenCE)."""
     import tas
     corpus = {e["id"]: e for e in load_corpus(out)}
     sysdir, build = system_dir(out), mesen_build()
-    jobs, entries = [], []
+    movies = []
     for m in tas.load_movies(out):
         if m["status"] != "ok" or (args.match and args.match.lower() not in (m["title"] + " " + m["id"] + " " + pathlib.Path(m["file"]).name).lower()):
             continue
         e = dict(corpus[m["entry"]], id=m["id"], rom_id=m["entry"], region=m["region"], pads=m["pads"], pads2=m.get("pads2", m["pads"]),
                  source={"kind": "tas", "file": m["file"], "movie_sha1": m["movie_sha1"]})
+        movies.append((m, e))
+    shifts = calibrate_tas(args, out, oracles, movies, sysdir)
+    jobs, entries = [], []
+    for m, e in movies:
+        sdir = out / "runs" / "tas" / m["id"]
+        inputs = {"*": out / "tas" / m["id"] / "input.json"}
+        shift = shifts.get(m["id"], 0)
+        e["gpgx_input_shift"] = shift
+        if shift:
+            sdir.mkdir(parents=True, exist_ok=True)
+            inputs["gpgx"] = sdir / ("gpgx-input%+d.json" % shift)
+            if not inputs["gpgx"].exists():
+                inputs["gpgx"].write_text(json.dumps(shift_input(json.loads(inputs["*"].read_text()), shift)))
+        drop_if_input_changed(sdir, out / "results" / "tas", inputs)
         entries.append(e)
-        jobs += session_jobs(e, out / "runs" / "tas" / m["id"], out, oracles, m["frames"],
-                             out / "tas" / m["id"] / "input.json", args.snap_every, sysdir, build)
+        jobs += session_jobs(e, sdir, out, oracles, m["frames"], inputs, args.snap_every, sysdir, build)
     return run_jobs(args, out, "tas", jobs, entries, build)
+
+
+CALIBRATE_FRAMES = 5400                      # 90 s from power-on
+CALIBRATE_SHIFTS = (0, 1, -1, 2, -2, 3, -3)  # in order of preference on a tie
+
+
+def shift_input(data, shift):
+    """An --input script with every change moved `shift` frames later (earlier if negative);
+    changes pushed before frame 1 collapse onto it, the latest winning."""
+    frames = {}
+    for f in sorted(data["frames"], key=int):
+        frames.setdefault(str(max(1, int(f) + shift)), {}).update(data["frames"][f])
+    return {"frames": frames}
+
+
+def calibrate_tas(args, out, oracles, movies, sysdir):
+    """Per movie, the frame offset to apply to GPGX's input. Libretro GPGX acts on some games' pad
+    reads a couple of frames later than PicoDrive and MesenCE (Sonic 3: 2 frames; Sonic 1: none;
+    findings C4), so a movie made in one emulator can desync in another from its first press. The
+    first CALIBRATE_FRAMES frames run in PicoDrive (as recorded) and in GPGX with each shift; the
+    shift whose work RAM follows PicoDrive's longest (compare.state_pair: latest divergence, then
+    most lockstep frames) wins. MesenCE never takes part, so its comparison stays independent.
+    Cached in tas/<id>/calibration.json."""
+    if not {"gpgx", "picodrive"} <= set(oracles):
+        return {}
+    import compare
+    shifts, todo = {}, []
+    for m, e in movies:
+        cache = out / "tas" / m["id"] / "calibration.json"
+        if e["system"] != "md":
+            continue
+        if cache.exists():
+            c = json.loads(cache.read_text())
+            if c.get("movie_sha1") == m["movie_sha1"] and c.get("frames") == CALIBRATE_FRAMES:
+                shifts[m["id"]] = c["shift"]
+                continue
+        todo.append((m, e))
+    if not todo:
+        return shifts
+    print("calibrating GPGX input offsets for %d movies (%d frames, shifts %s)" % (len(todo), CALIBRATE_FRAMES, list(CALIBRATE_SHIFTS)), flush=True)
+    runs = []
+    for m, e in todo:
+        cdir = out / "tas" / m["id"] / "calibrate"
+        if cdir.exists():
+            shutil.rmtree(cdir)
+        cdir.mkdir(parents=True)
+        data = json.loads((out / "tas" / m["id"] / "input.json").read_text())
+        rom = rom_file(e, out / "cache" / "roms")
+        frames = min(CALIBRATE_FRAMES, m["frames"])
+        runs.append(("picodrive", e, rom, cdir / "picodrive", frames, out / "tas" / m["id"] / "input.json", frames, sysdir, None))
+        for s in CALIBRATE_SHIFTS:
+            path = cdir / ("input%+d.json" % s)
+            path.write_text(json.dumps(shift_input(data, s)))
+            runs.append(("gpgx", e, rom, cdir / ("gpgx%+d" % s), frames, path, frames, sysdir, None))
+    with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
+        list(pool.map(run_one, runs))
+    for m, e in todo:
+        cdir = out / "tas" / m["id"] / "calibrate"
+        ref = compare.read_blocks(cdir / "picodrive")
+        frames = min(CALIBRATE_FRAMES, m["frames"])
+        table, keys, best, best_key = {}, {}, 0, None
+        for s in CALIBRATE_SHIFTS:
+            r = compare.state_pair(ref, compare.read_blocks(cdir / ("gpgx%+d" % s)))
+            if r is None:
+                table[s] = None
+                continue
+            table[s] = {k: r[k] for k in ("diverged_at", "lockstep", "agreement_median")}
+            key = keys[s] = (r["diverged_at"] or frames + 1, round(r["lockstep"], 2))
+            if best_key is None or key > best_key:
+                best, best_key = s, key
+        shifts[m["id"]] = best
+        (out / "tas" / m["id"] / "calibration.json").write_text(json.dumps(
+            {"movie_sha1": m["movie_sha1"], "frames": CALIBRATE_FRAMES, "shift": best, "against": "picodrive",
+             # Shifts as good as the winner: more than one means the window did not tell them apart
+             "tied": ["%+d" % s for s, k in keys.items() if k == best_key],
+             "shifts": {"%+d" % s: v for s, v in table.items()}}, indent=1))
+        shutil.rmtree(cdir)
+        print("  %-12s %-50s GPGX input %+d  %s" % (m["id"], m["title"][:50], best, "  ".join(
+            "%+d:%s" % (s, "-" if v is None else (v["diverged_at"] or "ok")) for s, v in table.items())), flush=True)
+    return shifts
+
+
+def drop_if_input_changed(sdir, rdir, inputs):
+    """A session whose runs used other input files (a new calibration): run it again, all emulators
+    (comparison deleted its audio)."""
+    for emu_dir in (sdir.iterdir() if sdir.exists() else []):
+        done = emu_dir / "run.json"
+        if emu_dir.name not in ("mesen", "gpgx", "picodrive") or not done.exists():
+            continue
+        cmd = json.loads(done.read_text())["command"]
+        used = cmd[cmd.index("--input") + 1] if "--input" in cmd else None
+        if used != str(inputs.get(emu_dir.name, inputs["*"])):
+            for d in sdir.iterdir():
+                if d.is_dir():
+                    shutil.rmtree(d)
+            result = rdir / (sdir.name + ".json")
+            if result.exists():
+                result.unlink()
+            return
 
 
 def session_jobs(e, sdir, out, oracles, frames, input_path, snap_every, sysdir, build):
@@ -273,7 +386,9 @@ def session_jobs(e, sdir, out, oracles, frames, input_path, snap_every, sysdir, 
     except Exception as ex:  # unreadable archive
         print("skip %s: %s" % (e["title"], ex))
         return []
-    return [(emu, e, rom, sdir / emu, frames, input_path, snap_every, sysdir, build)
+    def inp(emu):  # input_path: one file, or {emulator or "*": file}
+        return input_path.get(emu, input_path["*"]) if isinstance(input_path, dict) else input_path
+    return [(emu, e, rom, sdir / emu, frames, inp(emu), snap_every, sysdir, build)
             for emu in ["mesen"] + [o for o in oracles if e["system"] in ORACLE_SYSTEMS[o]]]
 
 

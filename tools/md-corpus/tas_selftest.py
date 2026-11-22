@@ -102,6 +102,14 @@ def main():
     ok = again == expected
     failed |= not ok
     print("%s tas input.json round trip" % ("ok  " if ok else "FAIL"))
+    # GPGX's per-movie input shift (runner.calibrate_tas): later, earlier (collapsing onto frame 1)
+    import runner
+    script = {"frames": {"1": {"1": ["A"]}, "2": {"1": ["B"]}, "10": {"1": []}}}
+    ok = (runner.shift_input(script, 2) == {"frames": {"3": {"1": ["A"]}, "4": {"1": ["B"]}, "12": {"1": []}}}
+          and runner.shift_input(script, -2) == {"frames": {"1": {"1": ["B"]}, "8": {"1": []}}}
+          and runner.shift_input(script, 0) == script)
+    failed |= not ok
+    print("%s tas input shift" % ("ok  " if ok else "FAIL"))
     return 1 if failed else 0
 
 

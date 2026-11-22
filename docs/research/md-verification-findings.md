@@ -974,8 +974,7 @@ One movie (Phantasy Star IV "macroglitch") resets during play and stays unsuppor
 - **Sonic 1 100% (BizHawk Genplus-gx, 60,053 frames):** all three stay in step for the whole
   movie, unshifted (agreement 1.0 / 0.996, no divergence), through Star Light Zone. So the GPGX
   lag depends on the game (where it reads the pads). A fixed per-emulator input shift would
-  desync this one. Not applied; choosing a shift per movie (GPGX against PicoDrive, never
-  against MesenCE) is open.
+  desync this one, so the shift is chosen per movie (below).
 - **Phantasy Star II "game end glitch" (BizHawk, 10,252 frames, Japan):** all three reach the
   ending and return to the title.
 - **Sonic 1 (Gens, aglar):** desyncs around frame 7,500 identically in all three emulators, on
@@ -984,3 +983,18 @@ One movie (Phantasy Star IV "macroglitch") resets during play and stays unsuppor
   comparison input.
 
 No MesenCE divergence in these three movies.
+
+### Per-movie GPGX input offset (`runner.calibrate_tas`)
+
+Before a `tas` session, the first 5,400 frames (90 s) run in PicoDrive as recorded and in GPGX
+with the input shifted by 0, ±1, ±2 and ±3 frames. The shift whose work RAM follows PicoDrive's
+longest wins (latest `diverged_at`, then most lockstep frames; on a tie the order 0, +1, -1, +2, ...).
+GPGX's session run then uses that shifted input; MesenCE and PicoDrive use the movie as recorded.
+MesenCE never takes part in the choice, so its comparison against both oracles stays independent.
+The choice, every shift's score and the tied shifts are cached in `tas/<id>/calibration.json`.
+A session whose input files change is run again whole. Judgment calls: PicoDrive as the timing
+reference (it agreed with MesenCE on both movies checked by hand) and the 90 s window (several
+shifts tie when the opening presses don't matter, then 0 wins).
+
+Checked against the hand results: Sonic 3 competition +2 (0, ±1, ±3 diverge at frame 369, -1/-2
+at frame 30), Sonic 1 100% and Phantasy Star II 0 (all shifts tie).
