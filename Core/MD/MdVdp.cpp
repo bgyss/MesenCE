@@ -137,7 +137,11 @@ uint64_t MdVdp::ConsumeSlots(uint64_t start, uint32_t slots)
 	}
 	uint64_t t = start;
 	while(true) {
-		bool blank = !IsDisplayEnabled() || line >= GetActiveLines();
+		//The last line of the frame is not blank for external access: the VDP fetches line 0's
+		//sprites and patterns during it (the VBlank flag clears there too, IsInVBlank). A DMA
+		//running across the end of VBlank gets the active-display rate on it (findings C4,
+		//Mega Turrican; GPGX and PicoDrive agree)
+		bool blank = !IsDisplayEnabled() || (line >= GetActiveLines() && line < _linesPerFrame - 1);
 		uint32_t perLine = blank ? (IsH40() ? 205 : 167) : (IsH40() ? 18 : 16);
 		uint32_t spacing = MdTiming::ClocksPerLine / perLine;
 		uint32_t offset = (uint32_t)(t - lineStart);

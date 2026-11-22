@@ -1090,3 +1090,42 @@ III, PicoDrive drifts from both. In Sonic 3D Blast (both movies), GPGX diverges 
 two at frame ~700, although the movies were recorded in Genplus-gx: a libretro GPGX difference
 from BizHawk's build, or an option. Several Gens movies end with GPGX drifting while MesenCE and
 PicoDrive stay together.
+
+### Mega Turrican: DMA on the last line of the frame (fixed), and a pause (open)
+
+The Gens movie `mato-megaturrican.gmv` (`380a8f77d88f`) froze in MesenCE from frame ~1,200 to
+20,700 while both oracles played the first level. The RAM metric did not see it until 21,288:
+the game's work RAM barely changes while it is stopped. The snapshots did.
+
+MesenCE was not hung. The main loop (`$8BC`: `SF $BC85` / `TST.B $BC85` / `BEQ`) waits for
+the VBlank handler (vector `$528` → `(FFBC14)` = `$1D10`) to set the flag. It does, and the loop
+then runs the game's pause state (`$19C6`): it buffers ten button presses for a cheat code
+(`FFBC72`, count `FFBC6E`) and waits for Start. A one-frame Start press in the movie (912 or
+953) landed in gameplay in MesenCE but in a transition in the oracles. MesenCE's game state is a
+frame ahead from frame 585: it finishes decompressing into `FF638C` there, PicoDrive on 586.
+
+Timing cartridges, built in Python and run in all three emulators (`tests/MD/dma/check_dma_timing.py`):
+
+| Measurement | MesenCE before | GPGX | PicoDrive | MesenCE after |
+|---|---|---|---|---|
+| 4 KB 68000→VRAM DMA from line 253, H32, display on | resumes V $A3 | $AD | $AC | $AD |
+| the same, H40 | $7E | $89 | $88 | $89 |
+| the same in VBlank only, display off, or active display only | agree | | | agree |
+| VRAM fill / copy DMA, in VBlank, across its end, active display | agree within a few H steps | | | agree |
+| busy loop, 68000 alone (ROM or RAM, display on or off) | 6,994 / frame | 6,994 | 6,990 | |
+| `MULU`/`MULS`/`DIVU`/`DIVS`/`LSL.L #31`/`MOVEM.L`/`TAS` loops | within 1.3 % (GPGX slightly faster) | | | |
+
+**Fixed:** `MdVdp::ConsumeSlots` counted the frame's last line (261 NTSC, 311 PAL) as blank, so
+a DMA running across the end of VBlank got the 167/205-bytes-per-line VBlank rate there instead
+of the 16/18 of active display. `IsInVBlank` already ended VBlank one line before the end of the
+frame, because the VDP fetches line 0's sprites and patterns during the last line. Source: both
+oracles agree with each other (GPGX picks the DMA rate from the VBlank status flag, which
+clears on that line), and MesenCE's own status flag clears there. Judgment call: no hardware
+measurement here. Regression: `tests/MD/dma/check_dma_timing.py` in `test:md-synthetic`; the 60
+BlastEm-referenced cartridges still pass with both FM cores.
+
+**Still open:** the fix does not move Mega Turrican's first difference (frame 585, the game
+frame ahead in MesenCE), and the movie still pauses. Ruled out: 68000 throughput, the
+instruction timings above, and every DMA kind and position. Next suspects: the Z80 and sound
+driver (the 68000 waiting on bus requests or the YM2612 busy flag), H interrupt timing (the game
+runs an H interrupt every 2 lines that writes VSRAM), and VBlank interrupt latency.
