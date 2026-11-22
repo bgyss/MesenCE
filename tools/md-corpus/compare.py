@@ -128,21 +128,26 @@ def visual(a, b):
 
 
 def track(A, B, max_step=4, wide=60):
-    """Per frame of A: best matching frame offset into B and the number of equal blocks."""
+    """Per frame of A: best matching frame offset into B and the number of equal blocks.
+
+    The candidates are the offsets within max_step of the current one and of 0; a tie goes to the
+    smaller offset. Without the anchor at 0 the walk drifted through static RAM, where many
+    offsets tie and noise favours one step at a time: in Comix Zone it reached -60 frames while
+    the true offset stayed within 4, and reported a divergence at frame 3,149 (findings C4)."""
     n = len(A)
     offsets = np.zeros(n, dtype=np.int32)
     agree = np.zeros(n, dtype=np.int32)
     d = 0
     for f in range(n):
         best, best_d = -1, d
-        for cand in range(d - max_step, d + max_step + 1):
+        for cand in sorted(set(range(d - max_step, d + max_step + 1)) | set(range(-max_step, max_step + 1)), key=abs):
             g = f + cand
             if 0 <= g < len(B):
                 eq = int((A[f] == B[g]).sum())
-                if eq > best or (eq == best and abs(cand - d) < abs(best_d - d)):
+                if eq > best:
                     best, best_d = eq, cand
         if best < 128:
-            for cand in range(-wide, wide + 1):
+            for cand in sorted(range(-wide, wide + 1), key=abs):
                 g = f + cand
                 if 0 <= g < len(B):
                     eq = int((A[f] == B[g]).sum())

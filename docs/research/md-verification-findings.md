@@ -1163,5 +1163,13 @@ emulators stay in step in 43 movies (was 41); MesenCE and PicoDrive in 52 (was 5
   MesenCE~GPGX is now in step to the end).
 - **Moved by one to three frames:** the movies where all three emulators drift (Gens Sonic 1,
   Sonic 3 & Knuckles `2d935d88003a`, Shinobi III).
-- **Earlier GPGX divergence:** Comix Zone, MesenCE~GPGX 22,231 → 3,149 while MesenCE~PicoDrive
-  stays in step to the end and GPGX~PicoDrive drifts at 24,093. To check.
+- **Comix Zone, MesenCE~GPGX 22,231 → 3,149: a comparison artefact (fixed).** The snapshots
+  agree around 3,149 (MesenCE~GPGX difference 0.003-0.06 through frame 18,000), and near the
+  true offset (0 to +4 frames) MesenCE matches GPGX as well as PicoDrive (191-228 of 256 blocks).
+  `compare.track` had walked to offset -60 through mostly static work RAM, where many offsets
+  tie and noise favours one step at a time. It now always also tries the offsets around 0 and
+  breaks ties toward the smaller offset. Re-scoring all 59 sessions: Comix Zone MesenCE~GPGX
+  22,253; no session changed from diverging to in step; other changes are 1-7 frames, plus
+  Shinobi III's GPGX~PicoDrive divergence found at 46,104 (was 48,801). In Comix Zone, MesenCE
+  and PicoDrive stay in step to the end; from ~25,500 GPGX alone differs (snapshots 0.38-0.78
+  from both).
