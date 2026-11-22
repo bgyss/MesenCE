@@ -370,6 +370,26 @@ def _light_gun(name, gun, h40, expected_hv, probe):
     return Case(name, tuple(ops), capture_frames=8)
 
 
+def _input_latch(mode, second):
+    """When the pads take each frame's input (mesen-headless --md-input-latch, findings C4).
+
+    tests/MD/accessories/input_latch.json holds B on frame 5 only. The 68000 waits for frame 5's
+    VBlank and reads the pad (TH high: ?1CBRLDU), then waits for line 1 of frame 6
+    and reads again. With the frame latch, frame 6's input (nothing) is in from line 0; with the
+    VBlank latch, as in Genesis Plus GX, frame 5's input (B) holds until frame 6's VBlank.
+    """
+    data, ctrl = 0xA10003, 0xA10009
+    ops = [cases._vdp_reg(1, 0x44), Operation(WRITE, 1, ctrl, 0x40), Operation(WRITE, 1, data, 0x40)] + _wait_frames(4)
+    ops += [Operation(POLL, 2, 0xC00004, 0x0008, compare_mask=0x0008),
+            Operation(READ, 1, data, 0x2F, compare_mask=0x3F),  # frame 5, VBlank: B pressed
+            # The VBlank flag clears on line 261, before the wrap: wait for the V counter's line 1
+            Operation(POLL, 2, 0xC00008, 0x0100, compare_mask=0xFF00),
+            Operation(READ, 1, data, second, compare_mask=0x3F)]  # frame 6, line 1
+    name = "io_input_latch_" + mode
+    RUNNER_ARGS[name] = ["--md-pads", "3,3", "--md-input-latch", mode, "--input", str(_ACCESSORIES / "input_latch.json")]
+    return Case(name, tuple(ops), capture_frames=8)
+
+
 def _accessory_cases():
     menacer_probe = [Operation(WRITE, 1, 0xA1000B, 0x30), Operation(WRITE, 1, 0xA10005, 0x00),
                      Operation(READ, 1, 0xA10005, 0x49, compare_mask=0x4F)]  # TH high, Start + B (trigger)
@@ -380,7 +400,8 @@ def _accessory_cases():
             # H40: pixel 0 latches H $52 (the 6-in-1 offset), pixel 100 latches $83
             _light_gun("io_menacer_hl", "g", True, 0x3283, menacer_probe),
             # H32, no latency: H = 50 = $32
-            _light_gun("io_justifier_hl", "j", False, 0x3232, justifier_probe)]
+            _light_gun("io_justifier_hl", "j", False, 0x3232, justifier_probe),
+            _input_latch("frame", 0x3F), _input_latch("vblank", 0x2F)]
 
 
 #Extra mesen-headless options per case (gen.py copies them into the run spec)

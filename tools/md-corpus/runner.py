@@ -185,6 +185,8 @@ def run_one(job):
         cmd = [str(MESEN), "run", "--rom", str(rom), "--frames", str(frames), "--out", str(out_dir), "--allow-dirty",
                "--state-log", "state.log", "--state-blocks", "--snap-every", str(snap_every), "--chip-audio",
                "--md-pads", "%d,%d" % (pads, pads2), "--region", region, "--timeout", str(int(timeout))]
+        if entry.get("input_latch"):
+            cmd += ["--md-input-latch", entry["input_latch"]]
         if entry["system"] in ("mcd", "mcd32x"):
             bios = BIOS_DIR / MCD_BIOS.get(region, MCD_BIOS["ntsc"])
             cmd += ["--md-mcd-bios", str(bios), "--battery", str(formatted_bram(sysdir.parent.parent))]
@@ -267,6 +269,11 @@ def run_tas(args, out, oracles):
         inputs = {"*": out / "tas" / m["id"] / "input.json"}
         shift = shifts.get(m["id"], 0)
         e["gpgx_input_shift"] = shift
+        # MesenCE takes each frame's input when the movie's emulator did: BizHawk's Genplus-gx
+        # updates the pads at the first VBlank line, Gens (like MesenCE's default) at the frame
+        # boundary. It matters when a game reads the pads after the wrap to line 0 in a long VBlank
+        # handler (The Lion King's title screen, findings C4)
+        e["input_latch"] = "vblank" if recorded_in_gpgx(m) else "frame"
         if shift:
             sdir.mkdir(parents=True, exist_ok=True)
             inputs["gpgx"] = sdir / ("gpgx-input%+d.json" % shift)
@@ -278,8 +285,14 @@ def run_tas(args, out, oracles):
     return run_jobs(args, out, "tas", jobs, entries, build)
 
 
-CALIBRATE_FRAMES = 5400                      # 90 s from power-on
+CALIBRATE_STAGES = (5400, 36000)          # 90 s; then 10 min for the shifts still tied
 CALIBRATE_SHIFTS = (0, 1, -1, 2, -2, 3, -3)  # in order of preference on a tie
+CALIBRATE_VERSION = 2                        # the choice rule; cached choices from another rule are redone
+
+
+def recorded_in_gpgx(m):
+    """A movie made in BizHawk's Genplus-gx core (the Genesis Plus GX code the gpgx oracle runs)."""
+    return m["format"] == "bk2" and (m.get("core") or "Genplus-gx").lower().replace("-", "").replace(" ", "") in ("genplusgx", "gpgx")
 
 
 def shift_input(data, shift):
@@ -294,67 +307,81 @@ def shift_input(data, shift):
 def calibrate_tas(args, out, oracles, movies, sysdir):
     """Per movie, the frame offset to apply to GPGX's input. Libretro GPGX acts on some games' pad
     reads a couple of frames later than PicoDrive and MesenCE (Sonic 3: 2 frames; Sonic 1: none;
-    findings C4), so a movie made in one emulator can desync in another from its first press. The
-    first CALIBRATE_FRAMES frames run in PicoDrive (as recorded) and in GPGX with each shift; the
-    shift whose work RAM follows PicoDrive's longest (compare.state_pair: latest divergence, then
-    most lockstep frames) wins. MesenCE never takes part, so its comparison stays independent.
-    Cached in tas/<id>/calibration.json."""
+    findings C4), so a movie made in one emulator can desync in another from its first press.
+    MesenCE never takes part, so its comparison stays independent.
+
+    Stage 1 runs the first 5,400 frames in PicoDrive (as recorded) and in GPGX with every shift;
+    a shift's score is how long its work RAM follows PicoDrive's (compare.state_pair diverged_at).
+    The shifts tied for the latest divergence go on to stage 2 (36,000 frames, or the movie). A
+    tie that remains goes to the first in CALIBRATE_SHIFTS' order (0, +1, -1, ...): lockstep
+    counts picked noise (+3/-3 on Sonic 1/2 and Shinobi III, findings C4).
+
+    Movies recorded in BizHawk's Genplus-gx core are not calibrated: GPGX is that core, so it
+    replays them with no shift. Cached in tas/<id>/calibration.json."""
     if not {"gpgx", "picodrive"} <= set(oracles):
         return {}
     import compare
     shifts, todo = {}, []
     for m, e in movies:
         cache = out / "tas" / m["id"] / "calibration.json"
-        if e["system"] != "md":
+        if e["system"] != "md" or recorded_in_gpgx(m):
             continue
         if cache.exists():
             c = json.loads(cache.read_text())
-            if c.get("movie_sha1") == m["movie_sha1"] and c.get("frames") == CALIBRATE_FRAMES:
+            if c.get("movie_sha1") == m["movie_sha1"] and c.get("stages") == list(CALIBRATE_STAGES) and c.get("version") == CALIBRATE_VERSION:
                 shifts[m["id"]] = c["shift"]
                 continue
         todo.append((m, e))
     if not todo:
         return shifts
-    print("calibrating GPGX input offsets for %d movies (%d frames, shifts %s)" % (len(todo), CALIBRATE_FRAMES, list(CALIBRATE_SHIFTS)), flush=True)
-    runs = []
-    for m, e in todo:
-        cdir = out / "tas" / m["id"] / "calibrate"
-        if cdir.exists():
+    print("calibrating GPGX input offsets for %d movies (stages %s, shifts %s)" % (len(todo), list(CALIBRATE_STAGES), list(CALIBRATE_SHIFTS)), flush=True)
+    cands = {m["id"]: list(CALIBRATE_SHIFTS) for m, e in todo}
+    tables = {m["id"]: [] for m, e in todo}
+    for stage, window in enumerate(CALIBRATE_STAGES):
+        active = [(m, e) for m, e in todo if len(cands[m["id"]]) > 1 and (stage == 0 or m["frames"] > CALIBRATE_STAGES[stage - 1])]
+        if not active:
+            break
+        runs = []
+        for m, e in active:
+            cdir = out / "tas" / m["id"] / ("calibrate-%d" % window)
+            if cdir.exists():
+                shutil.rmtree(cdir)
+            cdir.mkdir(parents=True)
+            data = json.loads((out / "tas" / m["id"] / "input.json").read_text())
+            rom = rom_file(e, out / "cache" / "roms")
+            frames = min(window, m["frames"])
+            runs.append(("picodrive", e, rom, cdir / "picodrive", frames, out / "tas" / m["id"] / "input.json", frames, sysdir, None))
+            for s in cands[m["id"]]:
+                path = cdir / ("input%+d.json" % s)
+                path.write_text(json.dumps(shift_input(data, s)))
+                runs.append(("gpgx", e, rom, cdir / ("gpgx%+d" % s), frames, path, frames, sysdir, None))
+        print("  stage %d: %d frames, %d movies, %d runs" % (stage + 1, window, len(active), len(runs)), flush=True)
+        with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
+            list(pool.map(run_one, runs))
+        for m, e in active:
+            cdir = out / "tas" / m["id"] / ("calibrate-%d" % window)
+            ref = compare.read_blocks(cdir / "picodrive")
+            frames = min(window, m["frames"])
+            table = {}
+            for s in cands[m["id"]]:
+                r = compare.state_pair(ref, compare.read_blocks(cdir / ("gpgx%+d" % s)))
+                table[s] = None if r is None else {k: r[k] for k in ("diverged_at", "lockstep", "agreement_median")}
+            tables[m["id"]].append({"frames": frames, "shifts": {"%+d" % s: v for s, v in table.items()}})
+            scored = {s: (v["diverged_at"] or frames + 1) for s, v in table.items() if v}
+            top = max(scored.values()) if scored else None
+            cands[m["id"]] = [s for s in cands[m["id"]] if s in scored and scored[s] == top] or [0]
             shutil.rmtree(cdir)
-        cdir.mkdir(parents=True)
-        data = json.loads((out / "tas" / m["id"] / "input.json").read_text())
-        rom = rom_file(e, out / "cache" / "roms")
-        frames = min(CALIBRATE_FRAMES, m["frames"])
-        runs.append(("picodrive", e, rom, cdir / "picodrive", frames, out / "tas" / m["id"] / "input.json", frames, sysdir, None))
-        for s in CALIBRATE_SHIFTS:
-            path = cdir / ("input%+d.json" % s)
-            path.write_text(json.dumps(shift_input(data, s)))
-            runs.append(("gpgx", e, rom, cdir / ("gpgx%+d" % s), frames, path, frames, sysdir, None))
-    with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
-        list(pool.map(run_one, runs))
     for m, e in todo:
-        cdir = out / "tas" / m["id"] / "calibrate"
-        ref = compare.read_blocks(cdir / "picodrive")
-        frames = min(CALIBRATE_FRAMES, m["frames"])
-        table, keys, best, best_key = {}, {}, 0, None
-        for s in CALIBRATE_SHIFTS:
-            r = compare.state_pair(ref, compare.read_blocks(cdir / ("gpgx%+d" % s)))
-            if r is None:
-                table[s] = None
-                continue
-            table[s] = {k: r[k] for k in ("diverged_at", "lockstep", "agreement_median")}
-            key = keys[s] = (r["diverged_at"] or frames + 1, round(r["lockstep"], 2))
-            if best_key is None or key > best_key:
-                best, best_key = s, key
+        tied = cands[m["id"]]
+        best = tied[0]
         shifts[m["id"]] = best
         (out / "tas" / m["id"] / "calibration.json").write_text(json.dumps(
-            {"movie_sha1": m["movie_sha1"], "frames": CALIBRATE_FRAMES, "shift": best, "against": "picodrive",
-             # Shifts as good as the winner: more than one means the window did not tell them apart
-             "tied": ["%+d" % s for s, k in keys.items() if k == best_key],
-             "shifts": {"%+d" % s: v for s, v in table.items()}}, indent=1))
-        shutil.rmtree(cdir)
-        print("  %-12s %-50s GPGX input %+d  %s" % (m["id"], m["title"][:50], best, "  ".join(
-            "%+d:%s" % (s, "-" if v is None else (v["diverged_at"] or "ok")) for s, v in table.items())), flush=True)
+            {"movie_sha1": m["movie_sha1"], "stages": list(CALIBRATE_STAGES), "version": CALIBRATE_VERSION, "shift": best, "against": "picodrive",
+             # Shifts still tied after the last stage (the first in CALIBRATE_SHIFTS' order won)
+             "tied": ["%+d" % s for s in tied], "edge": abs(best) == max(CALIBRATE_SHIFTS), "results": tables[m["id"]]}, indent=1))
+        last = tables[m["id"]][-1]
+        print("  %-12s %-44s GPGX input %+d%s  [%d frames] %s" % (m["id"], m["title"][:44], best, " (edge of range)" if abs(best) == max(CALIBRATE_SHIFTS) else "",
+              last["frames"], "  ".join("%s:%s" % (k, "-" if v is None else (v["diverged_at"] or "ok")) for k, v in last["shifts"].items())), flush=True)
     return shifts
 
 

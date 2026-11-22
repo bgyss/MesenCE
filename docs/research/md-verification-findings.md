@@ -998,3 +998,64 @@ shifts tie when the opening presses don't matter, then 0 wins).
 
 Checked against the hand results: Sonic 3 competition +2 (0, ±1, ±3 diverge at frame 369, -1/-2
 at frame 30), Sonic 1 100% and Phantasy Star II 0 (all shifts tie).
+
+### First full batch (21 movies) and the calibration rule
+
+All 21 movies ran in all three emulators (2.6M frames, 32 min, no failed runs). Ten stay in step
+in all three. Four were flagged with MesenCE alone diverging while the oracles agree: The Lion
+King (both movies) and two Sonic 3 & Knuckles movies.
+
+The first calibration rule broke ties on lockstep (frames whose work RAM matches exactly) and
+picked noise: +3 for the Gens Sonic 1 movie, -3 for Gens Sonic 2, +3 for Shinobi III. In each,
+GPGX then drifted from the other two. Revised (`CALIBRATE_VERSION` 2):
+- tied shifts go on to a 36,000-frame stage;
+- a tie that remains goes to the order 0, +1, -1, ..., with no lockstep;
+- BizHawk movies are not calibrated. Their Genplus-gx core is the Genesis Plus GX code the gpgx
+  oracle runs, so GPGX replays them with no shift.
+
+### The Lion King: when the pads take each frame's input (not a MesenCE bug)
+
+`shgofctas-thelionking-genesis-allbugs.bk2` (BizHawk Genplus-gx) went wrong at frame ~1,000 in
+MesenCE only. The title menu's input is Down (990), Start (999), Left (1000), Start (1001).
+MesenCE opened the options screen and stayed; both oracles started the game. No input shift
+changed that.
+
+Cause: after Start, the game's VBlank handler queues about 4 KB of VRAM DMA in 22 chunks with the
+display on. The DMA rates are right: 203-211 bytes per line in VBlank and 18 in active display
+(H40), measured with `--trace bus`. At those rates the queue runs from line 234 past the wrap,
+to line ~62. The handler reads the pad after the queue, at line 71 of the next frame. MesenCE
+applies frame N's input from the wrap to line 0, so that read got frame 1001's Start instead of
+frame 1000's Left. The Left was the release between the two Starts, so the game never saw a new
+press.
+
+Genesis Plus GX updates its pads at the first VBlank line ("update inputs before VINT" in
+`system.c`), and BizHawk records movies with that core. There, the late read still sees frame
+1000's input. This is a convention, not hardware behaviour: a real console has no frames.
+
+- **`mesen-headless --md-input-latch vblank`** (`MdConsole::ProcessVBlankStart`, test hook)
+  applies each frame's input from its first VBlank line instead.
+- The runner uses it for movies recorded in BizHawk's Genplus-gx core and keeps the frame
+  boundary for Gens movies. Across all 21 movies it changed nothing except the two Lion King
+  movies: `4564ff44ba50` now stays with PicoDrive to the end, where it used to split at frame
+  2,670; `e6f6baab4775` stays in step to frame ~2,140, where it used to split at 1,000.
+- Regression test: `io_input_latch_frame` / `io_input_latch_vblank` in `test:md-synthetic`
+  (`tests/MD/accessories/input_latch.json`).
+
+**Open (judgment call: not yet a bug):** in `e6f6baab4775` with the VBlank latch, MesenCE and
+PicoDrive match byte for byte through frame 2,125. On frame 2,126, the game's object handler
+(`$000F68`-`$000FDC`) clears `FF9160` in MesenCE but not in PicoDrive, and an animation
+(`FF0027` = `$5E`) starts one frame earlier. Simba then lands differently after the jump at
+2,134. Before that point, MesenCE's game state often equals PicoDrive's one frame later: the
+game's logic (not locked to the frame rate) finishes earlier in the frame in MesenCE. That
+suggests MesenCE's 68000 gets more done per frame than both oracles in this game. DMA rates,
+the VDP FIFO stall and DRAM refresh are modeled and look right. An arbiter more accurate than
+both oracles (BlastEm, or a console) is needed.
+
+### Comparison weakness found on the way
+
+The work RAM metric (`compare.state_pair`) reported The Lion King's divergence at frame 4,290,
+but the screens differ from frame ~1,000. Before a level loads, most work RAM is static, and the
+tracker accepts offsets up to ±60 frames, so a menu matches a cutscene well enough. Taking the
+noisy-block mask from the oracle pair instead of from the pair under test made no difference,
+so it was not kept. The snapshot comparison catches these cases; flags from the RAM metric need
+the snapshots checked.

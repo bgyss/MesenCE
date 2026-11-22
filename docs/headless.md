@@ -18,6 +18,7 @@ mesen-headless run --rom ROM --frames N --out NEW_DIR [--input INPUT.json] [--lu
                    [--dump-at F1,F2,...]      # dumps/<frame>/<MemoryType>.bin at the end of those frames
                    [--trace bus] [--trace-limit EVENTS] [--chip-audio]     # Mega Drive only
                    [--md-model md1va3|md1va6] [--md-pads 6,6]              # Mega Drive only
+                   [--md-input-latch frame|vblank]  # Mega Drive test hook: when the pads take each frame's input
                    [--md-fm-core ymfm|nuked]                               # Mega Drive only
                    [--md-eeprom CHIP,BOARD]   # Mega Drive test hook, e.g. X24C01,Sega
                    [--md-mcd]                 # Mega Drive test hook: attach the Sega CD unit (Mode 1)
@@ -48,6 +49,11 @@ mesen-headless nnes-compat ROM HOME LUA RESULT WAV   # nativekit NES capture hos
   qualified one.
 - `--load-state` loads a save state (from a previous run's `final.mss`) after the ROM and before
   the first frame; `--frames` then counts from that point.
+- `--md-input-latch` (Mega Drive): `frame` (default) applies frame N's `--input` from the wrap
+  to line 0; `vblank` applies it from frame N's first VBlank line until frame N+1's, as Genesis
+  Plus GX and BizHawk's Genplus-gx core do. It matters for TAS movies when a game reads the
+  pads after the wrap in a long VBlank handler (The Lion King, findings C4). The manifest
+  records it as `md_input_latch`.
 - Builds use `-ffp-contract=off` (no fused multiply-add), so floating-point host code (audio
   resampler, filters) rounds identically on arm64 and x86-64 and captures are byte-identical
   across those hosts (`mise run test:md-xarch`).

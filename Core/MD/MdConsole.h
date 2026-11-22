@@ -20,6 +20,7 @@ class M32xUnit;
 class MdConsole final : public IConsole
 {
 private:
+	static inline bool _vblankInputLatch = false;
 	Emulator* _emu = nullptr;
 	unique_ptr<MdM68k> _m68k;
 	unique_ptr<MdZ80> _z80;
@@ -68,7 +69,15 @@ public:
 	void Reset() override;
 	void RunFrame() override;
 	void ProcessEndOfFrame();
+	void ProcessVBlankStart();
 	void SaveBattery() override;
+
+	//Test hook (mesen-headless --md-input-latch vblank): take each frame's input at the first
+	//VBlank line instead of at the frame boundary (the wrap to line 0). Genesis Plus GX (and
+	//BizHawk's Genplus-gx core, which records most Mega Drive TAS movies) updates its pads
+	//"before VINT", so a pad read late in a long VBlank handler, after the wrap to line 0, still
+	//sees the previous frame's input there (findings C4, The Lion King).
+	static void SetVBlankInputLatchOverride(bool enabled) { _vblankInputLatch = enabled; }
 
 	BaseControlManager* GetControlManager() override;
 	ConsoleRegion GetRegion() override;

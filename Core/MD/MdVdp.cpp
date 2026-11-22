@@ -261,6 +261,9 @@ void MdVdp::ProcessLineStart()
 		}
 		_m32x->OnHBlank(true);
 	}
+	if(line == GetVBlankStart()) {
+		_console->ProcessVBlankStart();
+	}
 	if(line == 0) {
 		_vintRaisedThisFrame = false;
 		_frameWidth = IsH40() ? 320 : 256;

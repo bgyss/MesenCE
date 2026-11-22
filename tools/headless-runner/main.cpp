@@ -496,6 +496,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 	string rom, out, inputPath, luaPath, traceProfile, regionName = "auto";
 	uint64_t traceLimit = 5000000;
 	string mdModel = "md1va3";
+	string mdInputLatch = "frame";
 	string loadStatePath;
 	bool chipAudio = false;
 	string mdPads = "6,6";
@@ -555,6 +556,8 @@ static int Run(const vector<string>& args, const string& commandLine)
 			mdMcdDisc = next();
 		} else if(args[i] == "--md-mcd-bios") {
 			mdMcdBios = next();
+		} else if(args[i] == "--md-input-latch") {
+			mdInputLatch = next();
 		} else if(args[i] == "--md-32x") {
 			md32x = true;
 		} else if(args[i] == "--md-32x-bios") {
@@ -704,6 +707,12 @@ static int Run(const vector<string>& args, const string& commandLine)
 		//Test hooks: attach the 32X to any cartridge; --md-32x-bios DIR: Sega's three boot ROMs
 		//(32X_M_BIOS.bin, 32X_S_BIOS.bin, 32X_G_BIOS.bin) instead of MesenCE's replacements
 		M32xUnit::SetAttachedOverride(md32x);
+		//Test hook: when the pads take each frame's input (frame: the wrap to line 0; vblank: the
+		//first VBlank line, as Genesis Plus GX and BizHawk's Genplus-gx core do)
+		if(mdInputLatch != "frame" && mdInputLatch != "vblank") {
+			throw std::runtime_error("--md-input-latch must be frame or vblank");
+		}
+		MdConsole::SetVBlankInputLatchOverride(mdInputLatch == "vblank");
 		M32xUnit::SetBiosFolderOverride(md32xBios.empty() ? string() : fs::absolute(md32xBios).string());
 		MessageManager::SetOptions(false, false);
 		emu.Initialize(false);
@@ -737,6 +746,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 			{ "power_on", "TestMode, RAM all zeros" },
 			{ "controllers", "standard pads on ports 1-2" },
 			{ "md_model", mdModel },
+			{ "md_input_latch", mdInputLatch },
 			{ "md_mcd", mdMcd },
 			{ "md_32x", md32x },
 			{ "md_32x_bios", md32xBios.empty() ? "replacement" : "user" },

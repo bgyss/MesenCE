@@ -237,7 +237,17 @@ void MdConsole::ProcessEndOfFrame()
 	//Action Replay RAM codes are rewritten once per frame
 	_emu->GetCheatManager()->RefreshRamCheats(CpuType::MdM68k);
 	_controlManager->UpdateControlDevices();
-	_controlManager->UpdateInputState();
+	if(!_vblankInputLatch) {
+		_controlManager->UpdateInputState();
+	}
+}
+
+void MdConsole::ProcessVBlankStart()
+{
+	if(_vblankInputLatch) {
+		//During frame N the input provider still serves frame N (the frame count moves at the wrap)
+		_controlManager->UpdateInputState();
+	}
 }
 
 void MdConsole::SaveBattery()
