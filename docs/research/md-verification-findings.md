@@ -1202,19 +1202,53 @@ per access. Neither its upstream nor its libretro sources (`memz80.c`, `mem68k.c
 `genesis.c`, `m68kcpu.c`, `md_cart.c`; core `60bee4c`) contain an explicit 68000 charge, so the
 mechanism behind its numbers is unknown.
 
-**Tried and reverted:** each Z80 access to the 68000 bus (bank window, `$7F00-$7FFF`) charging
-the 68000 a flat 11 cycles (77 master clocks), with the Z80 waiting out a 68000→VDP DMA. It
-matched GPGX on the bank-loop and DMA cartridges. With it, `e6f6baab4775` stayed in step with
-PicoDrive to the end, and Mega Turrican and Streets of Rage 2 stayed in step. In the 59-movie
-batch the totals did not move (43 / 52):
-- better: `e6f6baab4775`, Sonic 3 & Knuckles `2d935d88003a`, Gens Sonic 1, Strider~GPGX;
-- worse: the other Lion King movie `4564ff44ba50` (MesenCE alone from 10,768), Shinobi III
-  (MesenCE alone from 4,912; the oracles agree until 46,104), Comix Zone (20,972), and two late
-  Sonic 3 & Knuckles splits.
+**Tried and reverted (first attempt):** a flat 11-cycle 68000 charge per Z80 access to the
+68000 bus. It changed which movies stay in step without changing the totals (43 / 52).
 
-Varying the cost (70, 74, 77 master clocks) or the `$7F00` window does not rescue
-`4564ff44ba50` or Shinobi III. The DMA wait on its own moved Shinobi III's MesenCE~GPGX split to
-6,638. A flat per-access charge is not what the oracles do, and without a hardware reference
-(Kabuto's formula depends on the alignment of the two clocks and of refresh) fitting one to
-three movies would be tuning. Open: model the 68000's share of Z80 bus arbitration from the
-alignment-dependent formula in Kabuto's notes and check it against all of these movies.
+### Bus arbitration model (commit `b12f1753`) and what the movies can and cannot tell
+
+`MdMemoryManager::AddZ80BusAccessWait` follows Kabuto's description of the arbiter:
+- The 68000 finishes the bus cycle it is in and gives up the bus.
+- The Z80 waits about 3 of its cycles. It waits longer while a 68000→VDP DMA or a VDP FIFO stall
+  holds the 68000 bus.
+- The bus is gone from the 68000 for 11 68000 cycles (Kabuto's measured average).
+- The 68000 loses time only if it needs the bus in that window. Its bus accesses in the current
+  instruction are recorded (`RecordM68kBusAccess`), and its first one inside the window waits
+  for the window's end.
+
+Loop cartridges, 68000 iterations per frame (`tests/MD/timing/check_bus_timing.py`, frame 3):
+
+| Loop | MesenCE before | MesenCE now | GPGX | PicoDrive |
+|---|---|---|---|---|
+| NOP; Z80 reading the bank window back to back | 5,723 | 4,662 | 4,673 | 4,950 |
+| NOP; Z80 bank read every 10 NOPs | 5,723 | 5,291 | 5,316 | 5,402 |
+| RAM read; Z80 bank reads | 3,702 | 3,024 | 3,023 | 3,204 |
+| NOP; Z80 PSG writes at `$7F11` | 5,722 | 5,106 | 5,148 | 5,719 |
+| DIVU; Z80 bank reads | 807 | 711 | 666 | 690 |
+| bursts of 10 / 50 / 200 Z80 bank reads (iterations lost) | 0 / 0 / 0 | 5 / 25 / 99 | 4 / 24 / 92 | 3 / 18 / 72 |
+| Z80 bank reads during a 4 KB DMA (`check_dma_timing.py`) | +119 | +0 | +0 | +119 |
+
+On bus-bound loops MesenCE now lands within about 1 % of GPGX. On the DIVU loop it loses less
+than both oracles, which charge the Z80's access even while the 68000 works internally.
+Judgment call: the 68000 gives up the bus and stalls only at its next bus cycle.
+
+**The movies cannot arbitrate this.** In the 59-movie batch the totals fell from 43 / 52 to
+41 / 50:
+- better: The Lion King `e6f6baab4775` (in step with PicoDrive to the end), Sonic 3 & Knuckles
+  `2d935d88003a`, Gens Sonic 1, Strider~GPGX;
+- worse: The Lion King `4564ff44ba50` (10,768), Shinobi III (4,912), Streets of Rage 2 (about
+  84,500), Chakan (3,821), Comix Zone (20,972), and two late Sonic 3 & Knuckles splits.
+
+Shinobi III shows why. Its idle loop (`$512`-`$520`: `ROL.W $FF001C`, `TST.W $FF0020`, `BMI`)
+rotates the random number once per spare iteration (about 56 68000 cycles) until VBlank, so the
+value the game draws depends on the exact spare time of the frames before. From the seed at frame
+428, the word differs between all four runs (MesenCE without the charge, MesenCE with it,
+PicoDrive, GPGX) on almost every frame, all as rotations of `$001F`. Yet the oracles stayed in
+step with MesenCE without the charge for 46,000 frames. Whether such a movie stays in step under
+a timing change of a few dozen cycles is a draw. Its only Z80 bus activity before the split is
+10 bank reads on frame 21.
+
+Kept: the arbitration model. It follows the hardware description, and on the controlled
+cartridges it matches GPGX, where MesenCE charged nothing before. Its effect on the movie metric
+is mixed. Movie agreement is evidence of accuracy where the game is deterministic in the 68000's
+spare time, and only a draw where the game feeds spare time into its random numbers.
