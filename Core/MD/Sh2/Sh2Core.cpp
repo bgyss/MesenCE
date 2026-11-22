@@ -413,9 +413,9 @@ uint8_t Sh2Core::ReadIo8(uint32_t addr)
 	auto dmaChcr = [&](int ch, bool low) -> uint8_t {
 		const DmaChannel& c = _dmac.Ch[ch];
 		if(!low) {
-			return (uint8_t)(c.Dm << 6 | c.Sm << 4 | c.Ts << 2 | c.Ar << 1 | c.Am);
+			return (uint8_t)(c.Dm << 6 | c.Sm << 4 | c.Ts << 2 | c.Ar << 1 | (int)c.Am);
 		}
-		return (uint8_t)(c.Al << 7 | c.Ds << 6 | c.Dl << 5 | c.Tb << 4 | c.Ta << 3 | c.Ie << 2 | c.Te << 1 | c.De);
+		return (uint8_t)(c.Al << 7 | c.Ds << 6 | c.Dl << 5 | c.Tb << 4 | c.Ta << 3 | c.Ie << 2 | c.Te << 1 | (int)c.De);
 	};
 
 	switch(addr) {
@@ -424,11 +424,11 @@ uint8_t Sh2Core::ReadIo8(uint32_t addr)
 		case 0xFFFFFE02: return _sci.Scr;
 		case 0xFFFFFE03: return _sci.Tdr;
 		case 0xFFFFFE04:
-			return (uint8_t)(_sci.Tdre << 7 | _sci.Rdrf << 6 | _sci.Orer << 5 | _sci.Fer << 4 | _sci.Per << 3 | _sci.Tend << 2 | _sci.Mpb << 1 | _sci.Mpbt);
+			return (uint8_t)(_sci.Tdre << 7 | _sci.Rdrf << 6 | _sci.Orer << 5 | _sci.Fer << 4 | _sci.Per << 3 | _sci.Tend << 2 | _sci.Mpb << 1 | (int)_sci.Mpbt);
 		case 0xFFFFFE05: return _sci.Rdr;
 
 		case 0xFFFFFE10: return (uint8_t)(_frt.Icie << 7 | _frt.Ociae << 3 | _frt.Ocibe << 2 | _frt.Ovie << 1 | 1);
-		case 0xFFFFFE11: return (uint8_t)(_frt.Icf << 7 | _frt.Ocfa << 3 | _frt.Ocfb << 2 | _frt.Ovf << 1 | _frt.Cclra);
+		case 0xFFFFFE11: return (uint8_t)(_frt.Icf << 7 | _frt.Ocfa << 3 | _frt.Ocfb << 2 | _frt.Ovf << 1 | (int)_frt.Cclra);
 		//FRC, OCRA/B, FICR: reading the upper byte latches the lower one in TEMP (SH7604 11.3)
 		case 0xFFFFFE12:
 			_frt.Temp = b(_frt.Frc, 0);
@@ -446,7 +446,7 @@ uint8_t Sh2Core::ReadIo8(uint32_t addr)
 		case 0xFFFFFE19:
 			return _frt.Temp;
 		case 0xFFFFFE16: return (uint8_t)(_frt.Iedg << 7 | _frt.Cks);
-		case 0xFFFFFE17: return (uint8_t)(0xE0 | _frt.Ocrs << 4 | _frt.Olvla << 1 | _frt.Olvlb);
+		case 0xFFFFFE17: return (uint8_t)(0xE0 | _frt.Ocrs << 4 | _frt.Olvla << 1 | (int)_frt.Olvlb);
 
 		case 0xFFFFFE60: return (uint8_t)(_intc.SciIp << 4 | _intc.FrtIp);
 		case 0xFFFFFE62: return _intc.SciErrVec;
@@ -467,9 +467,9 @@ uint8_t Sh2Core::ReadIo8(uint32_t addr)
 		case 0xFFFFFE92:
 		case 0xFFFFFE93:
 			//CP (bit 4) always reads 0
-			return (uint8_t)(_cache.WaySelect << 6 | (_cache.TwoWay ? 8 : 0) | _cache.DisableData << 2 | _cache.DisableCode << 1 | _cache.Enable);
+			return (uint8_t)(_cache.WaySelect << 6 | (_cache.TwoWay ? 8 : 0) | _cache.DisableData << 2 | _cache.DisableCode << 1 | (int)_cache.Enable);
 
-		case 0xFFFFFEE0: return (uint8_t)(_intc.Nmil << 7 | _intc.Nmie);
+		case 0xFFFFFEE0: return (uint8_t)(_intc.Nmil << 7 | (int)_intc.Nmie);
 		case 0xFFFFFEE1: return _intc.Vecmd;
 		case 0xFFFFFEE2: return (uint8_t)(_intc.DivuIp << 4 | _intc.DmacIp);
 		case 0xFFFFFEE3: return (uint8_t)(_intc.WdtIp << 4);
@@ -486,7 +486,7 @@ uint8_t Sh2Core::ReadIo8(uint32_t addr)
 		case 0xFFFFFF06:
 		case 0xFFFFFF07:
 			return b(_divu.Dvdntl, 3 - (addr & 3));
-		case 0xFFFFFF0B: return (uint8_t)(_divu.Ovfie << 1 | _divu.Ovf);
+		case 0xFFFFFF0B: return (uint8_t)(_divu.Ovfie << 1 | (int)_divu.Ovf);
 		case 0xFFFFFF0F: return _divu.Vector;
 		case 0xFFFFFF10:
 		case 0xFFFFFF11:
@@ -566,7 +566,7 @@ uint8_t Sh2Core::ReadIo8(uint32_t addr)
 		case 0xFFFFFF9F: return dmaChcr(1, true);
 		case 0xFFFFFFA3: return _dmac.Ch[0].Vector;
 		case 0xFFFFFFAB: return _dmac.Ch[1].Vector;
-		case 0xFFFFFFB3: return (uint8_t)(_dmac.Pr << 3 | _dmac.Ae << 2 | _dmac.Nmif << 1 | _dmac.Dme);
+		case 0xFFFFFFB3: return (uint8_t)(_dmac.Pr << 3 | _dmac.Ae << 2 | _dmac.Nmif << 1 | (int)_dmac.Dme);
 
 		case 0xFFFFFFE2: return b(_bsc.Bcr1, 1);
 		case 0xFFFFFFE3: return b(_bsc.Bcr1, 0);
