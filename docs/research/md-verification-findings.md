@@ -1150,3 +1150,18 @@ Mega Turrican's sound driver feeds the Z80 and YM2612 from the 68000, so its gam
 faster in MesenCE. With the latency, `mato-megaturrican.gmv` stays in step with GPGX for the
 whole movie, and none of the 156 snapshots differ from PicoDrive (median 0.014, was 0.189). The
 60 BlastEm-referenced cartridges still pass.
+
+### Third batch: 59 movies after the two Mega Turrican fixes
+
+All 59 sessions ran again with build `b55fcecb` (177 runs, 91 min, no failed runs). All three
+emulators stay in step in 43 movies (was 41); MesenCE and PicoDrive in 52 (was 50).
+
+- **Now in step to the end:** Mega Turrican (was 21,288) and Streets of Rage 2 (was 84,050; its
+  player no longer loses an extra life). Streets of Rage 2 also uses a 68000-fed sound driver.
+- **Unchanged, still MesenCE-only:** The Lion King `e6f6baab4775` (~2,140), Kid Chameleon
+  (108,091, after the last input), Sonic 3 & Knuckles `efa466ceedd5` (MesenCE~PicoDrive 126,004;
+  MesenCE~GPGX is now in step to the end).
+- **Moved by one to three frames:** the movies where all three emulators drift (Gens Sonic 1,
+  Sonic 3 & Knuckles `2d935d88003a`, Shinobi III).
+- **Earlier GPGX divergence:** Comix Zone, MesenCE~GPGX 22,231 → 3,149 while MesenCE~PicoDrive
+  stays in step to the end and GPGX~PicoDrive drifts at 24,093. To check.
