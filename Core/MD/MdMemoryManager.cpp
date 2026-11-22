@@ -187,9 +187,46 @@ void MdMemoryManager::AddZ80AreaLatency()
 	AddM68kStall(MdTiming::M68kDivider, false);
 }
 
+void MdMemoryManager::AddZ80BusAccessWait()
+{
+	//A Z80 access to the 68000 bus (bank window, VDP and PSG at $7F00) goes through the bus
+	//arbiter (Kabuto's hardware notes, "The bus system" and footnote 1):
+	//- while a 68000->VDP DMA or a VDP FIFO stall holds the 68000 bus, the Z80 waits for it;
+	//- the Z80 then waits about 3 of its cycles ("The average Z80 delay is around 3.3 Z80 cycles");
+	//- the 68000 finishes the bus cycle it is in, gives the bus up, and gets it back after the
+	//  Z80's access. It loses time only if it needs the bus meanwhile: its first access in the
+	//  window waits for the window to end. Code that keeps the bus busy (a NOP loop) loses
+	//  Kabuto's average of about 11 68000 cycles per Z80 access; code inside a long internal
+	//  operation (MULU, DIVU, shifts) loses little or nothing.
+	//The 68000's accesses during the current instruction are recorded (RecordM68kBusAccess): the
+	//Z80 catches up after each instruction, so its accesses fall within the instruction just run.
+	uint64_t z80Clock = _z80->GetMasterClock();
+	if(z80Clock >= _m68kBusHeldFrom && z80Clock < _m68kBusHeldUntil) {
+		_z80->AddWait((uint32_t)(_m68kBusHeldUntil - z80Clock));
+		z80Clock = _m68kBusHeldUntil;
+	}
+	_z80->AddWait(3 * MdTiming::Z80Divider);
+
+	//11 68000 cycles: Kabuto's average; GPGX matches it on the loop cartridges (findings C4)
+	uint64_t windowEnd = z80Clock + 11 * MdTiming::M68kDivider;
+	uint64_t access = std::max(_masterClock, z80Clock); //the next instruction's first access
+	for(uint32_t i = 0; i < _m68kAccessCount; i++) {
+		if(_m68kAccessClock[i] >= z80Clock) {
+			access = _m68kAccessClock[i];
+			break;
+		}
+	}
+	if(access < windowEnd) {
+		AddM68kStall(windowEnd - access, false);
+	}
+}
+
 void MdMemoryManager::AddM68kStall(uint64_t masterClocks, bool dma)
 {
 	ApplyRefresh();
+	if(dma) {
+		HoldM68kBus(_masterClock, _masterClock + masterClocks);
+	}
 	_masterClock += masterClocks;
 	if(dma) {
 		_refreshCounter = 0;
@@ -204,6 +241,7 @@ void MdMemoryManager::SyncAfterM68kInstruction()
 	ApplyRefresh();
 	_vdp->Run(_masterClock);
 	_z80->Run(_masterClock, IsZ80Held());
+	_m68kAccessCount = 0;
 	if(_mcd) {
 		_mcd->Run(_masterClock);
 	}
@@ -480,6 +518,7 @@ void MdMemoryManager::WriteSaveRam(uint32_t addr, uint8_t value)
 
 uint16_t MdMemoryManager::M68kRead(bool upper, bool lower, uint32_t addr, M68kAccess access)
 {
+	RecordM68kBusAccess();
 	addr &= 0xFFFFFE;
 	switch(addr >> 21) {
 		case 0:
@@ -556,6 +595,7 @@ uint16_t MdMemoryManager::M68kRead(bool upper, bool lower, uint32_t addr, M68kAc
 
 void MdMemoryManager::M68kWrite(bool upper, bool lower, uint32_t addr, uint16_t value, M68kAccess access)
 {
+	RecordM68kBusAccess();
 	addr &= 0xFFFFFE;
 	switch(addr >> 21) {
 		case 0:
@@ -864,20 +904,19 @@ uint8_t MdMemoryManager::Z80Read(uint16_t addr)
 		return _apu->ReadYm(addr & 0x03);
 	} else if(addr < 0x7F00) {
 		return 0xFF;
-	} else if(addr < 0x7F20) {
-		//VDP through the 68000 bus
+	} else if(addr < 0x8000) {
+		//VDP through the 68000 bus: every access to $7F00-$7FFF goes through the bus arbiter
+		AddZ80BusAccessWait();
 		uint8_t port = addr & 0x1F;
-		if(port >= 0x10) {
+		if(addr >= 0x7F20 || port >= 0x10) {
 			return 0xFF;
 		}
 		_vdp->Run(_z80->GetMasterClock());
 		uint16_t value = _vdp->ReadPort(port & 0x1E, 0xFFFF);
 		return (port & 1) ? (uint8_t)value : (value >> 8);
-	} else if(addr < 0x8000) {
-		return 0xFF;
 	} else {
 		//68000 bank window: the Z80 waits for the 68000 bus
-		_z80->AddWait(3 * MdTiming::Z80Divider);
+		AddZ80BusAccessWait();
 		uint32_t m68kAddr = ((uint32_t)_state.Z80Bank << 15) | (addr & 0x7FFF);
 		if(m68kAddr >= 0xA00000 && m68kAddr < 0xA10000) {
 			return 0xFF; //the Z80 cannot reach its own bus through the window
@@ -906,9 +945,13 @@ void MdMemoryManager::Z80Write(uint16_t addr, uint8_t value)
 		_apu->WriteYm(addr & 0x03, value);
 	} else if(addr < 0x6100) {
 		_state.Z80Bank = ((_state.Z80Bank >> 1) | ((value & 0x01) << 8)) & 0x1FF;
-	} else if(addr >= 0x7F00 && addr < 0x7F20) {
+	} else if(addr >= 0x7F00 && addr < 0x8000) {
+		//VDP and PSG through the 68000 bus: every access goes through the bus arbiter
+		AddZ80BusAccessWait();
 		uint8_t port = addr & 0x1F;
-		if(port >= 0x10 && port < 0x18) {
+		if(addr >= 0x7F20) {
+			//unused
+		} else if(port >= 0x10 && port < 0x18) {
 			if(port & 1) {
 				_apu->Run(_z80->GetMasterClock());
 				TraceDevice(_z80->GetMasterClock(), MdBusDevice::Psg, MdBusOp::Write, 0x7F11, value);
@@ -919,7 +962,7 @@ void MdMemoryManager::Z80Write(uint16_t addr, uint8_t value)
 			_vdp->WritePort(port & 0x1E, (value << 8) | value, true, true);
 		}
 	} else if(addr >= 0x8000) {
-		_z80->AddWait(3 * MdTiming::Z80Divider);
+		AddZ80BusAccessWait();
 		uint32_t m68kAddr = ((uint32_t)_state.Z80Bank << 15) | (addr & 0x7FFF);
 		if(m68kAddr >= 0xE00000) {
 			_workRam[m68kAddr & 0xFFFF] = value;
@@ -1122,6 +1165,8 @@ void MdMemoryManager::Serialize(Serializer& s)
 	}
 	SV(_masterClock);
 	SV(_refreshCounter);
+	SV(_m68kBusHeldFrom);
+	SV(_m68kBusHeldUntil);
 	SV(_refreshSyncClock);
 	SV(_state.Z80Bank);
 	SV(_state.Z80BusRequested);

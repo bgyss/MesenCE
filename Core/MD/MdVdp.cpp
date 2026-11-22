@@ -181,6 +181,8 @@ void MdVdp::PushFifo(uint8_t code)
 	if(_fifoCount == 4) {
 		//The 68000 waits for the oldest entry to reach its slot
 		uint64_t stall = _fifo[0] - now;
+		//The 68000 holds its bus while it waits; a Z80 bank access waits too (Kabuto)
+		_memoryManager->HoldM68kBus(now, now + stall);
 		_memoryManager->AddM68kStall(stall);
 		now += stall;
 		RetireFifo(now);

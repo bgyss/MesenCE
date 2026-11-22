@@ -114,6 +114,20 @@ private:
 	//DRAM refresh (see ApplyRefresh): master clocks counted towards the next refresh, and the
 	//master clock up to which the counter has been advanced
 	uint32_t _refreshCounter = 0;
+
+	//Bus arbitration between the Z80 and the 68000 (AddZ80BusAccessWait)
+	uint64_t _m68kBusHeldFrom = 0;
+	uint64_t _m68kBusHeldUntil = 0;
+	static constexpr uint32_t MaxRecordedAccesses = 64;
+	uint64_t _m68kAccessClock[MaxRecordedAccesses] = {};
+	uint32_t _m68kAccessCount = 0;
+	void AddZ80BusAccessWait();
+	__forceinline void RecordM68kBusAccess()
+	{
+		if(_m68kAccessCount < MaxRecordedAccesses) {
+			_m68kAccessClock[_m68kAccessCount++] = _masterClock;
+		}
+	}
 	uint64_t _refreshSyncClock = 0;
 	MdMemoryManagerState _state = {};
 
@@ -157,6 +171,12 @@ public:
 	//are applied first; refresh during the wait costs nothing extra, and a DMA restarts the counter.
 	void AddZ80AreaLatency();
 	void AddM68kStall(uint64_t masterClocks, bool dma = false);
+	//The 68000 bus is unavailable to the Z80 over this span (a DMA, or the 68000 halted on the VDP FIFO)
+	void HoldM68kBus(uint64_t from, uint64_t until)
+	{
+		_m68kBusHeldFrom = from;
+		_m68kBusHeldUntil = until;
+	}
 	void SyncAfterM68kInstruction();
 
 	// DRAM refresh steals 2 68000 cycles every 128 68000 cycles. Model and figures are BlastEm's

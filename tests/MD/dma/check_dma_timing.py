@@ -53,6 +53,33 @@ def cartridge(h40, display, start_v, words=0x800):
     return bytes(r)
 
 
+# The Z80 counts its reads in its own RAM ($1000) while the 68000 runs a 4 KB 68000->VRAM DMA in
+# active display; the 68000 samples the count before and after (BUSREQ). A Z80 access to the
+# 68000 bus (bank window) waits for the DMA to finish (Kabuto's notes; GPGX +0, PicoDrive +119,
+# MesenCE was +119 too); a Z80 loop on its own RAM runs on (GPGX +165, PicoDrive +164).
+Z80_DMA_CASES = {"z80_bank_reads_during_dma": (True, 0), "z80_ram_reads_during_dma": (False, 164)}
+
+
+def z80_dma_cartridge(bank):
+    r = bytearray(cartridge(False, True, 100))
+    z = [0x3A, 0x00, 0x80 if bank else 0x18, 0x21, 0x00, 0x10, 0x34, 0x18, 0xF7]  # ld a,(nn); ld hl,$1000; inc (hl); jr
+    s = "33FC010000A11100" "33FC010000A11200" "0839000000A11100" "66F6"           # BUSREQ, reset off, BUSACK
+    for i, b in enumerate(z):
+        s += "13FC00%02X00A0%04X" % (b, i)
+    s += "33FC000000A11200" "33FC000000A11100" "33FC010000A11200"                # reset, release, run
+    code = bytes.fromhex(s)
+    code += bytes.fromhex("41F900C00004" "43F900C00008" "30BC8004" "30BC8154" "30BC8C00" "30BC8F02")
+    for reg, val in ((19, 0x00), (20, 0x08), (21, 0x00), (22, 0x80), (23, 0x00)):
+        code += struct.pack(">HH", 0x30BC, 0x8000 | (reg << 8) | val)
+    code += bytes.fromhex("1011" "6600FFFC" "1011") + struct.pack(">HH", 0x0C00, 100) + bytes.fromhex("66F8")
+    sample = "33FC010000A11100" "0839000000A11100" "66F6" "%s" "33FC000000A11100"
+    code += bytes.fromhex(sample % "183900A01000") + bytes.fromhex("20BC40000080") + bytes.fromhex(sample % "1A3900A01000")
+    code += bytes.fromhex("13C400FF0000" "13C500FF0002" "60FE")
+    r[0x200:0x200 + 0x200] = bytes(0x200)
+    r[0x200:0x200 + len(code)] = code
+    return bytes(r)
+
+
 def main():
     runner = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "bin/mesen-headless"
     failed = 0
@@ -67,6 +94,17 @@ def main():
             ok = after >> 8 == expected and before >> 8 == start_v
             failed += not ok
             print("%s dma %-20s start V $%02X, resumed at V $%02X (expected $%02X)" % ("pass" if ok else "FAIL", name, before >> 8, after >> 8, expected))
+        for name, (bank, expected) in Z80_DMA_CASES.items():
+            rom = pathlib.Path(tmp) / (name + ".md")
+            rom.write_bytes(z80_dma_cartridge(bank))
+            out = pathlib.Path(tmp) / name
+            subprocess.run([str(runner), "run", "--rom", str(rom), "--frames", "6", "--out", str(out), "--allow-dirty",
+                            "--region", "ntsc", "--dump-at", "6"], check=True, capture_output=True)
+            ram = (out / "dumps/6/MdWorkRam.bin").read_bytes()
+            got = (ram[2] - ram[0]) & 0xFF
+            ok = got == expected
+            failed += not ok
+            print("%s dma %-26s Z80 count +%d during the DMA (expected +%d)" % ("pass" if ok else "FAIL", name, got, expected))
     return 1 if failed else 0
 
 
