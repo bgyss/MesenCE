@@ -102,13 +102,15 @@ results came back as reputation and ratings only, with no comparison tool.
   divergence: Sonic 3, Sonic 1 100% (60,000 frames) and Phantasy Star II.
 - **Found along the way:** Genesis Plus GX's game-dependent input lag in libretro. The checking
   method also tests the references.
-- **First full batch (21 movies, 2.6M frames, 32 min):**
-  - In 10 movies, MesenCE stays in step with both references to the end.
-  - In 4 movies, MesenCE alone falls out of step while the two references agree with each other:
-    two Lion King movies, at frames 2,670 and 4,290, and two Sonic 3 & Knuckles movies, at
-    roughly 103,000 and 126,000.
-  - Those 4 are under investigation. Don't call them bugs in the post until each has a root
-    cause.
+- **Second batch: 59 movies, 6.9M frames, 91 min, no failed runs.**
+  - In 41 movies all three emulators stay in step to the end; in 50, MesenCE and PicoDrive do.
+  - Found on the way, not an emulation bug: emulators differ in when they hand a frame's input
+    to the game. The Lion King reads the pad late in a long VBlank handler, and MesenCE served
+    the next frame's input there. MesenCE now has a matching mode (`--md-input-latch vblank`)
+    for movies recorded in BizHawk's Genplus-gx core.
+  - MesenCE-only candidates still under investigation: Mega Turrican (looks like a stall),
+    Streets of Rage 2, one Lion King movie and one Sonic 3 & Knuckles movie. Don't call them
+    bugs in the post until each has a root cause.
 
 **Caveats to keep:**
 - Emulators agreeing is not hardware truth. Three emulators can share a bug, and only console
