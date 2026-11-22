@@ -18,10 +18,10 @@ void McdM68k::Wait(uint32_t clocks)
 	_unit->SubAdvance(clocks);
 }
 
-uint16_t McdM68k::BusRead(bool upper, bool lower, uint32_t address, M68kAccess access)
+uint16_t McdM68k::BusRead(bool upper, bool lower, uint32_t address, M68kAccess accessType)
 {
 	uint16_t value = _unit->SubRead(upper, lower, address);
-	MemoryOperationType opType = access == M68kAccess::Program ? MemoryOperationType::ExecOperand : MemoryOperationType::Read;
+	MemoryOperationType opType = accessType == M68kAccess::Program ? MemoryOperationType::ExecOperand : MemoryOperationType::Read;
 	if(upper && lower) {
 		_emu->ProcessMemoryRead<CpuType::McdM68k, 2>(address & 0xFFFFFE, value, opType);
 	} else {

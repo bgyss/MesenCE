@@ -331,7 +331,7 @@ static string FramePng(Emulator& emu)
 }
 
 // --snap-every N: snaps/<frame>.png every N frames, for looking at a run without replaying it
-class SnapListener : public INotificationListener
+class SnapListener final : public INotificationListener
 {
 	Emulator& _emu;
 	fs::path _dir;

@@ -350,7 +350,7 @@ uint8_t MdVdp::GetAssertedLevel()
 uint8_t MdVdp::GetM68kInterruptLevel(uint64_t instructionEndClock)
 {
 	uint8_t level = GetAssertedLevel();
-	if(_irqEnableHold) [[unlikely]] {
+	if(_irqEnableHold) {
 		//An interrupt enabled by a register write in the instruction's last bus cycle reaches the
 		//68000 too late for it to be sampled at the end of that instruction: it is taken after the
 		//next one (see WriteRegister)

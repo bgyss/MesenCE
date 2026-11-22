@@ -232,6 +232,11 @@ jobs:
           ENTITLEMENTS: UI/Mesen.entitlements
           SIGNING_IDENTITY: Mesen
         run: |
+          # Forks have no signing certificate: upload the app unsigned
+          if [ -z "$CERT_DATA" ]; then
+            echo "[INFO] No MACOS_CERTIFICATE secret, skipping signing"
+            exit 0
+          fi
           # Export certs
           echo "$CERT_DATA" | base64 --decode > /tmp/certs.p12
           # Create keychain
