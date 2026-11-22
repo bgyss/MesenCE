@@ -155,6 +155,7 @@ public:
 	__forceinline void AdvanceM68k(uint32_t m68kClocks) { _masterClock += m68kClocks * MdTiming::M68kDivider; }
 	//The 68000 waits for the VDP (FIFO full or 68000-to-VDP DMA). Refresh delays due before the wait
 	//are applied first; refresh during the wait costs nothing extra, and a DMA restarts the counter.
+	void AddZ80AreaLatency();
 	void AddM68kStall(uint64_t masterClocks, bool dma = false);
 	void SyncAfterM68kInstruction();
 

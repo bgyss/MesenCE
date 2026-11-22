@@ -178,6 +178,15 @@ void MdMemoryManager::SyncZ80()
 	_z80->Run(_masterClock, IsZ80Held());
 }
 
+void MdMemoryManager::AddZ80AreaLatency()
+{
+	//A 68000 access to the Z80 area (Z80 RAM, YM2612, bank register) while it holds the Z80 bus
+	//costs one more 68000 cycle, as in Genesis Plus GX ("Z80 bus access latency", which fixed
+	//Pac-Man 2's sound engine and a Puyo Puyo 2 crash) and as PicoDrive measures. Judgment call:
+	//no hardware measurement of it here (findings C4, Mega Turrican).
+	AddM68kStall(MdTiming::M68kDivider, false);
+}
+
 void MdMemoryManager::AddM68kStall(uint64_t masterClocks, bool dma)
 {
 	ApplyRefresh();
@@ -668,6 +677,7 @@ uint8_t MdMemoryManager::ReadZ80Area68k(uint32_t addr)
 		//The Z80 owns its bus; the 68000 reads nothing driven
 		return 0xFF;
 	}
+	AddZ80AreaLatency();
 	uint16_t z80Addr = addr & 0x7FFF;
 	if(z80Addr < 0x4000) {
 		return _z80Ram[z80Addr & 0x1FFF];
@@ -684,6 +694,7 @@ void MdMemoryManager::WriteZ80Area68k(uint32_t addr, uint8_t value)
 	if(!M68kOwnsZ80Bus()) {
 		return;
 	}
+	AddZ80AreaLatency();
 	uint16_t z80Addr = addr & 0x7FFF;
 	if(z80Addr < 0x4000) {
 		_z80Ram[z80Addr & 0x1FFF] = value;

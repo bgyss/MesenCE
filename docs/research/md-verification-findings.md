@@ -1124,8 +1124,29 @@ clears on that line), and MesenCE's own status flag clears there. Judgment call:
 measurement here. Regression: `tests/MD/dma/check_dma_timing.py` in `test:md-synthetic`; the 60
 BlastEm-referenced cartridges still pass with both FM cores.
 
-**Still open:** the fix does not move Mega Turrican's first difference (frame 585, the game
-frame ahead in MesenCE), and the movie still pauses. Ruled out: 68000 throughput, the
-instruction timings above, and every DMA kind and position. Next suspects: the Z80 and sound
-driver (the 68000 waiting on bus requests or the YM2612 busy flag), H interrupt timing (the game
-runs an H interrupt every 2 lines that writes VSRAM), and VBlank interrupt latency.
+The DMA fix alone does not move Mega Turrican's first difference (frame 585, the game a frame
+ahead in MesenCE), and the movie still paused.
+
+**Fixed: 68000 accesses to the Z80 area were a cycle too cheap.** More loop cartridges
+(`tests/MD/timing/check_bus_timing.py`), iterations per frame:
+
+| Loop | MesenCE before | GPGX | PicoDrive | MesenCE after |
+|---|---|---|---|---|
+| `move.b $A00000,d1` (Z80 RAM, bus held) | 3,702 | 3,603 | 3,595 | 3,597 |
+| two YM2612 writes | 2,170 | 2,100 | 2,097 | 2,098 |
+| YM2612 write + busy poll | 1,908 | 1,854 | 1,850 | 1,855 |
+| VDP status, H/V counter, pad port, bus request and release | equal | | | equal |
+
+Both oracles charge about one more 68000 cycle per access to `$A00000-$A0FFFF` while the 68000
+holds the Z80 bus. Genesis Plus GX does it deliberately (`mem68k.c`, `z80_read_byte` and
+`z80_write_byte`: `m68k.cycles += 1 * 7`, "Z80 bus access latency (fixes Pacman 2: New
+Adventures sound engine crashes & Puyo Puyo 2 crash when exiting option menu)"); PicoDrive
+measures the same. Kabuto's hardware notes cover only the opposite direction (the Z80 on the
+68000 bus). Judgment call: two emulators and game behaviour, no hardware measurement.
+`MdMemoryManager::AddZ80AreaLatency` now adds one 68000 cycle to each byte or word access
+there while the 68000 owns the bus (a word access is one bus access, as in GPGX).
+
+Mega Turrican's sound driver feeds the Z80 and YM2612 from the 68000, so its game logic ran
+faster in MesenCE. With the latency, `mato-megaturrican.gmv` stays in step with GPGX for the
+whole movie, and none of the 156 snapshots differ from PicoDrive (median 0.014, was 0.189). The
+60 BlastEm-referenced cartridges still pass.
