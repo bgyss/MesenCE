@@ -1173,3 +1173,48 @@ emulators stay in step in 43 movies (was 41); MesenCE and PicoDrive in 52 (was 5
   Shinobi III's GPGX~PicoDrive divergence found at 46,104 (was 48,801). In Comix Zone, MesenCE
   and PicoDrive stay in step to the end; from ~25,500 GPGX alone differs (snapshots 0.38-0.78
   from both).
+
+### The Lion King `e6f6baab4775`: the 68000's share of Z80 bus accesses (open, change reverted)
+
+With the VBlank input latch, `shgofctas-thelionking-genesis-allbugs.bk2` still splits from both
+oracles at frame 2,088. Work RAM dumped every frame matches PicoDrive's exactly through 2,087.
+From 2,088 PicoDrive's state equals MesenCE's one frame earlier (the frame counter at `FFCCC4`
+reads `$02F8` in MesenCE and `$02F7` in PicoDrive). The game waits for a VBlank counter (`$8194`,
+raised unconditionally by the VBlank handler at `$13C4`) and runs one logic step per frame, so
+the oracles dropped a step: the work started on frame 2,087 overran the next VBlank there. In
+MesenCE it finished about 80 lines early. That work is nearly all CPU, while the game's Z80
+driver streams a DAC sample through the bank window (about 279 reads of the 68000 bus per
+frame).
+
+Loop cartridges (68000 NOP-loop iterations per frame while the Z80 runs a loop of its own):
+
+| Z80 loop | MesenCE | GPGX | PicoDrive |
+|---|---|---|---|
+| idle, or reading its own RAM | 5,723 | 5,726 | 5,719 |
+| reading the bank window back to back (~2,130 per frame) | 5,723 | 4,673 | 4,950 |
+| a bank read every 10 NOPs (~877 per frame) | 5,723 (5,291 with 11 cycles per access) | 5,316 | 5,402 |
+| writing the PSG at `$7F11` (~1,240 per frame) | 5,722 | 5,148 | 5,719 |
+
+Both oracles slow the 68000 while the Z80 uses the 68000 bus; MesenCE does not. Kabuto's hardware
+notes measure it: "The average Z80 delay is around 3.3 Z80 cycles, whereas the average 68k delay
+is around 11 68k cycles", and the Z80 waits for a DMA to finish. GPGX gives 10.3-10.8 cycles
+per access. Neither its upstream nor its libretro sources (`memz80.c`, `mem68k.c`, `system.c`,
+`genesis.c`, `m68kcpu.c`, `md_cart.c`; core `60bee4c`) contain an explicit 68000 charge, so the
+mechanism behind its numbers is unknown.
+
+**Tried and reverted:** each Z80 access to the 68000 bus (bank window, `$7F00-$7FFF`) charging
+the 68000 a flat 11 cycles (77 master clocks), with the Z80 waiting out a 68000→VDP DMA. It
+matched GPGX on the bank-loop and DMA cartridges. With it, `e6f6baab4775` stayed in step with
+PicoDrive to the end, and Mega Turrican and Streets of Rage 2 stayed in step. In the 59-movie
+batch the totals did not move (43 / 52):
+- better: `e6f6baab4775`, Sonic 3 & Knuckles `2d935d88003a`, Gens Sonic 1, Strider~GPGX;
+- worse: the other Lion King movie `4564ff44ba50` (MesenCE alone from 10,768), Shinobi III
+  (MesenCE alone from 4,912; the oracles agree until 46,104), Comix Zone (20,972), and two late
+  Sonic 3 & Knuckles splits.
+
+Varying the cost (70, 74, 77 master clocks) or the `$7F00` window does not rescue
+`4564ff44ba50` or Shinobi III. The DMA wait on its own moved Shinobi III's MesenCE~GPGX split to
+6,638. A flat per-access charge is not what the oracles do, and without a hardware reference
+(Kabuto's formula depends on the alignment of the two clocks and of refresh) fitting one to
+three movies would be tuning. Open: model the 68000's share of Z80 bus arbitration from the
+alignment-dependent formula in Kabuto's notes and check it against all of these movies.
