@@ -1059,3 +1059,34 @@ tracker accepts offsets up to ±60 frames, so a menu matches a cutscene well eno
 noisy-block mask from the oracle pair instead of from the pair under test made no difference,
 so it was not kept. The snapshot comparison catches these cases; flags from the RAM metric need
 the snapshots checked.
+
+### Second batch: 59 movies (2026-11-21)
+
+39 more movies imported (Contra Hard Corps, Comix Zone, Castlevania Bloodlines, Mega Turrican,
+Ristar, Streets of Rage 1-3, Shining Force I/II, Phantasy Star III, Ys III, Strider, Aladdin,
+Earthworm Jim 2, Ecco 1/2, Chakan, Flicky, Sonic 3D Blast, Kid Chameleon and others).
+`roms.txt` maps the Gens movies and two BizHawk 1.11 movies, whose headers carry no ROM hash;
+every mapping there is a guess from the file name. Not run: Earthworm Jim Special Edition (a
+Sega CD movie) and Phantasy Star IV "macroglitch" (resets).
+
+59 sessions, 6.9M frames, 177 runs in 91 min, no failed runs. All three emulators stay in step
+for the whole movie in 41; MesenCE and PicoDrive in 50. Calibration v2 gave 0 for every Gens
+movie except Sonic 3 competition (+2) and the Gens Sonic 1 movie (+3, a tie artefact; v3
+counts divergences within 6 frames as a tie).
+
+MesenCE alone diverging while the oracles agree (to investigate, not yet bugs):
+
+| Movie | MesenCE diverges | Note |
+|---|---|---|
+| Mega Turrican (USA), Gens | ~21,288 (state); the snapshots from 20,700 show MesenCE on one unchanging screen while PicoDrive plays on | the strongest candidate: looks like a stall |
+| Streets of Rage 2 (USA), Gens | ~84,050 | MesenCE's player loses a life the oracles don't |
+| The Lion King `e6f6baab4775` | ~2,140 (snapshots) | the open item above |
+| Sonic 3 & Knuckles `efa466ceedd5`, Gens | ~126,000 | GPGX drifts at 110,107, so weaker |
+| Kid Chameleon, Gens | 108,091 | after the movie's last input (107,862) |
+
+The other flags are not MesenCE-specific. In Strider (BizHawk 1.11) all three emulators diverge
+from each other (23,500-25,000), and only MesenCE ends on a black frame (to check). In Shinobi
+III, PicoDrive drifts from both. In Sonic 3D Blast (both movies), GPGX diverges from the other
+two at frame ~700, although the movies were recorded in Genplus-gx: a libretro GPGX difference
+from BizHawk's build, or an option. Several Gens movies end with GPGX drifting while MesenCE and
+PicoDrive stay together.

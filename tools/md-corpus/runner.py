@@ -287,7 +287,7 @@ def run_tas(args, out, oracles):
 
 CALIBRATE_STAGES = (5400, 36000)          # 90 s; then 10 min for the shifts still tied
 CALIBRATE_SHIFTS = (0, 1, -1, 2, -2, 3, -3)  # in order of preference on a tie
-CALIBRATE_VERSION = 2                        # the choice rule; cached choices from another rule are redone
+CALIBRATE_VERSION = 3                        # the choice rule; cached choices from another rule are redone
 
 
 def recorded_in_gpgx(m):
@@ -312,7 +312,7 @@ def calibrate_tas(args, out, oracles, movies, sysdir):
 
     Stage 1 runs the first 5,400 frames in PicoDrive (as recorded) and in GPGX with every shift;
     a shift's score is how long its work RAM follows PicoDrive's (compare.state_pair diverged_at).
-    The shifts tied for the latest divergence go on to stage 2 (36,000 frames, or the movie). A
+    The shifts tied for the latest divergence (within 6 frames) go on to stage 2 (36,000 frames, or the movie). A
     tie that remains goes to the first in CALIBRATE_SHIFTS' order (0, +1, -1, ...): lockstep
     counts picked noise (+3/-3 on Sonic 1/2 and Shinobi III, findings C4).
 
@@ -369,7 +369,11 @@ def calibrate_tas(args, out, oracles, movies, sysdir):
             tables[m["id"]].append({"frames": frames, "shifts": {"%+d" % s: v for s, v in table.items()}})
             scored = {s: (v["diverged_at"] or frames + 1) for s, v in table.items() if v}
             top = max(scored.values()) if scored else None
-            cands[m["id"]] = [s for s in cands[m["id"]] if s in scored and scored[s] == top] or [0]
+            # Within 2 x the largest shift counts as a tie: when the movie desyncs at the same game
+            # moment under every shift, the divergence frame just moves with the shift (Gens
+            # Sonic 1: -3 at 35,247 ... +3 at 35,253)
+            slack = 2 * max(CALIBRATE_SHIFTS)
+            cands[m["id"]] = [s for s in cands[m["id"]] if s in scored and scored[s] >= top - slack] or [0]
             shutil.rmtree(cdir)
     for m, e in todo:
         tied = cands[m["id"]]
