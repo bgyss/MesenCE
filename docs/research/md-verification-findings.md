@@ -1411,3 +1411,98 @@ The last open timing item from C5: the manual's SDRAM figures (32X Hardware Manu
 - Audio flags on Blackthorne, Darxide, Primal Rage and Tempo, against PicoDrive's PWM only.
 - Not modelled: SDRAM contention between the two SH-2s and the 68000, DMAC bus timing, and the
   maximum waits (frame buffer read, palette during display, cartridge).
+
+## C7: 32X late divergences, audio flags and bus contention (2026-11-23)
+
+The three open items after C6: the late single-oracle divergences, the remaining audio flags, and
+SDRAM sharing between the two SH-2s.
+
+### Late divergences
+
+- **WWF WrestleMania: The Arcade Game** (about frame 2,700): same match-up in both emulators
+  (Razor Ramon vs Shawn Michaels), different moves from about frame 2,700: the computer
+  opponent's random choices, timing-dependent. Not a defect; single-oracle.
+- **WWF Raw** (about frame 3,190): a different random attract match-up (C6). Not a defect.
+- **36 Great Holes Starring Fred Couples** (open, mechanism found): from frame 3,011 the master
+  SH-2 runs at `$079AE851` and the screen stays a dither pattern; PicoDrive shows the course.
+  - The master calls a routine at `$06002BFC` with a record count in r14 that a dispatcher
+    (`$060025EA`-`$06002648`) counts from a table at `$0602xxxx` that the 68000 fills. The count
+    was 0. The routine's loop ends with `dt r2; bf`, so a count of 0 runs 2^32 times: it walks
+    12-byte records past the end of SDRAM.
+  - MesenCE mirrors SDRAM over `$06000000-$07FFFFFF`, so the stores at `$06040010` and
+    `$06040118` overwrote the vector table at `$06000010` (address error) and `$06000118` (vector
+    70, the 32X V interrupt). The next V interrupt jumped to the stored value; the stacking of
+    repeated address errors then filled SDRAM with `$079AE855`/`$000001C0`.
+  - Manual figure 3.2 (p. 15) shades `$06040000-$07FFFFFF` like the other unused areas; ares
+    decodes SDRAM at `$06000000-$0603FFFF` only. Without the mirror the loop would not corrupt the
+    vectors but would still run for 2^32 iterations, so the mirror is not the cause.
+  - Open: why the count is 0 (the 68000 sent no records, or the SH-2 read the table before the
+    68000 wrote it: a 68000/SH-2 timing race). It was flagged before C5.
+
+### Audio flags
+
+- **Tempo, `pwm-level` (comparison bug, fixed):** `tools/audio-compare` fits the reference's
+  envelope as a weighted sum of MesenCE's per-chip envelopes and reports levels relative to FM.
+  When FM got (nearly) zero weight (Tempo's FM is 5% of its energy), the base was FM's zero weight
+  and the PWM read +124 dB. The base is now FM only when it carries at least 1% of the fitted
+  energy, else the chip that carries most. Regression: `tas_selftest.py` (in
+  `test:md-synthetic`), "audio level base without FM" (a PWM-only reference; the old rule gives
+  +119 dB).
+- **Blackthorne, Primal Rage, WWF WrestleMania, `spectrum` (fixed for the first two):** MesenCE's
+  mix had DC (mean +288 on WrestleMania; PicoDrive -0.1) and much more energy below 40 Hz (33% at
+  5-40 Hz against 4%). The extra low end grew with the PWM share (0-100 Hz: +1.0 dB at 21% PWM,
+  +1.7 at 30%, +3.7 at 63%). Offline, a 20 Hz first-order high-pass on the whole mix brought
+  Blackthorne from 1.57 to 0.83 dB and Primal Rage from 1.61 to 0.76; on the PWM stream alone it
+  did almost nothing, so the FM/PSG offsets matter too.
+  - **Fix:** `MdApu::DcBlock`, a first-order DC blocker (fixed point, corner about 16.6 Hz at
+    53,267 Hz) on the mix when the 32X is attached: the 32X mixes the Mega Drive's audio with its
+    PWM and drives the A/V output, which is AC coupled. Judgment calls: the corner (ares filters
+    the Mega Drive's FM and PSG at 20 Hz; the 32X's is not documented), and leaving the Mega Drive
+    alone unfiltered for now (changing it needs the Mega Drive library rerun against GPGX).
+    Saved in save states.
+  - **Regression:** `tests/MD/m32x/pwm_dc_check.py` (in `test:md-synthetic`): after the
+    `m32x_pwm` cartridge's samples the PWM holds a full-scale level; the mix's mean must be about 0
+    (it is 15,879 without the blocker).
+  - WWF WrestleMania improved (4.43 to about 3.5 dB) but stays flagged: MesenCE is still 5-7 dB
+    lower at 400-1600 Hz. Open.
+- **Darxide, `envelope`/`missing` (not an audio defect, open):** the intro is paced differently.
+  At frame 1,800 both emulators show the same scene; PicoDrive reaches the language screen by
+  frame 2,660, MesenCE by about 3,300. The sound follows the pictures. The intro is probably paced
+  by SH-2 rendering throughput, which needs a hardware timing reference.
+
+### SH-2 bus contention
+
+- **Source:** the two SH-2s are "mounted to a common bus" (manual p. 15). The manual gives no
+  arbitration figures; the SDRAM burst occupancy (12 clocks) is documented (C6).
+- **Model (`M32xUnit::SharedBus`):** every SH-2 access occupies the bus for its waits plus the
+  2-clock bus cycle. An SDRAM read burst first waits while the other SH-2's access is in progress.
+  An SH-2's own back-to-back accesses are never delayed (the single-CPU figures include them);
+  DMAC transfers are not arbitrated. Judgment calls throughout.
+- **Arbitrating every access was tried and rejected:** with register accesses arbitrated too,
+  Kolibri (visual), NBA Jam TE, Metal Head and World Series Baseball moved away from PicoDrive
+  (their sequences fell behind, offsets up to the 150-frame limit). Many games idle one SH-2 in an
+  uncached poll of the communication registers, which then starves the other. With SDRAM bursts
+  only, those four match as before.
+- **Regression:** `m32x_bus_contention` (`tests/MD/synthetic/m32x_cases.py`). The master times
+  100 cache-through SDRAM reads alone (`$BF` ticks: 15 cycles per iteration), then with the slave
+  reading SDRAM in a tight loop (`$12F`: about 24, two 12-clock bursts per iteration). Without
+  arbitration both counts are equal. `m32x_sdram_timing` and `m32x_fb_write_timing` changed by one
+  tick in places (the boot phase moved; the per-iteration figures are unchanged).
+
+### Results
+
+- 32X pass (40 titles, PicoDrive): 8 flagged, was 9 after C6. Blackthorne, Primal Rage and Tempo
+  are clean. NBA Jam TE (spectrum 1.73 dB) and Brutal (1.55, limit 1.5) are flagged again at the
+  limit. Still flagged: Ecco's CinePak demo (expected, S5), Gnu Sierra (visual), WWF WrestleMania,
+  WWF Raw, 36 Great Holes, Darxide.
+- `test:md-synthetic` (60/60 and every MesenCE case), `test:md-replay` (124), `test:sh2-cpu`
+  (68,140 and 100 scenario checks) and `test:ci` pass.
+
+### Still open on the 32X
+
+- 36 Great Holes: why the record count is 0 at frame 3,011 (68000/SH-2 race).
+- Darxide's intro pace (SH-2 throughput; needs a hardware reference).
+- WWF WrestleMania's 400-1600 Hz level; NBA Jam TE and Brutal at the spectrum limit.
+- Mars Sample Program: Gnu Sierra, visual 0.19.
+- Whether SDRAM is mirrored above `$0603FFFF` on hardware (MesenCE mirrors; ares does not).
+- The Mega Drive's own output DC blocker; DMAC bus timing; 68000 accesses to the 32X side.

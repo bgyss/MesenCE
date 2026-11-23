@@ -29,7 +29,7 @@ static bool IsSdram(uint32_t addr)
 uint8_t M32xSh2::BusRead8(uint32_t addr)
 {
 	if(IsSdram(addr) && !InDma()) {
-		AddCycles(M32xUnit::SdramBurstWait);
+		_unit->SharedBus(_index, *this, M32xUnit::SdramBurstWait, true);
 		return _unit->GetSdram()[addr & (M32xUnit::SdramSize - 1)];
 	}
 	uint16_t w = _unit->ShRead16(_index, addr & ~1);
@@ -39,7 +39,7 @@ uint8_t M32xSh2::BusRead8(uint32_t addr)
 uint16_t M32xSh2::BusRead16(uint32_t addr)
 {
 	if(IsSdram(addr) && !InDma()) {
-		AddCycles(M32xUnit::SdramBurstWait);
+		_unit->SharedBus(_index, *this, M32xUnit::SdramBurstWait, true);
 		uint8_t* p = _unit->GetSdram() + (addr & (M32xUnit::SdramSize - 2));
 		return (uint16_t)(p[0] << 8 | p[1]);
 	}
@@ -49,7 +49,7 @@ uint16_t M32xSh2::BusRead16(uint32_t addr)
 uint32_t M32xSh2::BusRead32(uint32_t addr)
 {
 	if(IsSdram(addr) && !InDma()) {
-		AddCycles(M32xUnit::SdramBurstWait);
+		_unit->SharedBus(_index, *this, M32xUnit::SdramBurstWait, true);
 		uint8_t* p = _unit->GetSdram() + (addr & (M32xUnit::SdramSize - 4));
 		return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
 	}
@@ -60,7 +60,7 @@ uint32_t M32xSh2::BusRead32(uint32_t addr)
 void M32xSh2::BusReadLine(uint32_t base, uint8_t* line)
 {
 	if(IsSdram(base)) {
-		AddCycles(M32xUnit::SdramBurstWait);
+		_unit->SharedBus(_index, *this, M32xUnit::SdramBurstWait, true);
 		memcpy(line, _unit->GetSdram() + (base & (M32xUnit::SdramSize - 16)), 16);
 		return;
 	}
@@ -1105,15 +1105,15 @@ uint16_t M32xUnit::ShRead16(int cpu, uint32_t addr)
 	switch(addr >> 24) {
 		case 0x00:
 			if(addr < 0x4000) {
-				sh2.AddCycles(1);
+				SharedBus(cpu, sh2, 1);
 				vector<uint8_t>& rom = _bootRom[cpu];
 				uint32_t a = addr & (uint32_t)(rom.size() - 1);
 				return (uint16_t)(rom[a] << 8 | rom[a + 1]);
 			} else if(addr < 0x4100) {
-				sh2.AddCycles(1);
+				SharedBus(cpu, sh2, 1);
 				return ReadSysReg(cpu, addr);
 			} else if(addr < 0x4200) {
-				sh2.AddCycles(5);
+				SharedBus(cpu, sh2, 5);
 				if((addr & 0x0E) != 0x0A && !_fm) {
 					return 0;
 				}
@@ -1122,7 +1122,7 @@ uint16_t M32xUnit::ShRead16(int cpu, uint32_t addr)
 				if(!_fm) {
 					return 0;
 				}
-				sh2.AddCycles(5);
+				SharedBus(cpu, sh2, 5);
 				return _palette[(addr >> 1) & 0xFF];
 			}
 			break;
@@ -1130,7 +1130,7 @@ uint16_t M32xUnit::ShRead16(int cpu, uint32_t addr)
 		case 0x02:
 		case 0x03:
 			//Cartridge ($02000000-$023FFFFF)
-			sh2.AddCycles(6);
+			SharedBus(cpu, sh2, 6);
 			return ReadCart(addr & 0x3FFFFF);
 
 		case 0x04:
@@ -1139,7 +1139,7 @@ uint16_t M32xUnit::ShRead16(int cpu, uint32_t addr)
 			if(!_fm || FrameBufferBusy(sh2.GetCycleCount())) {
 				return 0;
 			}
-			sh2.AddCycles(5);
+			SharedBus(cpu, sh2, 5);
 			{
 				uint32_t a = addr & (FrameBufferSize - 2);
 				uint8_t* fb = _frameBuffer[!_fbDisplay];
@@ -1148,7 +1148,7 @@ uint16_t M32xUnit::ShRead16(int cpu, uint32_t addr)
 
 		case 0x06:
 		case 0x07: {
-			sh2.AddCycles(2);
+			SharedBus(cpu, sh2, 2);
 			uint32_t a = addr & (SdramSize - 2);
 			return (uint16_t)(_sdram[a] << 8 | _sdram[a + 1]);
 		}
@@ -1163,16 +1163,16 @@ void M32xUnit::ShWrite16(int cpu, uint32_t addr, bool upper, bool lower, uint16_
 	switch(addr >> 24) {
 		case 0x00:
 			if(addr >= 0x4000 && addr < 0x4100) {
-				sh2.AddCycles(1);
+				SharedBus(cpu, sh2, 1);
 				WriteSysReg(cpu, addr, upper, lower, value);
 			} else if(addr >= 0x4100 && addr < 0x4200) {
-				sh2.AddCycles(5);
+				SharedBus(cpu, sh2, 5);
 				if(_fm) {
 					WriteVdpReg(addr & 0x0E, upper, lower, value);
 				}
 			} else if(addr >= 0x4200 && addr < 0x4400) {
 				if(_fm) {
-					sh2.AddCycles(5);
+					SharedBus(cpu, sh2, 5);
 					uint16_t& p = _palette[(addr >> 1) & 0xFF];
 					if(upper) {
 						p = (uint16_t)((p & 0x00FF) | (value & 0xFF00));
@@ -1187,14 +1187,14 @@ void M32xUnit::ShWrite16(int cpu, uint32_t addr, bool upper, bool lower, uint16_
 		case 0x04:
 		case 0x05:
 			if(_fm && !FrameBufferBusy(sh2.GetCycleCount())) {
-				sh2.AddCycles(FrameBufferWriteWait(sh2.GetCycleCount()));
+				SharedBus(cpu, sh2, FrameBufferWriteWait(sh2.GetCycleCount()));
 				FrameBufferWrite(addr, upper, lower, value, (addr & 0x20000) != 0);
 			}
 			break;
 
 		case 0x06:
 		case 0x07: {
-			sh2.AddCycles(1);
+			SharedBus(cpu, sh2, 1);
 			uint32_t a = addr & (SdramSize - 2);
 			if(upper) {
 				_sdram[a] = (uint8_t)(value >> 8);
@@ -1385,6 +1385,7 @@ void M32xUnit::Serialize(Serializer& s)
 	SV(_fillBusyUntil);
 	SVArray(_fbFifoDone, 4);
 	SV(_fbFifoIndex);
+	SVArray(_busBusyUntil, 2);
 	SV(_fbSelect);
 	SV(_fbDisplay);
 	SV(_hblank);

@@ -144,10 +144,24 @@ void MdApu::FinishSample(int32_t ymLeft, int32_t ymRight)
 		}
 		left += pwmLeft;
 		right += pwmRight;
+		left = DcBlock(0, left);
+		right = DcBlock(1, right);
 	}
 	_samples.push_back((int16_t)std::clamp(left, -32768, 32767));
 	_samples.push_back((int16_t)std::clamp(right, -32768, 32767));
 	_clock += ClocksPerYmSample;
+}
+
+// The 32X mixes the Mega Drive's audio with its PWM and drives the A/V output, which is AC
+// coupled: no DC reaches the output. Without it, PWM levels that idle away from the centre (and
+// the FM/PSG offsets) put DC and steps into the mix (findings C7). First order, about 16.6 Hz:
+// ares filters the Mega Drive's FM and PSG at 20 Hz; the 32X's own corner is not documented
+// (judgment call). The Mega Drive alone is not filtered yet.
+int32_t MdApu::DcBlock(int ch, int32_t x)
+{
+	_dcAcc[ch] += ((int64_t)(x - _dcIn[ch]) << 16) - (_dcAcc[ch] >> DcShift);
+	_dcIn[ch] = x;
+	return (int32_t)(_dcAcc[ch] >> 16);
 }
 
 void MdApu::RunNuked(uint64_t masterClock)
@@ -249,6 +263,10 @@ void MdApu::Serialize(Serializer& s)
 		SV(_nukedClock);
 		SV(_nukedSlot);
 		SVArray(_nukedAcc, 2);
+	}
+	if(_m32x) {
+		SVArray(_dcIn, 2);
+		SVArray(_dcAcc, 2);
 	}
 
 	vector<uint8_t> ymData;

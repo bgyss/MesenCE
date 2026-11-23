@@ -189,7 +189,17 @@ def compare(run, ref_path, max_lag_seconds):
     rel = {}
     for k, wk in zip(names, w):
         rel[k] = 10 * np.log10(max(wk, 1e-12) / MESEN_WEIGHTS[k] ** 2)
-    base_key = "ym2612" if "ym2612" in rel and w[names.index("ym2612")] > 0 else (names[0] if names else None)
+    # The base is FM when it carries at least 1% of the fitted energy, else the chip that carries
+    # most: a (near) zero-weight base (FM barely playing, as in Tempo) put every other chip at
+    # about +120 dB
+    contrib = {k: float(wk * A[:, i].sum()) for i, (k, wk) in enumerate(zip(names, w))}
+    total = sum(contrib.values())
+    if total <= 0:
+        base_key = names[0] if names else None
+    elif contrib.get("ym2612", 0.0) >= 0.01 * total:
+        base_key = "ym2612"
+    else:
+        base_key = max(contrib, key=contrib.get)
     base = rel[base_key] if base_key else 0.0
     rel_db = {k: round(v - base, 1) for k, v in rel.items()}
     gain_db = round(base, 1)

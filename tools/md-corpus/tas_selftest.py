@@ -110,7 +110,39 @@ def main():
           and runner.shift_input(script, 0) == script)
     failed |= not ok
     print("%s tas input shift" % ("ok  " if ok else "FAIL"))
+    failed |= not audio_base_check()
     return 1 if failed else 0
+
+
+def audio_base_check():
+    """tools/audio-compare: when the fit gives FM no weight (the reference is PWM only), the levels
+    are based on the next chip, not on FM's zero weight (Tempo read pwm +124 dB, findings C7)."""
+    import tempfile
+    import wave
+    import numpy as np
+    import compare
+    audio_compare, run_library = compare.audio_modules()
+    rate, seconds = 8000, 12
+    rng = np.random.default_rng(1)
+    env = np.repeat(rng.uniform(0.1, 1.0, seconds * 4), rate // 4)
+    pwm = (rng.standard_normal(rate * seconds) * 6000 * env).clip(-32768, 32767)
+    fm = (rng.standard_normal(rate * seconds) * 50).clip(-32768, 32767)
+    run = pathlib.Path(tempfile.mkdtemp())
+    stereo = lambda x: np.repeat(x.astype("<i2"), 2).tobytes()
+    (run / "ym2612.raw").write_bytes(stereo(fm))
+    (run / "pwm.raw").write_bytes(stereo(pwm))
+    (run / "manifest.json").write_text(json.dumps({"chip_audio": {"sample_rate": rate}}))
+    for name, data in (("audio.wav", fm + pwm), ("reference.wav", pwm)):
+        with wave.open(str(run / name), "wb") as w:
+            w.setnchannels(2)
+            w.setsampwidth(2)
+            w.setframerate(rate)
+            w.writeframes(stereo(data.clip(-32768, 32767)))
+    r = audio_compare.compare(run, run / "reference.wav", 1.0)
+    level = r["chip_level_db_vs_mesen"].get("pwm", 0.0)
+    ok = abs(level) < 1.0 and "pwm-level" not in run_library.flags(r)
+    print("%s audio level base without FM: pwm %+.1f dB" % ("ok  " if ok else "FAIL", level))
+    return ok
 
 
 if __name__ == "__main__":

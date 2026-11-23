@@ -150,6 +150,7 @@ private:
 	uint64_t _fbFifoDone[4] = {};
 	uint8_t _fbFifoIndex = 0;
 	uint32_t FrameBufferWriteWait(uint64_t sh2Cycle);
+	uint64_t _busBusyUntil[2] = {}; //SH-2 cycle at which each SH-2's last bus access ends
 	bool _fbSelect = false; //FS as written
 	bool _fbDisplay = false; //the buffer being displayed (FS swaps at VBlank)
 	bool _hblank = false;
@@ -272,6 +273,22 @@ public:
 
 	M32xSh2& GetSh2(int i) { return _sh2[i]; }
 	uint8_t* GetSdram() { return _sdram; }
+
+	//The two SH-2s share one external bus (manual p. 15, "mounted to a common bus"). Every access
+	//occupies it for its waits plus the 2-clock bus cycle. An SDRAM read burst (arbitrate = true)
+	//first waits while the other SH-2's access is in progress; other accesses don't wait, and an
+	//SH-2's own back-to-back accesses are never delayed (the single-CPU figures include them).
+	//Judgment call: the manual gives no arbitration figures, and arbitrating every access (register
+	//polling included) slowed Kolibri, NBA Jam TE, Metal Head and World Series Baseball away from
+	//PicoDrive (findings C7). DMAC transfers are not arbitrated (their bus timing is not modelled).
+	void SharedBus(int cpu, M32xSh2& sh2, uint32_t waits, bool arbitrate = false)
+	{
+		uint64_t now = sh2.GetCycleCount();
+		uint64_t other = _busBusyUntil[cpu ^ 1];
+		uint64_t start = (arbitrate && other > now && !sh2.InDma()) ? other : now;
+		sh2.AddCycles((uint32_t)(start - now) + waits);
+		_busBusyUntil[cpu] = start + waits + 2;
+	}
 	uint8_t* GetFrameBuffer(int i) { return _frameBuffer[i]; }
 	uint16_t* GetPalette() { return _palette; }
 	uint16_t* GetComm() { return _comm; }
