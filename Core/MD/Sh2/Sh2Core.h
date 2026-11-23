@@ -170,6 +170,7 @@ protected:
 	//Set while an exception is being entered, so a delay slot's branch doesn't override it
 	bool _exceptionTaken = false;
 	bool _inDelaySlot = false;
+	bool _inDma = false;
 	uint32_t _curSlotTarget = 0;
 	uint32_t _instPc = 0;
 
@@ -282,6 +283,10 @@ public:
 	virtual void BusWrite32(uint32_t addr, uint32_t value) = 0;
 	//Instruction fetch from an external area (default: a word read)
 	virtual uint16_t BusFetch16(uint32_t addr) { return BusRead16(addr); }
+	//Cache line fill (16 bytes from the 16-byte aligned base; default: four long reads)
+	virtual void BusReadLine(uint32_t base, uint8_t* line);
+	//True while the DMAC is transferring (its accesses go through the same Bus* functions)
+	bool InDma() const { return _inDma; }
 
 	//Hooks for the owner. The debugger hooks run only while SetDebugHooks(true).
 	virtual void OnInstructionStart(uint32_t /*pc*/, uint16_t /*op*/) {}

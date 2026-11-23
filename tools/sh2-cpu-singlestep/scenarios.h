@@ -585,6 +585,21 @@ namespace Scenarios
 			cpu.Io8(0xFFFFFE92, 0x00);
 		});
 
+		scenario("cache: CCR is the byte at $FE92 only", [&] {
+			//$FFFFFE93-$FFFFFE9F are unassigned (SH7604 appendix A). NFL Quarterback Club writes
+			//CCR = $11, then 0 to $FE93; ares mirrored CCR there and turned the cache off
+			cpu.Boot(Code);
+			cpu.Io8(0xFFFFFE92, 0x11);
+			cpu.Io8(0xFFFFFE93, 0x00);
+			r.Eq("CCR keeps CE", cpu.RdIo8(0xFFFFFE92), 0x01);
+			r.Eq("$FE93 reads 0", cpu.RdIo8(0xFFFFFE93), 0x00);
+			cpu.SetLong(0x4000, 0xAABBCCDD);
+			cpu.busReads = 0;
+			cpu.Rd32(0x4000);
+			r.Eq("still caching: a line fill", cpu.busReads, 4);
+			cpu.Io8(0xFFFFFE92, 0x00);
+		});
+
 		printf("sh2 scenarios: %d checks, %d failed\n", r.checks, r.failures);
 		return r.failures ? 1 : 0;
 	}

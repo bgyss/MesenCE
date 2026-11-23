@@ -1340,3 +1340,74 @@ in `compare.py`:
 - The SDRAM timing (12-clock bursts) and the maximum waits are not modelled; they would slow games
   that read SDRAM through the cache-through address.
 
+## C6: 32X SDRAM timing, and a cache control mirror that isn't there (2026-11-22)
+
+The last open timing item from C5: the manual's SDRAM figures (32X Hardware Manual 4.4, p. 78).
+
+### SDRAM reads are 12-clock bursts (fixed)
+
+- **Source:** "read transfers in the 8 word burst mode ... Read: 12 Clock / 8 Word. Write: 2 Clock
+  / 1 Word", and "when the SDRAM is read using cache-through, even if the data to be read is only a
+  single word, the access operation to the SH2 SDRAM is 8-word-burst-read-fixed, and action time is
+  required by that amount".
+- **Before:** 2 cycles per word read (ares' figure): a cache line fill (8 words) cost 16, a
+  cache-through read 2.
+- **Fix:** `M32xSh2` charges one burst, 10 waits (12 clocks, the convention of the other figures: 1
+  wait = a 3-clock bus cycle), per cache line fill (`Sh2Core::BusReadLine`, a new hook; the
+  default still makes four long reads) and per cache-through read of any size (a long's two
+  words are in the same burst). Judgment calls: the 10-wait conversion, and the long read as one
+  burst. Writes keep 1 per word. SH-2 DMAC reads keep 2 per word: `Sh2Core::InDma()` excludes them,
+  because DMA bus timing isn't modelled (one unit per CPU step) and charging bursts to the CPU
+  would be wrong in a different way.
+- **Regression:** `m32x_sdram_timing` (`tests/MD/synthetic/m32x_cases.py`). The master purges and
+  enables the cache and times 100 iterations with the FRT at φ/8: an empty loop (`$40`: 5 cycles
+  per iteration), cache-through word reads (`$CB`: 16, the read is 1 + 10), cached reads one line
+  apart (`$BF`: 15, one line fill each) and cache-through long writes (`$5A`: 7). The old figures
+  fail it. `m32x_fb_write_timing`'s counts dropped by 1-2 ticks (`$FB`, `$80`, `$7F`): its loop
+  code's own line fills are cheaper.
+
+### NFL Quarterback Club: CCR is not mirrored at `$FFFFFE93` (fixed)
+
+- **Symptom:** with the burst timing, NFL Quarterback Club ran several times slower: the Acclaim
+  logo was still up at frame 2,400 (PicoDrive: the stadium by frame 1,200); flags `mesen-no-input`,
+  visual, audio.
+- **Cause:** both SH-2s fetched every instruction uncached from SDRAM (7.6 million fetches on the
+  master in 600 frames, 98 line fills). The game enables the cache and then writes 0 to the next
+  byte:
+
+  ```
+  mov.l @(6,pc),r0   ; $FFFFFE92 (CCR)
+  mov   #$11,r1
+  mov.b r1,@r0       ; CCR = $11: purge, cache on
+  xor   r1,r1
+  add   #1,r0
+  mov.b r1,@r0       ; 0 -> $FFFFFE93
+  ```
+
+  ares, and the SH-2 core ported from it, decode `$FFFFFE93` as CCR too, so the second write turned
+  the cache off. The SH7604 register map (appendix A) lists CCR at `H'FFFFFE92` only, 8 bits, and
+  `H'FFFFFE93`-`H'FFFFFE9F` as unassigned. With 2-cycle SDRAM reads, the uncached game ran close
+  enough to speed that nothing showed.
+- **Fix:** `Sh2Core` decodes CCR at `$FE92` only; `$FE93` reads 0 and ignores writes (32X findings,
+  SH-2 difference 21).
+- **Regression:** `test:sh2-cpu --scenarios`, "cache: CCR is the byte at $FE92 only" (CCR keeps CE
+  after a write to `$FE93`, and a read still fills a line). It fails with the mirror.
+
+### Results
+
+- 32X pass (40 titles, PicoDrive): 9 flagged, was 10 after C5. NFL Quarterback Club is clean;
+  NBA Jam TE and Virtua Fighter lost their audio flags. WWF Raw diverges again at about frame 3,186:
+  its attract mode picks a different random match (Bam Bam Bigelow vs Diesel in MesenCE, Luna
+  Vachon vs Doink in PicoDrive), timing-dependent and single-oracle; both play normally. Ecco's
+  CinePak demo stays black as expected (S5).
+- `test:md-synthetic` (60/60 and every MesenCE case), `test:md-replay` (123), `test:sh2-cpu`
+  (68,140 and 100 scenario checks) pass.
+
+### Still open on the 32X
+
+- WWF WrestleMania (about frame 2,704), 36 Great Holes (3,390), WWF Raw (3,186): late state
+  divergences, single-oracle.
+- Mars Sample Program: Gnu Sierra, visual 0.19 (polygon rotation phase).
+- Audio flags on Blackthorne, Darxide, Primal Rage and Tempo, against PicoDrive's PWM only.
+- Not modelled: SDRAM contention between the two SH-2s and the 68000, DMAC bus timing, and the
+  maximum waits (frame buffer read, palette during display, cartridge).

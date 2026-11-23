@@ -28,6 +28,7 @@ public:
 	uint8_t BusRead8(uint32_t addr) override;
 	uint16_t BusRead16(uint32_t addr) override;
 	uint32_t BusRead32(uint32_t addr) override;
+	void BusReadLine(uint32_t base, uint8_t* line) override;
 	void BusWrite8(uint32_t addr, uint8_t value) override;
 	void BusWrite16(uint32_t addr, uint16_t value) override;
 	void BusWrite32(uint32_t addr, uint32_t value) override;
@@ -62,6 +63,8 @@ class M32xUnit final : public ISerializable
 {
 public:
 	static constexpr uint32_t SdramSize = 0x40000;
+	//SH-2 SDRAM read: one 8-word burst of 12 clocks per bus read, cache fill or not (manual 4.4)
+	static constexpr uint32_t SdramBurstWait = 10;
 	//The SH-2 address space the debugger shows (boot ROM to the end of SDRAM, physical addresses)
 	static constexpr uint32_t Sh2DebugSpaceSize = 0x06040000;
 	static constexpr uint32_t FrameBufferSize = 0x20000; //bytes, per buffer
