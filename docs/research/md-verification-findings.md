@@ -1252,3 +1252,22 @@ Kept: the arbitration model. It follows the hardware description, and on the con
 cartridges it matches GPGX, where MesenCE charged nothing before. Its effect on the movie metric
 is mixed. Movie agreement is evidence of accuracy where the game is deterministic in the 68000's
 spare time, and only a draw where the game feeds spare time into its random numbers.
+
+### CI after the merge: an empty save file reached `memcpy` with a null pointer (fixed)
+
+Found by the `md-sanitizers` CI job (UBSan, `-fno-sanitize-recover`) on the `sega-cd` push: every
+synthetic cartridge aborted at `BatteryManager.cpp:81`, "null pointer passed as argument 2".
+`BatteryManager::LoadBattery(extension, data, length)` copied
+`std::min(batteryData.size(), length)` bytes from `batteryData.data()`. With no save file the
+vector is empty and `data()` may be null; a zero-length `memcpy` from a null pointer is still
+undefined behaviour (C standard 7.24.1). C2's header-less battery RAM default gave almost every
+cartridge a save area, so the path now runs on nearly every Mega Drive load. The code is shared
+by every core that loads battery data into a buffer. Fix: skip the copy when there is no data
+(`06351c0f`). Regression: the `md-sanitizers` job, which runs all 61 synthetic cartridges under
+ASan and UBSan.
+
+The same push fixed warnings that the CI compilers treat as errors, with no behaviour change:
+MSVC C4458 (`McdM68k::BusRead`'s `access` parameter), C5051 (a C++20 `[[unlikely]]`), C4805 (nine
+SH-2 register reads OR-ing a `bool` into an `int`), and clang's
+`-Wdelete-non-abstract-non-virtual-dtor` in the headless runner. macOS builds on forks now skip
+code signing when no certificate secret is set.
