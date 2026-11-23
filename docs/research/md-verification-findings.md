@@ -1507,7 +1507,7 @@ SDRAM sharing between the two SH-2s.
 - Whether SDRAM is mirrored above `$0603FFFF` on hardware (MesenCE mirrors; ares does not).
 - The Mega Drive's own output DC blocker; DMAC bus timing; 68000 accesses to the 32X side.
 
-## C8: 36 Great Holes follow-up (2026-11-23, open)
+## C8: 36 Great Holes: battery RAM writes through the 32X bank window (2026-11-23, fixed)
 
 Narrowing down C7's open item. New tooling, and what it established.
 
@@ -1540,9 +1540,35 @@ code area `$06000400-$06003000` is byte-identical in both).
 - PicoDrive reaches the course later (after frame 3,100) and its SDRAM at the matching addresses
   holds other data by then, so the two runs have taken different paths before the demo.
 
-### Still open
+### Per-frame comparison: the cause
 
-Where the course variables first differ. Next steps: dump both emulators' SDRAM every frame from
-2,900 and diff the `$06029000-$06029400` variables and the 68000's commands (communication
-registers) as they change; check whether PicoDrive's repeated V interrupts change anything the 68000
-side waits on.
+- Both emulators dumped every frame (MesenCE 2,880-3,006, PicoDrive 2,780-3,149), each MesenCE
+  frame matched to the PicoDrive frame with the closest 68000 work RAM. Up to the scene change
+  (MesenCE 2,999 / PicoDrive 2,934) work RAM differs by 3-5 bytes and SDRAM is identical outside
+  the stack and the counter above; a countdown at `$FF01C1` is 4 lower in MesenCE, so its scene
+  change comes 4 frames earlier (not a defect).
+- Right after the scene change, PicoDrive's work RAM at `$FF020A` holds the demo's player record
+  (`FRED COUPLES`, then his statistics); MesenCE's holds `$FF` bytes. The record comes from battery
+  RAM, which in MesenCE was never written: all 32 KiB still `$FF`.
+- The header declares odd-byte battery RAM at `$200001-$20FFFF` over a 3 MiB ROM (switched by
+  `$A130F1`). With the 32X (ADEN = 1, RV = 0) the 68000 reaches the cartridge only through
+  `$880000` and the `$900000` bank window, so the game writes its RAM through bank 2.
+  `M32xUnit::MainWrite` ignored writes to the windows (reads already went to
+  `MdMemoryManager::ReadCartWord`, which maps the RAM). ares forwards writes in the bank window to
+  the cartridge (`bus-external.cpp`), and PicoDrive saves the record.
+- The rest followed from the `$FF` player: the camera started off the course grid, the visible
+  cell list was empty, the record count was 0, the `dt`-terminated loop ran past SDRAM and, through
+  MesenCE's SDRAM mirror, overwrote the vectors.
+
+### Fix
+
+- `MdMemoryManager::WriteCartWord`: the 68000's cartridge write handling (SF-004 board, EEPROM,
+  battery RAM), now also called by `M32xUnit::MainWrite` for the `$900000` bank window while RV = 0
+  (the fixed window at `$880000` stays read-only, as in ares).
+- **Regression:** `m32x_cart_sram` (`tests/MD/synthetic/m32x_cases.py`): 36 Great Holes' layout;
+  with `$A130F1` = 1 and bank 2, bytes written at `$900001`/`$900003` read back, and with
+  `$A130F1` = 0 the window shows the ROM. Without the fix the reads return `$FF`.
+- **Results:** 36 Great Holes plays its demo hole as in PicoDrive (no flags). 32X pass: 7 of 40
+  flagged, was 8. `test:md-synthetic`, `test:md-replay` (125) and `test:ci` pass.
+- PicoDrive's repeated V interrupts (above) and whether SDRAM mirrors above `$0603FFFF` on
+  hardware remain open; neither affects this game now.
