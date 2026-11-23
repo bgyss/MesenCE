@@ -475,6 +475,7 @@ python3 tests/MD/dma/check_dma_timing.py
 python3 tests/MD/timing/check_bus_timing.py
 python3 tests/MD/mcd/debugger_check.py bin/md-synthetic
 python3 tests/MD/m32x/debugger_check.py bin/md-synthetic
+python3 tests/MD/m32x/pwm_dc_check.py bin/md-synthetic
 python3 tests/MD/mcd/swap_race.py
 python3 tests/MD/vdp/irq_enable_pending.py
 python3 tests/MD/cart/mapper_boards.py

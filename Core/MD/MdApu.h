@@ -52,6 +52,12 @@ private:
 	std::function<void(int32_t ymL, int32_t ymR, int32_t psgL, int32_t psgR)> _chipObserver;
 	std::function<void(int32_t pwmL, int32_t pwmR)> _pwmObserver;
 	uint32_t _sampleRate = 53267;
+	//32X output stage: AC coupling, a first-order DC blocker on the mix (fixed point, so the output
+	//is the same on every architecture). The corner is rate / (2 pi 2^DcShift): about 16.6 Hz
+	static constexpr int DcShift = 9;
+	int32_t _dcIn[2] = {};
+	int64_t _dcAcc[2] = {};
+	int32_t DcBlock(int ch, int32_t x);
 
 	void ProcessTimers(uint64_t until);
 	void ComputePsg(int32_t& psgLeft, int32_t& psgRight);

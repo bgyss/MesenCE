@@ -507,7 +507,7 @@ fbw:   .long 0x24000200
 
 
 #FRT ticks (phi/8) for 100 x 4 back-to-back frame buffer writes, 100 spaced writes, 100 VDP register reads
-FB_TIMING = (0xFB, 0x80, 0x7F)
+FB_TIMING = (0xFB, 0x81, 0x7F)
 
 
 def _sdram_timing():
@@ -575,9 +575,85 @@ wbase:  .long 0x26034000
     return _case("m32x_sdram_timing", ops, master, frames=4)
 
 
+def _bus_contention():
+    """The two SH-2s share one bus (manual p. 15: "mounted to a common bus"). The master times 100
+    cache-through SDRAM word reads (one 12-clock burst each, C6) alone (comm5), then starts the
+    slave, which reads cache-through SDRAM in a tight loop from its cache, and times them again
+    (comm7). An access waits while the other SH-2 holds the bus (findings C7: occupancy = waits +
+    the 2-clock bus cycle; judgment call, no arbitration figures in the manual). Without the
+    arbitration both counts are equal.
+    """
+    loop = """
+    mov.l ctbase,r1
+    mov.b @(2,r8),r0
+    extu.b r0,r3
+    shll8 r3
+    mov.b @(3,r8),r0
+    extu.b r0,r0
+    or r0,r3
+    mov #100,r4
+%s:
+    mov.w @r1,r0
+    dt r4
+    bf/s %s
+    nop
+    mov.b @(2,r8),r0
+    extu.b r0,r5
+    shll8 r5
+    mov.b @(3,r8),r0
+    extu.b r0,r0
+    or r0,r5
+    sub r3,r5
+    extu.w r5,r5
+    mov r5,r0
+"""
+    master = """
+    mov.l frt,r8
+    mov #0,r0
+    mov.b r0,@(6,r8)        ; TCR: FRT counts phi/8
+""" + loop % ("alone", "alone") + """
+    mov.w r0,@(0x2A,gbr)    ; comm5: alone
+    mov #1,r0
+    mov.w r0,@(0x2C,gbr)    ; comm6 = 1: slave, go
+mwait:
+    mov.w @(0x28,gbr),r0
+    cmp/eq #1,r0
+    bf mwait                ; comm4 = 1: the slave is reading
+""" + loop % ("shared", "shared") + """
+    mov.w r0,@(0x2E,gbr)    ; comm7: with the slave reading
+    mov #1,r0
+    mov.w r0,@(0x26,gbr)    ; comm3 = 1: done (it held "OK" from the boot handshake)
+""" + IDLE + """
+ .align 4
+frt:    .long 0xFFFFFE10
+ctbase: .long 0x26030000
+"""
+    slave = """
+swait:
+    mov.w @(0x2C,gbr),r0
+    cmp/eq #1,r0
+    bf swait
+    mov.l sbase,r1
+    mov #1,r0
+    mov.w r0,@(0x28,gbr)    ; comm4 = 1
+sread:
+    mov.w @r1,r0
+    bra sread
+    nop
+ .align 4
+sbase:  .long 0x26034000
+"""
+    ops = _wait_boot() + [_poll_comm(3, 1), _read(_comm(5), BUS_CONTENTION[0]), _read(_comm(7), BUS_CONTENTION[1])]
+    return _case("m32x_bus_contention", ops, master, slave, frames=4)
+
+
+#FRT ticks (phi/8) for 100 cache-through SDRAM reads by the master: alone, and with the slave reading
+BUS_CONTENTION = (0xBF, 0x12F)
+
+
 #FRT ticks (phi/8) for 100 iterations: empty loop, cache-through word reads, cached reads with a
 #line fill each, cache-through long writes
-SDRAM_TIMING = (0x40, 0xCB, 0xBF, 0x5A)
+SDRAM_TIMING = (0x41, 0xCC, 0xBF, 0x59)
 
 
 def _fen_refresh():
@@ -966,7 +1042,7 @@ def _pixel_check(name):
 
 def all_cases():
     PIXEL_CHECKS["m32x_render"] = {(40, 100): (0, 255, 0), (280, 100): (0, 0, 255)}
-    found = [_boot(), _cmd_irq(), _vint_hint(), _hint_dma(), _sdram_shared(), _dreq_fifo(), _frame_buffer(), _fb_write_timing(), _sdram_timing(), _vdp_68k(), _fen_refresh(), _cart_map(), _handover(),
+    found = [_boot(), _cmd_irq(), _vint_hint(), _hint_dma(), _sdram_shared(), _dreq_fifo(), _frame_buffer(), _fb_write_timing(), _sdram_timing(), _bus_contention(), _vdp_68k(), _fen_refresh(), _cart_map(), _handover(),
              _pwm(), _pwm_stream(), _z80_window(), _render(), _priority_32x(), _priority_md(), _dot_shift()]
     for name in PIXEL_CHECKS:
         DERIVED_CHECKS[name] = _pixel_check(name)
