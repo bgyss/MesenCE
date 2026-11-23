@@ -150,7 +150,12 @@ uint32_t Sh2Core::CacheRead(uint32_t addr, bool fetch)
 	_cache.Lru[entry] = _lruUpdate[way][lru];
 	_cache.Tags[index] = tag;
 	uint8_t* line = _cache.Lines[index];
-	uint32_t base = addr & 0x1FFFFFF0;
+	BusReadLine(addr & 0x1FFFFFF0, line);
+	return read(line);
+}
+
+void Sh2Core::BusReadLine(uint32_t base, uint8_t* line)
+{
 	for(uint32_t i = 0; i < 4; i++) {
 		uint32_t v = BusRead32(base + i * 4);
 		line[i * 4 + 0] = (uint8_t)(v >> 24);
@@ -158,7 +163,6 @@ uint32_t Sh2Core::CacheRead(uint32_t addr, bool fetch)
 		line[i * 4 + 2] = (uint8_t)(v >> 8);
 		line[i * 4 + 3] = (uint8_t)v;
 	}
-	return read(line);
 }
 
 template<int Size>
@@ -464,8 +468,9 @@ uint8_t Sh2Core::ReadIo8(uint32_t addr)
 		case 0xFFFFFE83: return (uint8_t)(_wdt.Wovf << 7 | _wdt.Rste << 6 | _wdt.Rsts << 5 | 0x1F);
 
 		case 0xFFFFFE91: return _sbycr;
+		//CCR is the byte at $FE92 only: $FE93-$FE9F are unassigned (SH7604 appendix A; ares mirrors
+		//CCR at $FE93, and NFL Quarterback Club's write of 0 there turned the cache off)
 		case 0xFFFFFE92:
-		case 0xFFFFFE93:
 			//CP (bit 4) always reads 0
 			return (uint8_t)(_cache.WaySelect << 6 | (_cache.TwoWay ? 8 : 0) | _cache.DisableData << 2 | _cache.DisableCode << 1 | (int)_cache.Enable);
 
@@ -690,7 +695,6 @@ void Sh2Core::WriteIo8(uint32_t addr, uint8_t v)
 
 		case 0xFFFFFE91: _sbycr = v & 0xDF; return;
 		case 0xFFFFFE92:
-		case 0xFFFFFE93:
 			_cache.Enable = bit(0);
 			_cache.DisableCode = bit(1);
 			_cache.DisableData = bit(2);
@@ -987,6 +991,7 @@ void Sh2Core::DmaTransfer(int ch)
 		}
 	};
 
+	_inDma = true;
 	switch(c.Ts) {
 		case 0: wr(c.Dar, rd(c.Sar, 1), 1); break;
 		case 1: wr(c.Dar, rd(c.Sar, 2), 2); break;
@@ -1000,6 +1005,7 @@ void Sh2Core::DmaTransfer(int ch)
 			c.Tcr = (c.Tcr - 3) & 0xFFFFFF;
 			break;
 	}
+	_inDma = false;
 
 	static constexpr uint32_t srcStep[4] = { 1, 2, 4, 0 };
 	static constexpr uint32_t dstStep[4] = { 1, 2, 4, 16 };

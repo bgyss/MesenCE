@@ -507,7 +507,77 @@ fbw:   .long 0x24000200
 
 
 #FRT ticks (phi/8) for 100 x 4 back-to-back frame buffer writes, 100 spaced writes, 100 VDP register reads
-FB_TIMING = (0xFC, 0x82, 0x80)
+FB_TIMING = (0xFB, 0x80, 0x7F)
+
+
+def _sdram_timing():
+    """SH-2 SDRAM timing (manual 4.4, p. 78): reads are 8-word bursts of 12 clocks, a cache line
+    fill and a cache-through read alike ("even if the data to be read is only a single word");
+    writes take 2 clocks per word.
+
+    The master purges and enables the cache (CCR = $11; the loops then run from cache), and times
+    four loops of 100 iterations with the FRT at phi/8: an empty loop (comm4), cache-through word
+    reads of one address (comm5), cached word reads 16 bytes apart, one line fill each (comm6), and
+    cache-through long writes (comm7). Expected values are MesenCE's with the manual's figures
+    (findings C6); the ares figures (2 cycles per word read) gave a line fill of 16 cycles and a
+    cache-through read of 2.
+    """
+    def timed(body, base, label):
+        return """
+    mov.l %s,r1
+    mov.b @(2,r8),r0
+    extu.b r0,r3
+    shll8 r3
+    mov.b @(3,r8),r0
+    extu.b r0,r0
+    or r0,r3                ; start
+    mov #100,r4
+%s:
+%s
+    dt r4
+    bf/s %s
+    add #16,r1
+    mov.b @(2,r8),r0
+    extu.b r0,r5
+    shll8 r5
+    mov.b @(3,r8),r0
+    extu.b r0,r0
+    or r0,r5
+    sub r3,r5
+    extu.w r5,r5
+    mov r5,r0
+""" % (base, label, body, label)
+    master = """
+    mov.l ccr,r1
+    mov #0x11,r0
+    mov.b r0,@r1            ; CCR: purge, cache on
+    mov.l frt,r8
+    mov #0,r0
+    mov.b r0,@(6,r8)        ; TCR: FRT counts phi/8
+""" + timed("    nop", "ctbase", "empty") + """
+    mov.w r0,@(0x28,gbr)    ; comm4: empty loop
+""" + timed("    mov.w @r1,r0\n    add #-16,r1", "ctbase", "ctread") + """
+    mov.w r0,@(0x2A,gbr)    ; comm5: cache-through reads
+""" + timed("    mov.w @r1,r0", "cbase", "cread") + """
+    mov.w r0,@(0x2C,gbr)    ; comm6: cached reads, one line fill each
+""" + timed("    mov.l r1,@r1", "wbase", "ctwrite") + """
+    mov.w r0,@(0x2E,gbr)    ; comm7: cache-through long writes
+""" + IDLE + """
+ .align 4
+ccr:    .long 0xFFFFFE92
+frt:    .long 0xFFFFFE10
+ctbase: .long 0x26030000
+cbase:  .long 0x06030000
+wbase:  .long 0x26034000
+"""
+    ops = _wait_boot() + [_poll_comm(7, SDRAM_TIMING[3]), _read(_comm(4), SDRAM_TIMING[0]),
+                          _read(_comm(5), SDRAM_TIMING[1]), _read(_comm(6), SDRAM_TIMING[2])]
+    return _case("m32x_sdram_timing", ops, master, frames=4)
+
+
+#FRT ticks (phi/8) for 100 iterations: empty loop, cache-through word reads, cached reads with a
+#line fill each, cache-through long writes
+SDRAM_TIMING = (0x40, 0xCB, 0xBF, 0x5A)
 
 
 def _fen_refresh():
@@ -896,7 +966,7 @@ def _pixel_check(name):
 
 def all_cases():
     PIXEL_CHECKS["m32x_render"] = {(40, 100): (0, 255, 0), (280, 100): (0, 0, 255)}
-    found = [_boot(), _cmd_irq(), _vint_hint(), _hint_dma(), _sdram_shared(), _dreq_fifo(), _frame_buffer(), _fb_write_timing(), _vdp_68k(), _fen_refresh(), _cart_map(), _handover(),
+    found = [_boot(), _cmd_irq(), _vint_hint(), _hint_dma(), _sdram_shared(), _dreq_fifo(), _frame_buffer(), _fb_write_timing(), _sdram_timing(), _vdp_68k(), _fen_refresh(), _cart_map(), _handover(),
              _pwm(), _pwm_stream(), _z80_window(), _render(), _priority_32x(), _priority_md(), _dot_shift()]
     for name in PIXEL_CHECKS:
         DERIVED_CHECKS[name] = _pixel_check(name)

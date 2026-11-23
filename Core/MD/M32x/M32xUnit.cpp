@@ -16,21 +16,55 @@
 // SH2 memory map; as ares)
 // ---------------------------------------------------------------------------------------------
 
+// SDRAM reads are 8-word bursts of 12 clocks (manual 4.4, p. 78): a cache line fill is one burst,
+// and so is every cache-through read, even of a single byte, word or long (the long's two words
+// are in the same burst; judgment call). 12 clocks are charged as 10 waits, the same convention
+// as the manual's other figures (1 wait = a 3-clock bus cycle). DMAC transfers keep ShRead16's
+// per-word cost: their bus timing is not modelled (Sh2Core::RunDma).
+static bool IsSdram(uint32_t addr)
+{
+	return ((addr >> 25) & 0x0F) == 3;
+}
+
 uint8_t M32xSh2::BusRead8(uint32_t addr)
 {
+	if(IsSdram(addr) && !InDma()) {
+		AddCycles(M32xUnit::SdramBurstWait);
+		return _unit->GetSdram()[addr & (M32xUnit::SdramSize - 1)];
+	}
 	uint16_t w = _unit->ShRead16(_index, addr & ~1);
 	return (addr & 1) ? (uint8_t)w : (uint8_t)(w >> 8);
 }
 
 uint16_t M32xSh2::BusRead16(uint32_t addr)
 {
+	if(IsSdram(addr) && !InDma()) {
+		AddCycles(M32xUnit::SdramBurstWait);
+		uint8_t* p = _unit->GetSdram() + (addr & (M32xUnit::SdramSize - 2));
+		return (uint16_t)(p[0] << 8 | p[1]);
+	}
 	return _unit->ShRead16(_index, addr & ~1);
 }
 
 uint32_t M32xSh2::BusRead32(uint32_t addr)
 {
+	if(IsSdram(addr) && !InDma()) {
+		AddCycles(M32xUnit::SdramBurstWait);
+		uint8_t* p = _unit->GetSdram() + (addr & (M32xUnit::SdramSize - 4));
+		return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
+	}
 	uint32_t hi = _unit->ShRead16(_index, addr & ~3);
 	return hi << 16 | _unit->ShRead16(_index, (addr & ~3) | 2);
+}
+
+void M32xSh2::BusReadLine(uint32_t base, uint8_t* line)
+{
+	if(IsSdram(base)) {
+		AddCycles(M32xUnit::SdramBurstWait);
+		memcpy(line, _unit->GetSdram() + (base & (M32xUnit::SdramSize - 16)), 16);
+		return;
+	}
+	Sh2Core::BusReadLine(base, line);
 }
 
 void M32xSh2::BusWrite8(uint32_t addr, uint8_t value)
@@ -1044,8 +1078,9 @@ uint16_t M32xUnit::PeekMain(uint32_t addr)
 // charged as SH-2 cycles on top of the instruction's own: boot ROM and system registers 1, VDP
 // registers 5, palette 5 (the manual's minimum; up to a line when the VDP is using it), cartridge 6
 // (minimum), frame buffer read 5 (minimum), frame buffer write 1 while its 4-word FIFO has room
-// (FrameBufferWriteWait). SDRAM costs 2 cycles per read and 1 per write (judgment call, kept from
-// ares; the manual gives 12 clocks per 8-word burst read and 2 per word written)
+// (FrameBufferWriteWait). SDRAM reads are 12-clock bursts (M32xSh2::BusRead*); here, DMAC reads
+// cost 2 (not modelled), and writes 1 per word (manual: 2 clocks per word; a long write is then
+// 4 clocks, charged as 1 + 2 with the instruction's own cycle; judgment call)
 // ---------------------------------------------------------------------------------------------
 
 // 1 wait while the FIFO has room, so a write takes 3 clocks; with the FIFO full the SH-2 waits for
