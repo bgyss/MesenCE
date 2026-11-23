@@ -107,6 +107,8 @@ namespace Mesen.Debugger.ViewModels
 				_state = DebugApi.GetConsoleState<GbaState>(ConsoleType.Gba);
 			} else if(_romInfo.ConsoleType == ConsoleType.Ws) {
 				_state = DebugApi.GetConsoleState<WsState>(ConsoleType.Ws);
+			} else if(_romInfo.ConsoleType == ConsoleType.Md) {
+				_state = DebugApi.GetConsoleState<MdState>(ConsoleType.Md);
 			}
 
 			Dispatcher.UIThread.Post(() => {
@@ -131,6 +133,8 @@ namespace Mesen.Debugger.ViewModels
 				tabs = GbRegisterViewer.GetTabs(ref gbState);
 			} else if(lastState is PceState pceState) {
 				tabs = PceRegisterViewer.GetTabs(ref pceState);
+			} else if(lastState is MdState mdState) {
+				tabs = MdRegisterViewer.GetTabs(ref mdState);
 			} else if(lastState is SmsState smsState) {
 				tabs = SmsRegisterViewer.GetTabs(ref smsState, _romInfo.Format);
 			} else if(lastState is GbaState gbaState) {

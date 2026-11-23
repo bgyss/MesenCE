@@ -180,7 +180,9 @@ namespace Mesen.Interop
 
 		Gba,
 
-		Ws
+		Ws,
+
+		Md
 	}
 
 	public enum ConsoleType
@@ -192,6 +194,7 @@ namespace Mesen.Interop
 		Sms = 4,
 		Gba = 5,
 		Ws = 6,
+		Md = 7,
 	}
 
 	public enum ByteCodeFormat
@@ -281,7 +284,13 @@ namespace Mesen.Interop
 		SwanCrystal,
 		Ymf288AdpcmRom,
 		SmsBootRom,
-		GgBootRom
+		GgBootRom,
+		McdUsa,
+		McdEurope,
+		McdJapan,
+		M32xMasterBios,
+		M32xSlaveBios,
+		M32xVectorBios
 	}
 
 	public struct MissingFirmwareMessage
@@ -337,7 +346,9 @@ namespace Mesen.Interop
 		PceRaw,
 		PceAddress,
 		SmsProActionReplay,
-		SmsGameGenie
+		SmsGameGenie,
+		MdGameGenie,
+		MdProActionReplay
 	}
 
 	public static class CheatTypeExtensions
@@ -350,6 +361,7 @@ namespace Mesen.Interop
 				CheatType.GbGameGenie or CheatType.GbGameShark => CpuType.Gameboy,
 				CheatType.PceRaw or CheatType.PceAddress => CpuType.Pce,
 				CheatType.SmsGameGenie or CheatType.SmsProActionReplay => CpuType.Sms,
+				CheatType.MdGameGenie or CheatType.MdProActionReplay => CpuType.MdM68k,
 				_ => throw new NotImplementedException("unsupported cheat type")
 			};
 		}

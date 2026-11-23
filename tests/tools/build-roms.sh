@@ -25,3 +25,7 @@ for src in "$root"/tests/SNES/src/*.s; do
   python3 "$root/tests/tools/snes_checksum.py" "$out/$name.sfc"
   echo "built bin/test-roms/$name.sfc"
 done
+
+# Mega Drive: the synthetic cartridges (tests/MD/synthetic, own 68000/Z80 encoder; no assembler needed)
+python3 "$root/tests/MD/synthetic/gen.py" "$out/md" >/dev/null
+echo "built bin/test-roms/md/*.md"

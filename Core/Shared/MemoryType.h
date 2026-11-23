@@ -16,6 +16,11 @@ enum class MemoryType
 	SmsMemory,
 	GbaMemory,
 	WsMemory,
+	MdMemory,
+	MdZ80Memory,
+	McdMemory,
+	M32xMasterMemory,
+	M32xSlaveMemory,
 
 	SnesPrgRom,
 	SnesWorkRam,
@@ -101,6 +106,27 @@ enum class MemoryType
 	WsBootRom,
 	WsInternalEeprom,
 	WsPort,
+
+	MdPrgRom,
+	MdWorkRam,
+	MdZ80Ram,
+	MdSaveRam,
+	MdVideoRam,
+	MdPaletteRam,
+	MdVScrollRam,
+	MdTmssRom,
+
+	McdPrgRam,
+	McdWordRam,
+	McdBackupRam,
+	McdPcmRam,
+	McdCdcRam,
+	McdBios,
+
+	M32xSdram,
+	M32xFrameBuffer,
+	M32xPalette,
+	M32xBootRom,
 
 	None
 };

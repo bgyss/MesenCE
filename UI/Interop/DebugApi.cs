@@ -122,6 +122,7 @@ namespace Mesen.Interop
 				CpuType.Sms => GetPpuState<SmsVdpState>(cpuType),
 				CpuType.Gba => GetPpuState<GbaPpuState>(cpuType),
 				CpuType.Ws => GetPpuState<WsPpuState>(cpuType),
+				CpuType.MdM68k or CpuType.MdZ80 or CpuType.McdM68k or CpuType.M32xMaster or CpuType.M32xSlave => GetPpuState<MdVdpState>(cpuType),
 				_ => throw new Exception("Unsupported cpu type")
 			};
 		}
@@ -144,6 +145,7 @@ namespace Mesen.Interop
 				CpuType.Sms => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
 				CpuType.Gba => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
 				CpuType.Ws => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
+				CpuType.MdM68k or CpuType.MdZ80 or CpuType.McdM68k or CpuType.M32xMaster or CpuType.M32xSlave => GetPpuToolsState<EmptyPpuToolsState>(cpuType),
 				_ => throw new Exception("Unsupported cpu type")
 			};
 		}
@@ -410,6 +412,7 @@ namespace Mesen.Interop
 		[DllImport(DllPath)] public static extern void SetEventViewerConfig(CpuType cpuType, InteropPceEventViewerConfig config);
 		[DllImport(DllPath)] public static extern void SetEventViewerConfig(CpuType cpuType, InteropSmsEventViewerConfig config);
 		[DllImport(DllPath)] public static extern void SetEventViewerConfig(CpuType cpuType, InteropWsEventViewerConfig config);
+		[DllImport(DllPath)] public static extern void SetEventViewerConfig(CpuType cpuType, InteropMdEventViewerConfig config);
 
 		[DllImport(DllPath, EntryPoint = "GetEventViewerEvent")] private static extern DebugEventInfo GetEventViewerEventWrapper(CpuType cpuType, UInt16 scanline, UInt16 cycle);
 		public static DebugEventInfo? GetEventViewerEvent(CpuType cpuType, UInt16 scanline, UInt16 cycle)
@@ -557,6 +560,10 @@ namespace Mesen.Interop
 				CpuType.Sms => state is SmsCpuState,
 				CpuType.Gba => state is GbaCpuState,
 				CpuType.Ws => state is WsCpuState,
+				CpuType.MdM68k => state is MdM68kState,
+				CpuType.McdM68k => state is MdM68kState,
+				CpuType.M32xMaster or CpuType.M32xSlave => state is M32xSh2State,
+				CpuType.MdZ80 => state is SmsCpuState,
 				_ => false
 			};
 		}
@@ -571,6 +578,7 @@ namespace Mesen.Interop
 				ConsoleType.Sms => state is SmsVdpState,
 				ConsoleType.Gba => state is GbaPpuState,
 				ConsoleType.Ws => state is WsPpuState,
+				ConsoleType.Md => state is MdVdpState,
 				_ => false
 			};
 		}
@@ -600,6 +608,11 @@ namespace Mesen.Interop
 		SmsMemory,
 		GbaMemory,
 		WsMemory,
+		MdMemory,
+		MdZ80Memory,
+		McdMemory,
+		M32xMasterMemory,
+		M32xSlaveMemory,
 
 		SnesPrgRom,
 		SnesWorkRam,
@@ -685,6 +698,27 @@ namespace Mesen.Interop
 		WsBootRom,
 		WsInternalEeprom,
 		WsPort,
+
+		MdPrgRom,
+		MdWorkRam,
+		MdZ80Ram,
+		MdSaveRam,
+		MdVideoRam,
+		MdPaletteRam,
+		MdVScrollRam,
+		MdTmssRom,
+
+		McdPrgRam,
+		McdWordRam,
+		McdBackupRam,
+		McdPcmRam,
+		McdCdcRam,
+		McdBios,
+
+		M32xSdram,
+		M32xFrameBuffer,
+		M32xPalette,
+		M32xBootRom,
 
 		None,
 	}
@@ -1016,6 +1050,18 @@ namespace Mesen.Interop
 		[MarshalAs(UnmanagedType.I1)] public bool ShowPreviousFrameEvents;
 	}
 
+	//Mirrors MdEventViewerConfig in Core/MD/Debugger/MdEventManager.h
+	[StructLayout(LayoutKind.Sequential)]
+	public class InteropMdEventViewerConfig
+	{
+		public InteropEventViewerCategoryCfg Irq;
+		public InteropEventViewerCategoryCfg Nmi;
+		public InteropEventViewerCategoryCfg MarkedBreakpoints;
+		public InteropEventViewerCategoryCfg VdpWrite;
+		public InteropEventViewerCategoryCfg VdpRead;
+		[MarshalAs(UnmanagedType.I1)] public bool ShowPreviousFrameEvents;
+	}
+
 	[StructLayout(LayoutKind.Sequential)]
 	public class InteropWsEventViewerConfig
 	{
@@ -1333,6 +1379,7 @@ namespace Mesen.Interop
 		Rgb222,
 		Rgb444,
 		Bgr444,
+		MdCram, //Mega Drive CRAM word: 0000BBB0GGG0RRR0
 	}
 
 	public unsafe struct DebugPaletteInfo
@@ -1556,7 +1603,12 @@ namespace Mesen.Interop
 		Pce,
 		Sms,
 		Gba,
-		Ws
+		Ws,
+		MdM68k,
+		MdZ80,
+		McdM68k,
+		M32xMaster,
+		M32xSlave
 	}
 
 	public enum StepType

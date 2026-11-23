@@ -24,6 +24,10 @@
 #include "GBA/GbaConsole.h"
 #include "GBA/GbaMemoryManager.h"
 #include "WS/WsConsole.h"
+#include "MD/MdConsole.h"
+#include "MD/MdMemoryManager.h"
+#include "MD/Mcd/McdUnit.h"
+#include "MD/M32x/M32xUnit.h"
 #include "WS/WsMemoryManager.h"
 #include "Shared/Video/VideoDecoder.h"
 #include "Debugger/DebugTypes.h"
@@ -56,6 +60,8 @@ MemoryDumper::MemoryDumper(Debugger* debugger)
 		_gbaConsole = gba;
 	} else if(WsConsole* ws = dynamic_cast<WsConsole*>(console)) {
 		_wsConsole = ws;
+	} else if(MdConsole* md = dynamic_cast<MdConsole*>(console)) {
+		_mdConsole = md;
 	}
 
 	for(int i = 0; i < DebugUtilities::GetMemoryTypeCount(); i++) {
@@ -104,6 +110,11 @@ uint32_t MemoryDumper::GetMemorySize(MemoryType type)
 		case MemoryType::SmsMemory: return 0x10000;
 		case MemoryType::GbaMemory: return 0x10000000;
 		case MemoryType::WsMemory: return 0x100000;
+		case MemoryType::MdMemory: return 0x1000000;
+		case MemoryType::MdZ80Memory: return 0x10000;
+		case MemoryType::McdMemory: return 0x1000000;
+		case MemoryType::M32xMasterMemory:
+		case MemoryType::M32xSlaveMemory: return M32xUnit::Sh2DebugSpaceSize;
 		case MemoryType::SnesRegister: return 0x10000;
 		case MemoryType::SmsPort: return 0x100;
 		case MemoryType::WsPort: return 0x10000;
@@ -224,6 +235,20 @@ void MemoryDumper::GetMemoryState(MemoryType type, uint8_t* buffer)
 			break;
 		}
 
+		case MemoryType::MdMemory:
+		case MemoryType::MdZ80Memory:
+		case MemoryType::McdMemory:
+		case MemoryType::M32xMasterMemory:
+		case MemoryType::M32xSlaveMemory: {
+			if(_mdConsole) {
+				uint32_t size = GetMemorySize(type);
+				for(uint32_t i = 0; i < size; i++) {
+					buffer[i] = InternalGetMemoryValue(type, i, true);
+				}
+			}
+			break;
+		}
+
 		case MemoryType::WsMemory: {
 			if(_wsConsole) {
 				WsMemoryManager* memManager = _wsConsole->GetMemoryManager();
@@ -286,6 +311,19 @@ void MemoryDumper::InternalSetMemoryValues(MemoryType originalMemoryType, uint32
 			case MemoryType::SmsMemory: _smsConsole->GetMemoryManager()->DebugWrite(address, value); break;
 			case MemoryType::GbaMemory: _gbaConsole->GetMemoryManager()->DebugWrite(address, value); break;
 			case MemoryType::WsMemory: _wsConsole->GetMemoryManager()->DebugWrite(address, value); break;
+			case MemoryType::MdMemory: _mdConsole->GetMemoryManager()->DebugWrite(address, value); break;
+			case MemoryType::MdZ80Memory: _mdConsole->GetMemoryManager()->DebugZ80Write((uint16_t)address, value); break;
+			case MemoryType::McdMemory:
+				if(_mdConsole->GetMcd()) {
+					_mdConsole->GetMcd()->SubDebugWrite(address, value);
+				}
+				break;
+			case MemoryType::M32xMasterMemory:
+			case MemoryType::M32xSlaveMemory:
+				if(_mdConsole->GetM32x()) {
+					_mdConsole->GetM32x()->ShDebugWrite(address, value);
+				}
+				break;
 			case MemoryType::SpcDspRegisters: _spc->DebugWriteDspReg(address, value); break;
 
 			default:
@@ -388,6 +426,11 @@ uint8_t MemoryDumper::InternalGetMemoryValue(MemoryType memoryType, uint32_t add
 		case MemoryType::GbaMemory: return _gbaConsole->GetMemoryManager()->DebugRead(address);
 		case MemoryType::WsMemory: return _wsConsole->GetMemoryManager()->DebugRead(address);
 		case MemoryType::WsPort: return _wsConsole->GetMemoryManager()->DebugReadPort<uint8_t>(address);
+		case MemoryType::MdMemory: return _mdConsole->GetMemoryManager()->DebugRead(address);
+		case MemoryType::MdZ80Memory: return _mdConsole->GetMemoryManager()->DebugZ80Read((uint16_t)address);
+		case MemoryType::McdMemory: return _mdConsole->GetMcd() ? _mdConsole->GetMcd()->SubDebugRead(address) : 0;
+		case MemoryType::M32xMasterMemory:
+		case MemoryType::M32xSlaveMemory: return _mdConsole->GetM32x() ? _mdConsole->GetM32x()->ShPeek8(address) : 0;
 
 		default:
 			uint8_t* src = GetMemoryBuffer(memoryType);

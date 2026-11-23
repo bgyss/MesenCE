@@ -34,7 +34,13 @@ enum class FirmwareType
 	SwanCrystal,
 	Ymf288AdpcmRom,
 	SmsBootRom,
-	GgBootRom
+	GgBootRom,
+	McdUsa,
+	McdEurope,
+	McdJapan,
+	M32xMasterBios,
+	M32xSlaveBios,
+	M32xVectorBios
 };
 
 struct MissingFirmwareMessage
@@ -345,6 +351,43 @@ public:
 
 		MessageManager::DisplayMessage("Error", "Could not find firmware file for PC Engine CD-ROM");
 		return false;
+	}
+
+	//Sega CD / Mega-CD BIOS (128 KiB) for the disc's region. `required` = false (Mode 1, a cartridge
+	//with the unit attached): load it if present, without asking for it.
+	static bool LoadMcdBios(Emulator* emu, ConsoleRegion region, vector<uint8_t>& biosRom, bool required = true)
+	{
+		FirmwareType type = region == ConsoleRegion::Pal ? FirmwareType::McdEurope : (region == ConsoleRegion::NtscJapan ? FirmwareType::McdJapan : FirmwareType::McdUsa);
+		string filename = type == FirmwareType::McdEurope ? "[BIOS] Mega-CD (Europe).bin" : (type == FirmwareType::McdJapan ? "[BIOS] Mega-CD (Japan).bin" : "[BIOS] Sega CD (USA).bin");
+		string altName = type == FirmwareType::McdEurope ? "bios_CD_E.bin" : (type == FirmwareType::McdJapan ? "bios_CD_J.bin" : "bios_CD_U.bin");
+		uint32_t size = 0x20000;
+		if(AttemptLoadFirmware(biosRom, filename, size, altName)) {
+			return true;
+		} else if(!required) {
+			return false;
+		}
+
+		MissingFirmwareMessage msg(filename.c_str(), type, size);
+		emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::MissingFirmware, &msg);
+
+		if(AttemptLoadFirmware(biosRom, filename, size, altName)) {
+			return true;
+		}
+
+		MessageManager::DisplayMessage("Error", "Could not find the Sega CD / Mega-CD BIOS (" + altName + ")");
+		return false;
+	}
+
+	//32X boot ROMs: master SH-2 (2 KiB), slave SH-2 (1 KiB), 68000 vectors (256 bytes). Optional:
+	//without them MesenCE's replacement boot ROMs are used (MD/M32x/M32xBootRom.h)
+	static void Load32xBios(vector<uint8_t>& master, vector<uint8_t>& slave, vector<uint8_t>& vectors)
+	{
+		vector<uint8_t> m, s, g;
+		if(AttemptLoadFirmware(m, "32X_M_BIOS.bin", 0x800, "[BIOS] 32X Master SH2 (World).bin") && AttemptLoadFirmware(s, "32X_S_BIOS.bin", 0x400, "[BIOS] 32X Slave SH2 (World).bin") && AttemptLoadFirmware(g, "32X_G_BIOS.bin", 0x100, "[BIOS] 32X M68000 (USA).bin")) {
+			master = std::move(m);
+			slave = std::move(s);
+			vectors = std::move(g);
+		}
 	}
 
 	static bool LoadPceGamesExpressFirmware(Emulator* emu, vector<uint8_t>& biosRom)

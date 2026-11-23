@@ -23,6 +23,11 @@ public:
 			case CpuType::Sms: return MemoryType::SmsMemory;
 			case CpuType::Gba: return MemoryType::GbaMemory;
 			case CpuType::Ws: return MemoryType::WsMemory;
+			case CpuType::MdM68k: return MemoryType::MdMemory;
+			case CpuType::MdZ80: return MemoryType::MdZ80Memory;
+			case CpuType::McdM68k: return MemoryType::McdMemory;
+			case CpuType::M32xMaster: return MemoryType::M32xMasterMemory;
+			case CpuType::M32xSlave: return MemoryType::M32xSlaveMemory;
 		}
 
 		throw std::runtime_error("Invalid CPU type");
@@ -44,6 +49,11 @@ public:
 			case CpuType::Sms: return 4;
 			case CpuType::Gba: return 8;
 			case CpuType::Ws: return 5;
+			case CpuType::MdM68k: return 6;
+			case CpuType::MdZ80: return 4;
+			case CpuType::McdM68k: return 6;
+			case CpuType::M32xMaster: return 8;
+			case CpuType::M32xSlave: return 8;
 		}
 
 		throw std::runtime_error("Invalid CPU type");
@@ -181,6 +191,39 @@ public:
 			case MemoryType::WsPort:
 				return CpuType::Ws;
 
+			case MemoryType::MdMemory:
+			case MemoryType::MdPrgRom:
+			case MemoryType::MdWorkRam:
+			case MemoryType::MdSaveRam:
+			case MemoryType::MdVideoRam:
+			case MemoryType::MdPaletteRam:
+			case MemoryType::MdVScrollRam:
+			case MemoryType::MdTmssRom:
+				return CpuType::MdM68k;
+
+			case MemoryType::MdZ80Memory:
+			case MemoryType::MdZ80Ram:
+				return CpuType::MdZ80;
+
+			case MemoryType::McdMemory:
+			case MemoryType::McdPrgRam:
+			case MemoryType::McdWordRam:
+			case MemoryType::McdBackupRam:
+			case MemoryType::McdPcmRam:
+			case MemoryType::McdCdcRam:
+			case MemoryType::McdBios:
+				return CpuType::McdM68k;
+
+			case MemoryType::M32xMasterMemory:
+			case MemoryType::M32xSdram:
+			case MemoryType::M32xFrameBuffer:
+			case MemoryType::M32xPalette:
+			case MemoryType::M32xBootRom:
+				return CpuType::M32xMaster;
+
+			case MemoryType::M32xSlaveMemory:
+				return CpuType::M32xSlave;
+
 			default:
 				throw std::runtime_error("Invalid CPU type");
 		}
@@ -193,7 +236,7 @@ public:
 
 	static constexpr MemoryType GetLastCpuMemoryType()
 	{
-		return MemoryType::WsMemory;
+		return MemoryType::M32xSlaveMemory;
 	}
 
 	static constexpr bool IsPpuMemory(MemoryType memType)
@@ -230,6 +273,11 @@ public:
 			case MemoryType::GbaPaletteRam:
 				return true;
 
+			case MemoryType::MdVideoRam:
+			case MemoryType::MdPaletteRam:
+			case MemoryType::MdVScrollRam:
+				return true;
+
 			default:
 				return false;
 		}
@@ -251,6 +299,7 @@ public:
 			case MemoryType::SmsPrgRom:
 			case MemoryType::GbaPrgRom:
 			case MemoryType::WsPrgRom:
+			case MemoryType::MdPrgRom:
 				return true;
 
 			default:
@@ -271,6 +320,9 @@ public:
 			case MemoryType::SmsBootRom:
 			case MemoryType::GbaBootRom:
 			case MemoryType::WsBootRom:
+			case MemoryType::MdTmssRom:
+			case MemoryType::McdBios:
+			case MemoryType::M32xBootRom:
 				return true;
 
 			default:
@@ -294,6 +346,8 @@ public:
 			case MemoryType::SmsCartRam:
 			case MemoryType::GbaSaveRam:
 			case MemoryType::WsCartRam:
+			case MemoryType::MdSaveRam:
+			case MemoryType::McdBackupRam:
 				return false;
 
 			default:
@@ -303,7 +357,7 @@ public:
 
 	static constexpr CpuType GetLastCpuType()
 	{
-		return CpuType::Ws;
+		return CpuType::M32xSlave;
 	}
 
 	static string AddressToHex(CpuType cpuType, int32_t address)

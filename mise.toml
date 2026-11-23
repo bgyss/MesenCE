@@ -411,3 +411,159 @@ run = [
 [tasks.clean]
 description = "Remove build outputs"
 run = "make clean"
+
+[tasks."test:m68k-cpu"]
+description = "Mega Drive 68000 vs SingleStepTests m68000, plus reset/IRQ/STOP scenarios (mise run test:m68k-cpu -- [--details N] [--kind K] [files...])"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+data="$PWD/bin/SingleStepTests-m68000"
+if [ ! -d "$data/v1" ]; then
+  git clone --depth 1 https://github.com/SingleStepTests/m68000.git "$data"
+fi
+mkdir -p bin
+# The harness compiles Core/MD/M68k/M68kCore.cpp itself (against a flat 16 MiB test bus).
+clang++ -std=c++17 -O2 -Wall -Werror -ICore tools/m68k-cpu-singlestep/singlestep.cpp Core/MD/M68k/M68kCore.cpp -o bin/m68k-cpu-singlestep
+bin/m68k-cpu-singlestep --scenarios
+havePath=0
+for a in "$@"; do [ -e "$a" ] && havePath=1; done
+if [ $havePath -eq 0 ]; then set -- "$@" "$data/v1"; fi
+exec bin/m68k-cpu-singlestep "$@"
+'''
+
+[tasks."test:sh2-cpu"]
+description = "32X SH-2 vs the shared encodings of SingleStepTests sh4, plus exception/interrupt/peripheral scenarios (mise run test:sh2-cpu -- [--details N] [files...])"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+data="$PWD/bin/SingleStepTests-sh4"
+if [ ! -d "$data" ]; then
+  git clone --depth 1 https://github.com/SingleStepTests/sh4.git "$data"
+fi
+mkdir -p bin
+# The harness compiles Core/MD/Sh2/Sh2Core.cpp itself (flat test bus, no area decoding).
+clang++ -std=c++17 -O2 -Wall -Wextra -Werror -ICore tools/sh2-cpu-singlestep/singlestep.cpp Core/MD/Sh2/Sh2Core.cpp Core/MD/Sh2/Sh2Disassembler.cpp -o bin/sh2-cpu-singlestep
+bin/sh2-cpu-singlestep --scenarios
+havePath=0
+for a in "$@"; do [ -e "$a" ] && havePath=1; done
+if [ $havePath -eq 0 ]; then set -- "$@" "$data"; fi
+exec bin/sh2-cpu-singlestep "$@"
+'''
+
+[tasks.headless]
+description = "Build the native headless runner bin/mesen-headless (no UI, SDL or display)"
+run = "make -j$(getconf _NPROCESSORS_ONLN) headless"
+
+[tasks."test:headless"]
+description = "Self-test the headless runner: determinism, validation, Lua input/error handling, timeout, nativekit host contract"
+depends = ["headless", "build:test-roms"]
+run = "tools/headless-runner/selftest.sh"
+
+[tasks."test:md-synthetic"]
+description = "Mega Drive: build the synthetic cartridges (BlastEm-referenced cases, MesenCE's own Mega Drive, Sega CD and 32X cases) and check reads, frames and audio"
+depends = ["headless"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python3 tests/MD/synthetic/gen.py bin/md-synthetic
+python3 tests/MD/synthetic/compare.py bin/md-synthetic "$@"
+python3 tests/MD/synthetic/audio_compare.py bin/md-synthetic
+python3 tests/MD/synthetic/audio_compare.py bin/md-synthetic --fm-core nuked
+python3 tests/MD/synthetic/compare.py bin/md-synthetic --fm-core nuked
+python3 tests/MD/midline/check_midline.py bin/md-synthetic
+python3 tests/MD/dma/check_dma_timing.py
+python3 tests/MD/timing/check_bus_timing.py
+python3 tests/MD/mcd/debugger_check.py bin/md-synthetic
+python3 tests/MD/m32x/debugger_check.py bin/md-synthetic
+python3 tests/MD/mcd/swap_race.py
+python3 tests/MD/vdp/irq_enable_pending.py
+python3 tests/MD/cart/mapper_boards.py
+python3 tools/md-corpus/tas_selftest.py
+'''
+
+[tasks."test:md-replay"]
+description = "Mega Drive: save-state replay equality (bus trace, picture, memories) on the 60 synthetic cartridges, plus the state round trip"
+depends = ["headless", "core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python3 tests/MD/synthetic/gen.py bin/md-synthetic
+python3 tests/MD/synthetic/replay_check.py bin/md-synthetic --warmup 1 --frames 4
+python3 tests/MD/synthetic/replay_check.py bin/md-synthetic --fm-core nuked --warmup 1 --frames 4
+python3 tests/MD/synthetic/replay_check.py bin/md-synthetic --warmup 2 --frames 5
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/savestate-roundtrip/roundtrip.cpp "$lib" -pthread -o bin/savestate-roundtrip
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+bin/savestate-roundtrip --warmup 0 --frames 6 bin/md-synthetic
+bin/savestate-roundtrip --warmup 1 --frames 6 bin/md-synthetic
+'''
+
+[tasks."test:mcd-bios"]
+description = "Sega CD: boot the synthetic disc with each known BIOS found locally (MESEN_MCD_BIOS_DIR, default ~/mame/roms/segacd); intro music, CD player, track 2 audio; disc region from the security code (US/EU blocks from the BIOS dumps); Mode 1 with the BIOS (Flux cartridge, MESEN_FLUX_ROM). Skips without a BIOS."
+depends = ["headless"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python3 tests/MD/mcd/bios_boot.py
+python3 tests/MD/mcd/disc_region.py
+python3 tests/MD/mcd/mode1_flux.py
+'''
+
+[tasks."test:md-cheats"]
+description = "Mega Drive: Game Genie and Pro Action Replay codes (ROM patches on the bus, RAM codes, invalid codes) on the bus_map cartridge"
+depends = ["headless"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python3 tests/MD/synthetic/gen.py bin/md-synthetic
+python3 tests/MD/cheats/check_cheats.py bin/md-synthetic
+'''
+
+[tasks."test:md-viewers"]
+description = "Mega Drive: the debugger's palette, tilemap and sprite viewers (MdVdpTools) decode VRAM/CRAM exactly as the VDP renders the synthetic render cartridges"
+depends = ["core"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python3 tests/MD/synthetic/gen.py bin/md-synthetic
+objdir=$(ls -d InteropDLL/obj.* | head -1)
+lib=$(ls "$objdir"/MesenCore.* | head -1)
+clang++ -std=c++17 -O2 -Wno-undefined-inline -I. -ICore -IUtilities tools/md-vdp-tools-check/check.cpp "$lib" -pthread -o bin/md-vdp-tools-check
+export DYLD_FALLBACK_LIBRARY_PATH="$PWD/$objdir" LD_LIBRARY_PATH="$PWD/$objdir"
+bin/md-vdp-tools-check --frames 6 bin/md-synthetic/render_*.md
+'''
+
+[tasks."test:md-xarch"]
+description = "Mega Drive: byte-identical captures and cross-loadable states between this build and another (e.g. x86-64) runner: mise run test:md-xarch -- <other mesen-headless>"
+depends = ["headless"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python3 tests/MD/synthetic/gen.py bin/md-synthetic
+python3 tests/MD/synthetic/xarch_compare.py bin/md-synthetic "$@"
+'''
+
+[tasks."md-corpus"]
+description = "Mega Drive family vs oracle emulators across a ROM library (tools/md-corpus; docs/research/md-oracle-testing-strategy.md): inventory (No-Intro/Redump DATs), run (MesenCE + GPGX + PicoDrive; attract or walker sessions), compare (health, per-frame work RAM state, snapshots, audio), report (bin/md-corpus/report.html). Local only: needs ROMs, DATs and the libretro cores. Usage: mise run md-corpus -- <inventory|run|compare|report> [options]"
+depends = ["headless"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+python3 tools/md-corpus/md_corpus.py "$@"
+'''
+
+[tasks."test:md-audio-ref"]
+description = "Mega Drive / 32X audio vs PicoDrive (libretro core from RetroArch, or PICODRIVE_CORE): every ROM in MD_AUDIO_ROMS (or the folder given) runs its attract mode in both; loudness envelopes, per-chip balance and octave-band spectra are compared (tools/audio-compare). Local only: needs the core and ROMs. Usage: mise run test:md-audio-ref -- <rom dir> [--frames N] [--match TEXT]"
+depends = ["headless"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+dir="${1:-${MD_AUDIO_ROMS:-}}"
+if [ -z "$dir" ]; then
+  echo "usage: mise run test:md-audio-ref -- <rom dir> [--frames N] [--match TEXT] (or set MD_AUDIO_ROMS)"
+  exit 2
+fi
+[ $# -gt 0 ] && shift
+python3 tools/audio-compare/run_library.py "$dir" bin/md-audio-ref "$@"
+'''

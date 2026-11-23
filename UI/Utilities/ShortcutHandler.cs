@@ -315,6 +315,15 @@ namespace Mesen.Utilities
 					}
 					break;
 
+				case ConsoleType.Md:
+					switch(layer) {
+						case VideoLayer.Bg1: return (() => ConfigManager.Config.Md.HidePlaneA, (val) => ConfigManager.Config.Md.HidePlaneA = val);
+						case VideoLayer.Bg2: return (() => ConfigManager.Config.Md.HidePlaneB, (val) => ConfigManager.Config.Md.HidePlaneB = val);
+						case VideoLayer.Bg3: return (() => ConfigManager.Config.Md.HideWindow, (val) => ConfigManager.Config.Md.HideWindow = val);
+						case VideoLayer.Sprite1: return (() => ConfigManager.Config.Md.DisableSprites, (val) => ConfigManager.Config.Md.DisableSprites = val);
+					}
+					break;
+
 				case ConsoleType.Ws:
 					switch(layer) {
 						case VideoLayer.Bg1: return (() => ConfigManager.Config.Ws.HideBgLayer1, (val) => ConfigManager.Config.Ws.HideBgLayer1 = val);

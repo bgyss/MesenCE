@@ -2,9 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-MesenCE is a community fork of Mesen2: a multi-system emulator (NES, SNES, GB/SGB/GBC, GBA, PC Engine, SMS/Game Gear, WonderSwan) with a C++17 emulation core and a C#/.NET 10 Avalonia UI.
+MesenCE is a community fork of Mesen2: a multi-system emulator (NES, SNES, GB/SGB/GBC, GBA, PC Engine, SMS/Game Gear, WonderSwan, and in this fork Mega Drive/Genesis) with a C++17 emulation core and a C#/.NET 10 Avalonia UI.
 
-**This repository is an independent fork of MesenCE.** It's run as its own project, as an example of LLM-assisted development backed by testing and formal verification. Fixes are applied here directly, and nothing is prepared for or submitted upstream.
+**This repository is an independent fork of MesenCE.** It's run as its own project, as an example of LLM-assisted development backed by testing and formal verification. Fixes are applied here directly. Upstream branches are prepared only when the user asks (the Mega Drive core: `docs/upstream/`); upstream requires MIT-compatible code and currently prohibits AI-generated code, so such branches are proposals that disclose how they were made.
 
 ## Contribution policy (see CONTRIBUTING.md)
 
@@ -48,7 +48,18 @@ This fork's addition, not upstream.
   - `mise run test:gb-irq`: Game Boy interrupt/HALT/EI scenarios on the real `GbCpu`, checked against Pan Docs rules. Known bugs are reported but don't fail the run.
   - `mise run test:nes-dma`: NES OAM-DMA regression test. It builds the self-checking ROM `docs/research/tla/rom/dmc_oam_overlap.s` with cc65 and runs it with the DMC duplication glitch on.
   - `mise run test:savestate -- <roms|dir>`: save state → fresh console → per-frame state comparison, for NES, GB/GBC, SNES, SMS/GG/SG, PCE and WS ROMs. It finds emulation state missing from `Serialize`. `mise run test:savestate-all` runs it on every ROM embedded in MesenTests and `tests/` (about 5 minutes).
-  - Findings from these tools are logged in `docs/research/{nes,gb,snes,sms,gba,pce}-verification-findings.md`.
+  - Mega Drive (`Core/MD`, plan in `docs/research/mega-drive-genesis-feasibility.md`):
+    - `mise run test:m68k-cpu`: the ares-derived 68000 (`Core/MD/M68k`) vs SingleStepTests `m68000` (plus `--scenarios` for reset/IRQ/STOP, `--bench`).
+    - `mise run headless` / `test:headless`: the native runner `bin/mesen-headless` (no UI/SDL; contract in `docs/headless.md`) and its self-test.
+    - `mise run test:md-synthetic`: 60 synthetic cartridges (`tests/MD/synthetic`) vs the recorded BlastEm reference (reads, frames, per-chip audio); reviewed differences live in `tests/MD/synthetic/KNOWN`. Plus MesenCE's own cases (`extra_cases.py`, checked against expected values): EEPROM boards, the bank mapper, Team Player/mouse/light guns (Lua input in `tests/MD/accessories`), mid-line rendering (`tests/MD/midline/check_midline.py`), and the Sega CD unit in Mode 1 (`mcd_cases.py`, `--md-mcd`). Per-case runner options (`--md-eeprom`, `--md-pads t:63n6,m`, `--md-mcd`) travel in the generated spec's `runner_args`.
+    - `mise run test:md-replay`: save-state replay must reproduce the bus trace, chip audio and every field of the final state; `mise run test:md-xarch -- <other runner>`: byte-identical captures across builds/architectures.
+    - `mise run test:md-cheats`: Game Genie / Pro Action Replay codes on the bus_map cartridge. `test:md-synthetic` and `test:md-replay` run both FM cores (ymfm, Nuked-OPN2).
+    - Feature parity with other Mega Drive emulators: `docs/research/md-feature-parity.md`.
+    - Library-wide testing against oracle emulators: `mise run md-corpus -- inventory|run|compare|report|diff|tas` (`tools/md-corpus`; TAS movies are imported from files you download, `tas import` (reads `bin/md-corpus/movies`, git-ignored, unless given folders), then `run --session tas`, never fetched: TASVideos' robots.txt; MesenCE vs GPGX and PicoDrive per session: health, per-frame work RAM blocks from `mesen-headless --state-log --state-blocks`, snapshots, audio; report in `bin/md-corpus/report.html`). Strategy, materials and phases: `docs/research/md-oracle-testing-strategy.md`; results: `md-verification-findings.md` C1-C4. BizHawk movies name their ROM by MD5; `.gmv` movies need `movies/roms.txt`. GPGX's input is shifted per movie, calibrated against PicoDrive (`tas/<id>/calibration.json`). A rerun of one emulator in a session needs the whole session rerun (comparison deletes the audio).
+    - 32X (plan in `docs/research/32x-feasibility.md`, findings in `docs/research/32x-verification-findings.md`): `mise run test:sh2-cpu` checks the SH-2 core (`Core/MD/Sh2`, ported from ares) against the SH-2 encodings of SingleStepTests `sh4` (Reicast-generated; SH-4-only encodings, TRAPA/RTE/SLEEP and SR.RB bank switches are excluded), plus `--scenarios` for exceptions, interrupts, MAC, and the on-chip DIVU/FRT/DMAC/cache. Downloads about 90 MB into `bin/`. Instruction timing follows the Hitachi SH-1/SH-2 programming manual.
+    - `mise run test:md-viewers`: the debugger's palette/tilemap/sprite viewers (`MdVdpTools`) must decode VRAM/CRAM exactly as the VDP renders.
+  - Findings from these tools are logged in `docs/research/{nes,gb,snes,sms,gba,pce,md}-verification-findings.md`.
+  - Sega CD (`Core/MD/Mcd`; S1-S5 done (S5: 31 commercial discs qualified, findings S5): Mode 1 unit behind `mesen-headless --md-mcd [--md-mcd-disc X.cue]`, disc boot from a Sega CD `.cue` with the BIOS from firmware or `--md-mcd-bios`; S4: sub CPU debugger `CpuType::McdM68k`, memory types `McdMemory`/`McdPrgRam`/`McdWordRam`/`McdBackupRam`/`McdPcmRam`/`McdCdcRam`/`McdBios`, checked by `tests/MD/mcd/debugger.lua` in `test:md-synthetic`). A new CPU address-space memory type must also move `DebugUtilities::GetLastCpuMemoryType()`. `mise run test:mcd-bios` boots the synthetic disc with each BIOS dump found locally (`MESEN_MCD_BIOS_DIR`, default `~/mame/roms/segacd`) and checks the disc region from the security code. Sub CPU writes to main-visible gate array registers that land past the catch-up target are deferred (`McdUnit::_deferred`, `tests/MD/mcd/swap_race.py`). `mesen-headless --snap-every N` writes screenshots during a run. Plan in `docs/research/sega-cd-feasibility.md`, findings in `docs/research/mcd-verification-findings.md`.
   - The makefile doesn't track `#include` dependencies. The dummy CPUs (`Debugger/Dummy*.cpp`) `#include` the real CPU `.cpp` files, so `touch` them after editing a CPU, or the debugger keeps stale code. **If you change a class layout in a header** (add or remove a member), touch every `.cpp` that includes it (e.g. `find Core/SMS -name '*.cpp' -exec touch {} +`). Otherwise objects compiled against the old layout corrupt memory: a stale `SmsCpu.h` made `test:ci` hang in `SmsPsg::Run`.
   - `mise run test:snes-irq` / `mise run test:z80-irq`: interrupt scenarios for the 65816 (SNES CPU and SA-1) and the Z80, on the real CPU sources against a flat test bus.
   - The harnesses drive consoles without the emulation thread. They set `Emulator::_isRunAheadFrame` (so frames aren't sent to the video decoder) and register the console as `Emulator::_console` (some hardware, e.g. the MBC3 RTC, reads `Emulator::GetMasterClock()`).
@@ -88,7 +99,7 @@ There is no unit-test suite. Testing is ROM-based:
 
 - **Headless Lua test runner:** `Mesen --testRunner script.lua rom.nes [--timeout=N]`.
   - Runs at max speed with no UI.
-  - The process exit code is whatever the script passes to `emu.exit(code)`.
+  - The process exit code is whatever the script passes to `emu.stop(code)`.
   - Implemented in `UI/Utilities/TestRunner.cs`.
 - **Recorded ROM tests (`.mtp`):** these record per-frame hashes and replay them to detect regressions.
   - Run them from the UI's debug/test menus.

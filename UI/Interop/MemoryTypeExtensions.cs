@@ -125,6 +125,39 @@ namespace Mesen.Interop
 				case MemoryType.WsPort:
 					return CpuType.Ws;
 
+				case MemoryType.MdMemory:
+				case MemoryType.MdPrgRom:
+				case MemoryType.MdWorkRam:
+				case MemoryType.MdSaveRam:
+				case MemoryType.MdVideoRam:
+				case MemoryType.MdPaletteRam:
+				case MemoryType.MdVScrollRam:
+				case MemoryType.MdTmssRom:
+					return CpuType.MdM68k;
+
+				case MemoryType.MdZ80Memory:
+				case MemoryType.MdZ80Ram:
+					return CpuType.MdZ80;
+
+				case MemoryType.McdMemory:
+				case MemoryType.McdPrgRam:
+				case MemoryType.McdWordRam:
+				case MemoryType.McdBackupRam:
+				case MemoryType.McdPcmRam:
+				case MemoryType.McdCdcRam:
+				case MemoryType.McdBios:
+					return CpuType.McdM68k;
+
+				case MemoryType.M32xMasterMemory:
+				case MemoryType.M32xSdram:
+				case MemoryType.M32xFrameBuffer:
+				case MemoryType.M32xPalette:
+				case MemoryType.M32xBootRom:
+					return CpuType.M32xMaster;
+
+				case MemoryType.M32xSlaveMemory:
+					return CpuType.M32xSlave;
+
 				default:
 					throw new NotImplementedException("Unsupported cpu type");
 			}
@@ -158,6 +191,11 @@ namespace Mesen.Interop
 
 				case MemoryType.SmsVideoRam:
 				case MemoryType.SmsPaletteRam:
+					return true;
+
+				case MemoryType.MdVideoRam:
+				case MemoryType.MdPaletteRam:
+				case MemoryType.MdVScrollRam:
 					return true;
 
 				case MemoryType.GbaVideoRam:
@@ -237,6 +275,11 @@ namespace Mesen.Interop
 				case MemoryType.SmsMemory:
 				case MemoryType.GbaMemory:
 				case MemoryType.WsMemory:
+				case MemoryType.MdMemory:
+				case MemoryType.MdZ80Memory:
+				case MemoryType.McdMemory:
+				case MemoryType.M32xMasterMemory:
+				case MemoryType.M32xSlaveMemory:
 					return true;
 			}
 			return false;
@@ -263,6 +306,10 @@ namespace Mesen.Interop
 				case MemoryType.GbaPrgRom:
 				case MemoryType.GbaBootRom:
 				case MemoryType.WsPrgRom:
+				case MemoryType.MdPrgRom:
+				case MemoryType.MdTmssRom:
+				case MemoryType.McdBios:
+				case MemoryType.M32xBootRom:
 					return true;
 			}
 			return false;
@@ -339,6 +386,19 @@ namespace Mesen.Interop
 				case MemoryType.WsCartRam:
 				case MemoryType.WsBootRom:
 				case MemoryType.WsPort:
+				case MemoryType.MdMemory:
+				case MemoryType.MdZ80Memory:
+				case MemoryType.MdPrgRom:
+				case MemoryType.MdWorkRam:
+				case MemoryType.MdZ80Ram:
+				case MemoryType.MdSaveRam:
+				case MemoryType.McdMemory:
+				case MemoryType.McdPrgRam:
+				case MemoryType.McdWordRam:
+				case MemoryType.McdBackupRam:
+				case MemoryType.M32xMasterMemory:
+				case MemoryType.M32xSlaveMemory:
+				case MemoryType.M32xSdram:
 					return true;
 			}
 
@@ -361,6 +421,11 @@ namespace Mesen.Interop
 				case MemoryType.SmsMemory:
 				case MemoryType.GbaMemory:
 				case MemoryType.WsMemory:
+				case MemoryType.MdMemory:
+				case MemoryType.MdZ80Memory:
+				case MemoryType.McdMemory:
+				case MemoryType.M32xMasterMemory:
+				case MemoryType.M32xSlaveMemory:
 					return true;
 			}
 
@@ -394,6 +459,8 @@ namespace Mesen.Interop
 
 				case MemoryType.WsMemory:
 				case MemoryType.WsPrgRom:
+				case MemoryType.MdMemory:
+				case MemoryType.MdPrgRom:
 					return true;
 
 				case MemoryType.NesPpuMemory:
@@ -548,6 +615,32 @@ namespace Mesen.Interop
 				MemoryType.WsBootRom => "BOOT",
 				MemoryType.WsInternalEeprom => "IEEPROM",
 				MemoryType.WsPort => "PORT",
+
+				MemoryType.MdMemory => "CPU",
+				MemoryType.MdZ80Memory => "Z80",
+				MemoryType.MdPrgRom => "ROM",
+				MemoryType.MdWorkRam => "WRAM",
+				MemoryType.MdZ80Ram => "ZRAM",
+				MemoryType.MdSaveRam => "SRAM",
+				MemoryType.MdVideoRam => "VRAM",
+				MemoryType.MdPaletteRam => "CRAM",
+				MemoryType.MdVScrollRam => "VSRAM",
+				MemoryType.MdTmssRom => "TMSS",
+
+				MemoryType.McdMemory => "SUB",
+				MemoryType.McdPrgRam => "PRAM",
+				MemoryType.McdWordRam => "WORD",
+				MemoryType.McdBackupRam => "BRAM",
+				MemoryType.McdPcmRam => "PCM",
+				MemoryType.McdCdcRam => "CDC",
+				MemoryType.McdBios => "BIOS",
+
+				MemoryType.M32xMasterMemory => "SH2M",
+				MemoryType.M32xSlaveMemory => "SH2S",
+				MemoryType.M32xSdram => "SDRAM",
+				MemoryType.M32xFrameBuffer => "FB",
+				MemoryType.M32xPalette => "PAL",
+				MemoryType.M32xBootRom => "BOOT",
 
 				MemoryType.None => "n/a",
 

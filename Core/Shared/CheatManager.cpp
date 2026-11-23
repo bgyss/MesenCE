@@ -28,28 +28,52 @@ optional<InternalCheatCode> CheatManager::TryConvertCode(CheatCode code)
 		case CheatType::PceAddress: return ConvertFromPceAddress(code.Code);
 		case CheatType::SmsGameGenie: return ConvertFromSmsGameGenie(code.Code);
 		case CheatType::SmsProActionReplay: return ConvertFromSmsProActionReplay(code.Code);
+		case CheatType::MdGameGenie:
+		case CheatType::MdProActionReplay: {
+			vector<InternalCheatCode> codes = TryConvertCodes(code);
+			if(codes.empty()) {
+				return std::nullopt;
+			}
+			return codes[0];
+		}
 
 		default: throw std::runtime_error("unsupported cheat type");
 	}
 }
 
+vector<InternalCheatCode> CheatManager::TryConvertCodes(CheatCode code)
+{
+	switch(code.Type) {
+		case CheatType::MdGameGenie: return ConvertFromMdGameGenie(code.Code);
+		case CheatType::MdProActionReplay: return ConvertFromMdProActionReplay(code.Code);
+		default: {
+			optional<InternalCheatCode> single = TryConvertCode(code);
+			if(single.has_value()) {
+				return { single.value() };
+			}
+			return {};
+		}
+	}
+}
+
 bool CheatManager::AddCheat(CheatCode code)
 {
-	optional<InternalCheatCode> convertedCode = TryConvertCode(code);
-
-	if(!convertedCode.has_value()) {
+	vector<InternalCheatCode> convertedCodes = TryConvertCodes(code);
+	if(convertedCodes.empty()) {
 		return false;
 	}
 
 	_cheats.push_back(code);
 
-	int cpuIndex = (int)convertedCode->Cpu;
-	if(convertedCode->IsRamCode) {
-		_ramRefreshCheats[cpuIndex].push_back(convertedCode.value());
-	} else {
-		_cheatsByAddress[cpuIndex].emplace(convertedCode->Address, convertedCode.value());
-		_hasCheats[cpuIndex] = true;
-		_bankHasCheats[cpuIndex][convertedCode->Address >> GetBankShift(convertedCode->Cpu)] = true;
+	for(InternalCheatCode& convertedCode : convertedCodes) {
+		int cpuIndex = (int)convertedCode.Cpu;
+		if(convertedCode.IsRamCode) {
+			_ramRefreshCheats[cpuIndex].push_back(convertedCode);
+		} else {
+			_cheatsByAddress[cpuIndex].emplace(convertedCode.Address, convertedCode);
+			_hasCheats[cpuIndex] = true;
+			_bankHasCheats[cpuIndex][(convertedCode.Address >> GetBankShift(convertedCode.Cpu)) & 0xFF] = true;
+		}
 	}
 
 	return true;
@@ -430,6 +454,99 @@ optional<InternalCheatCode> CheatManager::ConvertFromSmsProActionReplay(string c
 	return cheat;
 }
 
+//Mega Drive. Both formats patch a 16-bit word at an even 68000 address; it is split into two byte
+//codes (high byte at the even address). ROM addresses ($000000-$3FFFFF) become ROM patches applied
+//on every cartridge bus read (68000, VDP DMA, Z80 bank window); work RAM addresses ($E00000+,
+//mirrored at $FF0000) are written every frame.
+vector<InternalCheatCode> CheatManager::MakeMdWordCheat(CheatType type, uint32_t address, uint16_t value)
+{
+	address &= 0xFFFFFE;
+	vector<InternalCheatCode> codes;
+	for(int i = 0; i < 2; i++) {
+		InternalCheatCode cheat = {};
+		cheat.Type = type;
+		cheat.Cpu = CpuType::MdM68k;
+		cheat.Value = (uint8_t)(i == 0 ? (value >> 8) : value);
+		cheat.Compare = -1;
+		if(address >= 0xE00000) {
+			cheat.IsRamCode = true;
+			cheat.IsAbsoluteAddress = true;
+			cheat.MemType = MemoryType::MdWorkRam;
+			cheat.Address = (address & 0xFFFF) + i;
+		} else if(address < 0x400000) {
+			cheat.Address = address + i;
+		} else {
+			return {}; //I/O, VDP and unmapped areas cannot be patched
+		}
+		codes.push_back(cheat);
+	}
+	return codes;
+}
+
+//Game Genie (ABCD-EFGH): 8 characters of 5 bits from "ABCDEFGHJKLMNPRSTVWXYZ0123456789". Bit layout
+//per Genesis Plus GX (decode_cheat) and Charles MacDonald's description of the Genesis Game Genie
+//format, which agree: the 40 bits read "ijklm nopIJ KLMNO PABCD EFGHd efgha bcQRS TUVWX" with
+//address = ABCDEFGH IJKLMNOP QRSTUVWX and value = abcdefgh ijklmnop.
+vector<InternalCheatCode> CheatManager::ConvertFromMdGameGenie(string code)
+{
+	static regex _validator = regex("^[a-hj-np-tv-z0-9]{4}-?[a-hj-np-tv-z0-9]{4}$", std::regex_constants::icase);
+	if(!std::regex_match(code, _validator)) {
+		return {};
+	}
+	static const char alphabet[] = "ABCDEFGHJKLMNPRSTVWXYZ0123456789";
+	uint32_t address = 0;
+	uint16_t value = 0;
+	int index = 0;
+	for(char c : code) {
+		if(c == '-') {
+			continue;
+		}
+		const char* p = strchr(alphabet, toupper((unsigned char)c));
+		if(!p || !*p) {
+			return {};
+		}
+		uint32_t n = (uint32_t)(p - alphabet);
+		switch(index++) {
+			case 0: value |= n << 3; break;
+			case 1:
+				value |= n >> 2;
+				address |= (n & 3) << 14;
+				break;
+			case 2: address |= n << 9; break;
+			case 3: address |= ((n & 0x0F) << 20) | ((n >> 4) << 8); break;
+			case 4:
+				value |= (n & 1) << 12;
+				address |= (n >> 1) << 16;
+				break;
+			case 5: value |= ((n & 1) << 15) | ((n >> 1) << 8); break;
+			case 6:
+				value |= (n >> 3) << 13;
+				address |= (n & 7) << 5;
+				break;
+			case 7: address |= n; break;
+		}
+	}
+	return MakeMdWordCheat(CheatType::MdGameGenie, address, value);
+}
+
+//Pro Action Replay: AAAAAA:VVVV (or AAAAAAVVVV), a 24-bit address and a 16-bit value
+vector<InternalCheatCode> CheatManager::ConvertFromMdProActionReplay(string code)
+{
+	static regex _validator = regex("^[a-f0-9]{6}:?[a-f0-9]{4}$", std::regex_constants::icase);
+	if(!std::regex_match(code, _validator)) {
+		return {};
+	}
+	string digits;
+	for(char c : code) {
+		if(c != ':') {
+			digits += c;
+		}
+	}
+	uint32_t address = HexUtilities::FromHex(digits.substr(0, 6));
+	uint16_t value = (uint16_t)HexUtilities::FromHex(digits.substr(6, 4));
+	return MakeMdWordCheat(CheatType::MdProActionReplay, address, value);
+}
+
 vector<CheatCode> CheatManager::GetCheats()
 {
 	return _cheats;
@@ -482,3 +599,4 @@ template void CheatManager::ApplyCheat<CpuType::Snes>(uint32_t addr, uint8_t& va
 template void CheatManager::ApplyCheat<CpuType::Pce>(uint32_t addr, uint8_t& value);
 template void CheatManager::ApplyCheat<CpuType::Gameboy>(uint32_t addr, uint8_t& value);
 template void CheatManager::ApplyCheat<CpuType::Sms>(uint32_t addr, uint8_t& value);
+template void CheatManager::ApplyCheat<CpuType::MdM68k>(uint32_t addr, uint8_t& value);

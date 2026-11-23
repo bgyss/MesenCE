@@ -197,3 +197,6 @@ result-*
 
 # Home folder created by the CI runner when it runs the fork's own tests
 tests/MesenHomeFolder/
+
+# Python bytecode (tools/*)
+__pycache__/

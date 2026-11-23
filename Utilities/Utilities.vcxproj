@@ -202,6 +202,7 @@
     <ClInclude Include="Audio\StereoDelayFilter.h" />
     <ClInclude Include="Audio\StereoPanningFilter.h" />
     <ClInclude Include="Audio\WavReader.h" />
+    <ClInclude Include="Audio\NukedOpn2\ym3438.h" />
     <ClInclude Include="Audio\ymfm\ymfm.h" />
     <ClInclude Include="Audio\ymfm\ymfm_adpcm.h" />
     <ClInclude Include="Audio\ymfm\ymfm_fm.h" />
@@ -245,6 +246,7 @@
     <ClInclude Include="Scale2x\scalebit.h" />
     <ClInclude Include="Serializer.h" />
     <ClInclude Include="sha1.h" />
+    <ClInclude Include="Sha256.h" />
     <ClInclude Include="spng.h" />
     <ClInclude Include="StaticFor.h" />
     <ClInclude Include="StringUtilities.h" />
@@ -295,6 +297,14 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='PGO Optimize|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="Audio\ymfm\ymfm_misc.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='PGO Profile|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='PGO Optimize|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Audio\NukedOpn2\ym3438.c">
+      <!-- Vendored and unmodified (Utilities/Audio/NukedOpn2/README.md): its narrowing integer assignments are intentional -->
+      <TreatWarningAsError>false</TreatWarningAsError>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='PGO Profile|x64'">NotUsing</PrecompiledHeader>

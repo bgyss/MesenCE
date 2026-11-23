@@ -55,7 +55,7 @@ struct Machine
 	{
 		memset(Bus.Ram, 0, sizeof(Bus.Ram));
 		Bus.Ops.clear();
-		SmsCpuState& s = Cpu._state;
+		SmsCpuState& s = Cpu.GetState();
 		s = {};
 		s.PC = Prog;
 		s.SP = 0xD000;
@@ -72,12 +72,12 @@ struct Machine
 
 	uint64_t Step()
 	{
-		uint64_t start = Cpu._state.CycleCount;
+		uint64_t start = Cpu.GetState().CycleCount;
 		Cpu.Exec();
-		return Cpu._state.CycleCount - start;
+		return Cpu.GetState().CycleCount - start;
 	}
 
-	SmsCpuState& S() { return Cpu._state; }
+	SmsCpuState& S() { return Cpu.GetState(); }
 	uint16_t Pushed() { return Bus.Ram[S().SP] | (Bus.Ram[(uint16_t)(S().SP + 1)] << 8); }
 	void Irq(bool on) { on ? Cpu.SetIrqSource(SmsIrqSource::Vdp) : Cpu.ClearIrqSource(SmsIrqSource::Vdp); }
 };

@@ -152,7 +152,7 @@ namespace Mesen.Debugger.ViewModels
 				return;
 			}
 
-			if(palette.RawFormat == RawPaletteFormat.Rgb555 || palette.RawFormat == RawPaletteFormat.Rgb444 || palette.RawFormat == RawPaletteFormat.Bgr444) {
+			if(palette.RawFormat == RawPaletteFormat.Rgb555 || palette.RawFormat == RawPaletteFormat.Rgb444 || palette.RawFormat == RawPaletteFormat.Bgr444 || palette.RawFormat == RawPaletteFormat.MdCram) {
 				ColorPickerViewModel model = new ColorPickerViewModel() { Color = Color.FromUInt32(palette.GetRgbPalette()[selectedPalette]) };
 				ColorPickerWindow colorPicker = new ColorPickerWindow() { DataContext = model };
 				bool success = await colorPicker.ShowCenteredDialog<bool>(wnd);

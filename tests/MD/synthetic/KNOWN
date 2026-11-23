@@ -1,0 +1,3 @@
+# Reviewed differences from the BlastEm reference: <case> <reason>. Each is a reference
+# disagreement, not a hardware-verified fact; see docs/research/md-verification-findings.md (S3).
+sound_ym_envelope_key_on_off BlastEm reference error (candidate-only difference, as in nativekit's KNOWN): the key-on pulse lasts 3136 master clocks (~3 YM samples, one envelope step at attack rate 58). Nuked-OPN2 (die-shot model, commit 335747d7) plays a 260 Hz note; BlastEm plays none. With --fm-core nuked MesenCE matches Nuked (~10 ms note); the default ymfm core plays ~40 ms because its envelope-tick phase and key-on latency differ (md-verification-findings.md S3).

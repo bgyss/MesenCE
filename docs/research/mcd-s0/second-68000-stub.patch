@@ -1,0 +1,74 @@
+diff --git a/Core/MD/MdConsole.cpp b/Core/MD/MdConsole.cpp
+index 1d8953df..b811bb28 100644
+--- a/Core/MD/MdConsole.cpp
++++ b/Core/MD/MdConsole.cpp
+@@ -15,6 +15,55 @@
+ #include "Utilities/VirtualFile.h"
+ #include "Utilities/Serializer.h"
+ 
++#include "MD/M68k/M68kCore.h"
++#include <cstdlib>
++// S0 throwaway measurement: a second 68000 on a flat 512 KiB bus, kept in step with the main CPU
++// through an exact MCLK:12.5 MHz ratio (remainder accumulator). Not for merging.
++namespace {
++class S0SubCpu : public M68kCore
++{
++public:
++	vector<uint8_t> Ram = vector<uint8_t>(0x80000);
++	uint64_t Cycles = 0;
++	void Idle(uint32_t clocks) override { Cycles += clocks; }
++	void Wait(uint32_t clocks) override { Cycles += clocks; }
++	uint16_t BusRead(bool, bool, uint32_t a, M68kAccess) override { a &= 0x7FFFE; return (uint16_t)(Ram[a] << 8 | Ram[a | 1]); }
++	void BusWrite(bool u, bool l, uint32_t a, uint16_t d, M68kAccess) override { a &= 0x7FFFE; if(u) Ram[a] = d >> 8; if(l) Ram[a | 1] = (uint8_t)d; }
++	uint16_t Peek(uint32_t a) override { return BusRead(true, true, a, M68kAccess::Data); }
++};
++std::unique_ptr<S0SubCpu> s0Sub;
++uint64_t s0SubMclk = 0; // sub CPU position in master clocks
++uint64_t s0Rem = 0; // remainder, in units of 1/12,500,000 MCLK
++uint64_t s0SubCyclesDone = 0;
++void S0Init()
++{
++	if(!getenv("MESEN_S0_STUB")) return;
++	s0Sub = std::make_unique<S0SubCpu>();
++	auto w = [](uint32_t a, uint16_t v) { s0Sub->Ram[a] = v >> 8; s0Sub->Ram[a + 1] = (uint8_t)v; };
++	w(0, 0x0007); w(2, 0xFF00); w(4, 0); w(6, 0x1000);
++	// same loop as m68k-cpu-singlestep --bench, on addresses inside 512 KiB
++	const uint16_t prog[] = { 0x20C0, 0xD081, 0x3411, 0xE58B, 0xC8C0, 0xB1CA, 0x66F4, 0x41F9, 0x0004, 0x0000, 0x60EC };
++	for(size_t i = 0; i < sizeof(prog) / 2; i++) w(0x1000 + (uint32_t)i * 2, prog[i]);
++	s0Sub->PowerOn();
++	s0Sub->Reset();
++	M68kRegisters r = s0Sub->GetRegisters();
++	r.A[0] = 0x40000; r.A[1] = 0x48000; r.A[2] = 0x41000;
++	s0Sub->SetRegisters(r);
++}
++void S0CatchUp(uint64_t mainMclk, uint32_t mclkRate)
++{
++	while(s0SubMclk < mainMclk) {
++		uint64_t before = s0Sub->Cycles;
++		s0Sub->Step();
++		uint64_t n = s0Sub->Cycles - before;
++		s0SubCyclesDone += n;
++		uint64_t num = n * mclkRate + s0Rem;
++		s0SubMclk += num / 12500000;
++		s0Rem = num % 12500000;
++	}
++}
++}
++
+ MdConsole::MdConsole(Emulator* emu)
+ {
+ 	_emu = emu;
+@@ -130,8 +179,13 @@ void MdConsole::Reset()
+ void MdConsole::RunFrame()
+ {
+ 	uint32_t frame = _vdp->GetFrameCount();
++	if(!s0Sub && getenv("MESEN_S0_STUB") && !getenv("MESEN_S0_DONE")) { S0Init(); }
+ 	while(frame == _vdp->GetFrameCount()) {
+ 		_m68k->Exec();
++		if(s0Sub) { S0CatchUp(_memoryManager->GetMasterClock(), GetMasterClockRate()); }
++	}
++	if(s0Sub && getenv("MESEN_S0_REPORT") && (_vdp->GetFrameCount() % 1000) == 0) {
++		fprintf(stderr, "[S0] frame %u sub cycles %llu sub MCLK %llu main MCLK %llu\n", _vdp->GetFrameCount(), (unsigned long long)s0SubCyclesDone, (unsigned long long)s0SubMclk, (unsigned long long)_memoryManager->GetMasterClock());
+ 	}
+ 	_apu->EndFrame(_memoryManager->GetMasterClock());
+ }

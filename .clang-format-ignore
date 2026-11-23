@@ -25,3 +25,6 @@ Utilities/sha1.*
 
 
 
+Core/MD/M68k/ares/*
+Utilities/Audio/NukedOpn2/*
+Core/MD/M32x/M32xBootRom.h

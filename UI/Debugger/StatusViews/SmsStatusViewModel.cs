@@ -55,8 +55,14 @@ namespace Mesen.Debugger.StatusViews
 
 		[ObservableProperty] public partial string StackPreview { get; private set; } = "";
 
-		public SmsStatusViewModel()
+		//Also used for the Mega Drive's Z80 (CpuType.MdZ80), which has the same register state
+		private CpuType _cpuType;
+
+		public SmsStatusViewModel() : this(CpuType.Sms) { }
+
+		public SmsStatusViewModel(CpuType cpuType)
 		{
+			_cpuType = cpuType;
 			bool preventUpdate = false;
 
 			this.ObserveProp([
@@ -99,12 +105,8 @@ namespace Mesen.Debugger.StatusViews
 
 		protected override void InternalUpdateUiState()
 		{
-			SmsState state = DebugApi.GetConsoleState<SmsState>(ConsoleType.Sms);
-
-			SmsCpuState cpu = state.Cpu;
-			SmsVdpState ppu = DebugApi.GetPpuState<SmsVdpState>(CpuType.Sms);
-
-			UpdateCycleCount(state.Cpu.CycleCount);
+			SmsCpuState cpu = DebugApi.GetCpuState<SmsCpuState>(_cpuType);
+			UpdateCycleCount(cpu.CycleCount);
 
 			RegA = cpu.A;
 			RegB = cpu.B;
@@ -140,19 +142,27 @@ namespace Mesen.Debugger.StatusViews
 			FlagHalted = cpu.Halted;
 			IM = cpu.IM;
 
-			Scanline = ppu.Scanline;
-			Cycle = ppu.Cycle;
+			if(_cpuType == CpuType.MdZ80) {
+				MdVdpState vdp = DebugApi.GetPpuState<MdVdpState>(_cpuType);
+				Scanline = vdp.Scanline;
+				Cycle = vdp.HClock;
+			} else {
+				SmsVdpState ppu = DebugApi.GetPpuState<SmsVdpState>(CpuType.Sms);
+				Scanline = ppu.Scanline;
+				Cycle = ppu.Cycle;
+			}
 
+			MemoryType stackMemory = _cpuType == CpuType.MdZ80 ? MemoryType.MdZ80Memory : MemoryType.SmsMemory;
 			StringBuilder sb = new StringBuilder();
 			for(UInt32 i = (UInt32)cpu.SP; (i & 0xFF) != 0; i++) {
-				sb.Append($"${DebugApi.GetMemoryValue(MemoryType.SmsMemory, i):X2} ");
+				sb.Append($"${DebugApi.GetMemoryValue(stackMemory, i):X2} ");
 			}
 			StackPreview = sb.ToString();
 		}
 
 		protected override void InternalUpdateConsoleState()
 		{
-			SmsCpuState cpu = DebugApi.GetCpuState<SmsCpuState>(CpuType.Sms);
+			SmsCpuState cpu = DebugApi.GetCpuState<SmsCpuState>(_cpuType);
 
 			cpu.A = RegA;
 			cpu.B = RegB;
@@ -190,7 +200,7 @@ namespace Mesen.Debugger.StatusViews
 			cpu.Halted = FlagHalted;
 			cpu.IM = IM;
 
-			DebugApi.SetCpuState(cpu, CpuType.Sms);
+			DebugApi.SetCpuState(cpu, _cpuType);
 		}
 	}
 }

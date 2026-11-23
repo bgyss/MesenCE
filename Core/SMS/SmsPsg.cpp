@@ -8,13 +8,13 @@ SmsPsg::SmsPsg(Emulator* emu, SmsConsole* console)
 	_console = console;
 	_soundMixer = emu->GetSoundMixer();
 	_settings = emu->GetSettings();
-	_altNoiseMode = _console->GetModel() == SmsModel::ColecoVision || _console->GetModel() == SmsModel::Sg;
+	_psg.AltNoiseMode = _console->GetModel() == SmsModel::ColecoVision || _console->GetModel() == SmsModel::Sg;
 
-	_state.Noise.Lfsr = 0x8000;
-	_state.Noise.Volume = 0x0F;
-	_state.Tone[0].Volume = 0x0F;
-	_state.Tone[1].Volume = 0x0F;
-	_state.Tone[2].Volume = 0x0F;
+	_psg.State.Noise.Lfsr = 0x8000;
+	_psg.State.Noise.Volume = 0x0F;
+	_psg.State.Tone[0].Volume = 0x0F;
+	_psg.State.Tone[1].Volume = 0x0F;
+	_psg.State.Tone[2].Volume = 0x0F;
 
 	_soundBuffer = new int16_t[SmsPsg::MaxSamples * 2];
 	memset(_soundBuffer, 0, SmsPsg::MaxSamples * 2 * sizeof(int16_t));
@@ -38,32 +38,6 @@ void SmsPsg::SetRegion(ConsoleRegion region)
 	blip_set_rates(_rightChannel, _console->GetMasterClockRate(), SmsPsg::SampleRate);
 }
 
-void SmsPsg::RunNoise(SmsNoiseChannelState& noise)
-{
-	if(noise.Timer == 0 || --noise.Timer == 0) {
-		noise.LfsrInputBit ^= 1;
-		switch(noise.Control & 0x03) {
-			case 0: noise.Timer = 0x10; break;
-			case 1: noise.Timer = 0x20; break;
-			case 2: noise.Timer = 0x40; break;
-			case 3: noise.Timer = _state.Tone[2].ReloadValue; break;
-		}
-
-		if(noise.LfsrInputBit) {
-			if(_altNoiseMode) {
-				bool useBit1 = noise.Control & 0x04;
-				uint16_t newBit = (noise.Lfsr & 0x01) ^ (useBit1 & ((noise.Lfsr >> 1) & 0x01));
-				noise.Lfsr = (newBit << 14) | (noise.Lfsr >> 1);
-			} else {
-				bool useBit3 = noise.Control & 0x04;
-				uint16_t newBit = (noise.Lfsr & 0x01) ^ (useBit3 & ((noise.Lfsr >> 3) & 0x01));
-				noise.Lfsr = (newBit << 15) | (noise.Lfsr >> 1);
-			}
-			noise.Output = noise.Lfsr & 0x01;
-		}
-	}
-}
-
 void SmsPsg::Run()
 {
 	uint64_t runTo = _console->GetMasterClock();
@@ -73,27 +47,23 @@ void SmsPsg::Run()
 		int16_t outputLeft = 0;
 		int16_t outputRight = 0;
 		int16_t channelOutput;
+		_psg.Step();
+		SmsPsgState& state = _psg.State;
 		for(int i = 0; i < 3; i++) {
-			if(_state.Tone[i].Timer == 0 || --_state.Tone[i].Timer == 0) {
-				_state.Tone[i].Output ^= 1;
-				_state.Tone[i].Timer = _state.Tone[i].ReloadValue;
-			}
-
-			channelOutput = _state.Tone[i].Output * _volumeLut[_state.Tone[i].Volume] * volumes[i] / 100;
-			if(_state.GameGearPanningReg & (0x01 << i)) {
+			channelOutput = state.Tone[i].Output * Sn76489::VolumeLut[state.Tone[i].Volume] * volumes[i] / 100;
+			if(state.GameGearPanningReg & (0x01 << i)) {
 				outputRight += channelOutput;
 			}
-			if(_state.GameGearPanningReg & (0x10 << i)) {
+			if(state.GameGearPanningReg & (0x10 << i)) {
 				outputLeft += channelOutput;
 			}
 		}
 
-		RunNoise(_state.Noise);
-		channelOutput = _state.Noise.Output * _volumeLut[_state.Noise.Volume] * volumes[3] / 100;
-		if(_state.GameGearPanningReg & 0x08) {
+		channelOutput = state.Noise.Output * Sn76489::VolumeLut[state.Noise.Volume] * volumes[3] / 100;
+		if(state.GameGearPanningReg & 0x08) {
 			outputRight += channelOutput;
 		}
-		if(_state.GameGearPanningReg & 0x80) {
+		if(state.GameGearPanningReg & 0x80) {
 			outputLeft += channelOutput;
 		}
 
@@ -132,47 +102,18 @@ void SmsPsg::PlayQueuedAudio()
 void SmsPsg::Write(uint8_t value)
 {
 	Run();
-
-	if(value & 0x80) {
-		_state.SelectedReg = (value >> 4) & 0x07;
-	}
-
-	uint8_t channel = (_state.SelectedReg >> 1) & 0x03;
-	bool volReg = _state.SelectedReg & 0x01;
-
-	switch(channel) {
-		case 0:
-		case 1:
-		case 2:
-			if(volReg) {
-				_state.Tone[channel].Volume = value & 0x0F;
-			} else {
-				if(value & 0x80) {
-					_state.Tone[channel].ReloadValue = (_state.Tone[channel].ReloadValue & 0x3F0) | (value & 0x0F);
-				} else {
-					_state.Tone[channel].ReloadValue = (_state.Tone[channel].ReloadValue & 0x0F) | ((value & 0x3F) << 4);
-				}
-			}
-			break;
-
-		case 3:
-			if(volReg) {
-				_state.Noise.Volume = value & 0x0F;
-			} else {
-				_state.Noise.Control = value & 0x07;
-				_state.Noise.Lfsr = 0x8000;
-			}
-			break;
-	}
+	_psg.Write(value);
 }
 
 void SmsPsg::WritePanningReg(uint8_t value)
 {
-	_state.GameGearPanningReg = value;
+	_psg.State.GameGearPanningReg = value;
 }
 
 void SmsPsg::Serialize(Serializer& s)
 {
+	//Keeps the save-state keys of the pre-Sn76489 layout ("_state.*")
+	SmsPsgState& _state = _psg.State;
 	if(s.IsSaving()) {
 		Run();
 	} else {

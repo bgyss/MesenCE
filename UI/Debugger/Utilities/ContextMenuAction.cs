@@ -566,6 +566,10 @@ namespace Mesen.Debugger.Utilities
 
 		[IconFile("SpcDebugger")]
 		OpenSpcDebugger,
+		OpenMdZ80Debugger,
+		OpenMcdM68kDebugger,
+		OpenM32xMasterDebugger,
+		OpenM32xSlaveDebugger,
 		[IconFile("Cx4Debugger")]
 		OpenCx4Debugger,
 		[IconFile("NecDspDebugger")]
@@ -677,6 +681,8 @@ namespace Mesen.Debugger.Utilities
 		Sms,
 		[IconFile("WsIcon")]
 		Ws,
+		[IconFile("MdIcon")]
+		Md,
 		[IconFile("Drive")]
 		OtherConsoles,
 		[IconFile("MediaPause")]

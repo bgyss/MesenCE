@@ -289,6 +289,13 @@ private:
 	unordered_map<string, int64_t>& GetWsTokens();
 	int64_t GetWsTokenValue(int64_t token, EvalResultType& resultType);
 
+	unordered_map<string, int64_t>& GetMdM68kTokens();
+	int64_t GetMdM68kTokenValue(int64_t token, EvalResultType& resultType);
+	unordered_map<string, int64_t>& GetSh2Tokens();
+	int64_t GetSh2TokenValue(int64_t token, EvalResultType& resultType);
+	unordered_map<string, int64_t>& GetMdZ80Tokens();
+	int64_t GetMdZ80TokenValue(int64_t token, EvalResultType& resultType);
+
 	bool ReturnBool(int64_t value, EvalResultType& resultType);
 
 	int64_t ProcessSharedTokens(string token);

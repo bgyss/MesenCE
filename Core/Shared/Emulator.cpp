@@ -36,6 +36,7 @@
 #include "SMS/SmsConsole.h"
 #include "GBA/GbaConsole.h"
 #include "WS/WsConsole.h"
+#include "MD/MdConsole.h"
 #include "Debugger/Debugger.h"
 #include "Debugger/BaseEventManager.h"
 #include "Debugger/DebugTypes.h"
@@ -68,6 +69,7 @@ Emulator::Emulator()
 	_paused = false;
 	_pauseOnNextFrame = false;
 	_stopFlag = false;
+	_headlessStopRequested = false;
 	_isRunAheadFrame = false;
 	_lockCounter = 0;
 	_threadPaused = false;
@@ -173,6 +175,10 @@ void Emulator::Run()
 		}
 
 		ProcessAutoSaveState();
+
+		if(_headless && (_headlessStopRequested || (_headlessFrameLimit && GetFrameCount() >= _headlessFrameLimit))) {
+			break;
+		}
 
 		WaitForLock();
 
@@ -609,6 +615,7 @@ void Emulator::TryLoadRom(VirtualFile& romFile, LoadRomResult& result, unique_pt
 	TryLoadRom<SmsConsole>(romFile, result, console, useFileSignature);
 	TryLoadRom<GbaConsole>(romFile, result, console, useFileSignature);
 	TryLoadRom<WsConsole>(romFile, result, console, useFileSignature);
+	TryLoadRom<MdConsole>(romFile, result, console, useFileSignature);
 }
 
 template<typename T>
@@ -1174,6 +1181,10 @@ void Emulator::SetStopCode(int32_t stopCode)
 	}
 
 	_stopCode = stopCode;
+	if(_headless) {
+		_headlessStopRequested = true;
+		return;
+	}
 	if(!_stopFlag && !_stopRequested) {
 		_stopRequested = true;
 		thread stopEmuTask([this]() {
