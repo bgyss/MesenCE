@@ -1506,3 +1506,43 @@ SDRAM sharing between the two SH-2s.
 - Mars Sample Program: Gnu Sierra, visual 0.19.
 - Whether SDRAM is mirrored above `$0603FFFF` on hardware (MesenCE mirrors; ares does not).
 - The Mega Drive's own output DC blocker; DMAC bus timing; 68000 accesses to the 32X side.
+
+## C8: 36 Great Holes follow-up (2026-11-23, open)
+
+Narrowing down C7's open item. New tooling, and what it established.
+
+### Tooling: PicoDrive's SDRAM
+
+`tools/libretro-capture/capture.py --dump-at` also writes `M32xSdram.bin` when the core is
+PicoDrive. libretro exposes only the Mega Drive's RAM, so it reads the core's exported
+`Pico32xMem` (its first member is the 256 KiB SDRAM, stored as host-order words; the dump is
+big-endian like MesenCE's). With `mesen-headless --dump-at`, both emulators' SDRAM can be compared
+at matching frames. Not wired into a `mise` task; the format is checked by the result below (the
+code area `$06000400-$06003000` is byte-identical in both).
+
+### What the comparison shows
+
+- **The routine with the count runs once.** `$06002BFC` is first called at frame 3,006, when the
+  demo starts drawing the course, and its count is already 0: not an occasional race.
+- **Why 0:** the dispatcher (`$06002582-$06002648`) keeps the cells of a list built by a
+  line-stepping routine (`$06002710`, called from `$0600244A`) whose coordinates are non-negative
+  and within its bounds. The list starts at (-7, 9) and steps towards (-1, 19): it begins outside
+  the grid, so every cell is rejected. Its start point comes from course variables at
+  `$060291D0-$06029290` (values such as 25,000 and 25,500), computed by the SH-2 with MULS.W.
+- **SDRAM before the demo:** on the title screen (MesenCE frame 2,990 against PicoDrive 2,900),
+  SDRAM is identical except the stack and one word, `$0600D24C`. The master's V interrupt handler
+  (`$06001210`, level 12 in the game's table at `$06001424`) adds 1 to it. MesenCE adds 1 per
+  frame. PicoDrive adds 60-450 per two frames between its frames 2,948 and 3,000, and again
+  around 3,358-3,378, so it takes the V interrupt many times per frame in those windows. The 32X
+  V interrupt is once per frame (manual pp. 22-24); MesenCE's behaviour is the documented one.
+- **Not the counter alone:** writing PicoDrive's value into `$0600D24C` in MesenCE at frame 2,998
+  does not avoid the crash.
+- PicoDrive reaches the course later (after frame 3,100) and its SDRAM at the matching addresses
+  holds other data by then, so the two runs have taken different paths before the demo.
+
+### Still open
+
+Where the course variables first differ. Next steps: dump both emulators' SDRAM every frame from
+2,900 and diff the `$06029000-$06029400` variables and the 68000's commands (communication
+registers) as they change; check whether PicoDrive's repeated V interrupts change anything the 68000
+side waits on.
