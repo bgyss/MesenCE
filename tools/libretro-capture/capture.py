@@ -138,6 +138,20 @@ def swap_words(data):
     return bytes(b)
 
 
+def picodrive_sdram(core):
+    """PicoDrive's 32X SDRAM, big-endian like MesenCE's M32xSdram dump, or None (another core, or no
+    32X game). libretro exposes only the Mega Drive's RAM, so this reads the core's exported
+    Pico32xMem pointer: struct Pico32xMem starts with u8 sdram[0x40000], stored as host-order 16-bit
+    words (PicoDrive pico/pico_int.h)."""
+    try:
+        ptr = C.c_void_p.in_dll(core, "Pico32xMem").value
+    except ValueError:
+        return None
+    if not ptr:
+        return None
+    return swap_words(C.string_at(ptr, 0x40000)) if sys.byteorder == "little" else C.string_at(ptr, 0x40000)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("core")
@@ -307,6 +321,9 @@ def main():
             d.mkdir(parents=True, exist_ok=True)
             for name, m in regions:
                 (d / (name + ".bin")).write_bytes(read_region(m))
+            sdram = picodrive_sdram(core)
+            if sdram is not None:
+                (d / "M32xSdram.bin").write_bytes(sdram)
     if log:
         log.close()
     if blocks:

@@ -1056,6 +1056,11 @@ void M32xUnit::MainWrite(uint32_t addr, bool upper, bool lower, uint16_t value)
 {
 	if(addr >= 0x840000 && addr < 0x880000 && !_fm) {
 		FrameBufferWrite(addr, upper, lower, value, addr >= 0x860000);
+	} else if(addr >= 0x900000 && !_dreqRv) {
+		//The bank window reaches the cartridge for writes too: battery RAM at $200000 (bank 2) is
+		//written through it (ares bus-external.cpp; 36 Great Holes, findings C8). The fixed window
+		//at $880000 is read-only (ares)
+		_memoryManager->WriteCartWord(((uint32_t)_romBank << 20) | (addr & 0xFFFFE), upper, lower, value);
 	}
 }
 

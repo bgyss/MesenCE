@@ -707,6 +707,27 @@ def _cart_map():
     return _case("m32x_cart_map", ops, master, rom_size=0x200000, rom_data=((0x104000, 0x45), (0x104001, 0x67)))
 
 
+def _cart_sram():
+    """Battery RAM through the 32X bank window (findings C8). With ADEN = 1 and RV = 0 the 68000
+    reaches the cartridge only through $880000 and the $900000 bank window (manual p. 20), so a 32X
+    game with battery RAM at $200000 writes it through bank 2. 36 Great Holes' layout: a 3 MiB ROM
+    and an "RA" header for odd-byte RAM at $200001-$20FFFF, switched over the ROM by $A130F1.
+    MesenCE dropped writes to the window (ares forwards them to the cartridge), so the game never
+    saved its default player and its demo crashed.
+
+    With $A130F1 = 1 and bank 2, bytes written at $900001/$900003 read back; with $A130F1 = 0 the
+    window shows the ROM again ($11 at $200001).
+    """
+    ra = b"RA" + bytes((0xF8, 0x20)) + (0x200001).to_bytes(4, "big") + (0x20FFFF).to_bytes(4, "big")
+    data = tuple((0x1B0 + i, b) for i, b in enumerate(ra)) + ((0x200001, 0x11),)
+    ops = _wait_boot() + [Operation(WRITE, 1, 0xA130F1, 1), Operation(WRITE, 1, 0xA15105, 2),
+                          Operation(WRITE, 1, 0x900001, 0x5A), Operation(WRITE, 1, 0x900003, 0xA5),
+                          _read(0x900001, 0x5A, mask=0xFF, width=1), _read(0x900003, 0xA5, mask=0xFF, width=1),
+                          Operation(WRITE, 1, 0xA130F1, 0), _read(0x900001, 0x11, mask=0xFF, width=1),
+                          Operation(WRITE, 1, 0xA15105, 0)]
+    return _case("m32x_cart_sram", ops, IDLE, rom_size=0x300000, rom_data=data)
+
+
 def _handover():
     """What the replacement boot ROMs hand over beyond the manual's flow chart (findings S5):
 
@@ -1042,7 +1063,7 @@ def _pixel_check(name):
 
 def all_cases():
     PIXEL_CHECKS["m32x_render"] = {(40, 100): (0, 255, 0), (280, 100): (0, 0, 255)}
-    found = [_boot(), _cmd_irq(), _vint_hint(), _hint_dma(), _sdram_shared(), _dreq_fifo(), _frame_buffer(), _fb_write_timing(), _sdram_timing(), _bus_contention(), _vdp_68k(), _fen_refresh(), _cart_map(), _handover(),
+    found = [_boot(), _cmd_irq(), _vint_hint(), _hint_dma(), _sdram_shared(), _dreq_fifo(), _frame_buffer(), _fb_write_timing(), _sdram_timing(), _bus_contention(), _vdp_68k(), _fen_refresh(), _cart_map(), _cart_sram(), _handover(),
              _pwm(), _pwm_stream(), _z80_window(), _render(), _priority_32x(), _priority_md(), _dot_shift()]
     for name in PIXEL_CHECKS:
         DERIVED_CHECKS[name] = _pixel_check(name)

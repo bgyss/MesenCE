@@ -478,6 +478,32 @@ uint8_t MdMemoryManager::ReadCartBus(uint32_t addr)
 	return value;
 }
 
+// A 68000 write to the cartridge ($000000-$3FFFFF; with the 32X, also its $900000 bank window):
+// the SF-004 board, the EEPROM, and the battery RAM. The ROM itself ignores writes.
+void MdMemoryManager::WriteCartWord(uint32_t addr, bool upper, bool lower, uint16_t value)
+{
+	if(_mapper == CartMapper::Sf004 && addr < 0x10000) {
+		//A word write's low byte reaches the board (GPGX, PicoDrive)
+		WriteSf004(addr, lower ? (uint8_t)value : (uint8_t)(value >> 8));
+	}
+	if(_eeprom) {
+		if(upper) {
+			WriteEeprom(addr, value >> 8);
+		}
+		if(lower) {
+			WriteEeprom(addr | 1, (uint8_t)value);
+		}
+	}
+	if(_saveRam && _state.SramEnabled) {
+		if(upper && IsSaveRamAddress(addr)) {
+			WriteSaveRam(addr, value >> 8);
+		}
+		if(lower && IsSaveRamAddress(addr | 1)) {
+			WriteSaveRam(addr | 1, (uint8_t)value);
+		}
+	}
+}
+
 uint16_t MdMemoryManager::ReadCartWord(uint32_t addr)
 {
 	return (uint16_t)((ReadCartBus(addr) << 8) | ReadCartBus(addr | 1));
@@ -613,26 +639,7 @@ void MdMemoryManager::M68kWrite(bool upper, bool lower, uint32_t addr, uint16_t 
 					break;
 				}
 			}
-			if(_mapper == CartMapper::Sf004 && addr < 0x10000) {
-				//A word write's low byte reaches the board (GPGX, PicoDrive)
-				WriteSf004(addr, lower ? (uint8_t)value : (uint8_t)(value >> 8));
-			}
-			if(_eeprom) {
-				if(upper) {
-					WriteEeprom(addr, value >> 8);
-				}
-				if(lower) {
-					WriteEeprom(addr | 1, (uint8_t)value);
-				}
-			}
-			if(_saveRam && _state.SramEnabled) {
-				if(upper && IsSaveRamAddress(addr)) {
-					WriteSaveRam(addr, value >> 8);
-				}
-				if(lower && IsSaveRamAddress(addr | 1)) {
-					WriteSaveRam(addr | 1, (uint8_t)value);
-				}
-			}
+			WriteCartWord(addr, upper, lower, value);
 			break;
 
 		case 5:

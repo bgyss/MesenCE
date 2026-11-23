@@ -163,6 +163,7 @@ public:
 	void SetM32x(M32xUnit* m32x) { _m32x = m32x; }
 	//Cartridge word at a ROM offset (the 32X's SH-2 and 68000 cartridge windows)
 	uint16_t ReadCartWord(uint32_t addr);
+	void WriteCartWord(uint32_t addr, bool upper, bool lower, uint16_t value);
 	MdMemoryManagerState& GetState() { return _state; }
 	uint64_t GetMasterClock() { return _masterClock; }
 
