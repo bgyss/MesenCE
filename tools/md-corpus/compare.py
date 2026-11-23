@@ -44,6 +44,16 @@ NO_INPUT_FRAMES = 1200
 # Judgment calls with no hardware measurement behind either side; see the findings (C1).
 KNOWN_LEVEL_DB = {"mcd": {"pcm": 7.2}, "md": {"psg": -2.8}}
 
+# PicoDrive boots 32X games without Sega's boot ROMs; MesenCE runs them, which takes 60-100 frames
+# longer (Virtua Racing Deluxe: first picture at frame 95 against PicoDrive's 30; MesenCE's own
+# replacement boot ROMs 45). The offset between the runs is then larger than the 60 frames track
+# searches by default, and snapshots taken on the same frame show different scenes (findings C5).
+WIDE_OFFSET = {"32x": 150}
+# Systems whose oracle runs take a snapshot every OFFSET_SNAP_EVERY frames, so that visual can
+# compare MesenCE's snapshots with the oracle's at the tracked offset
+OFFSET_SNAP_SYSTEMS = {"32x"}
+OFFSET_SNAP_EVERY = 10
+
 SCORES = {"mesen-failed": 100, "mesen-frozen": 80, "mesen-black": 80, "mesen-no-input": 70, "state-diverges": 60,
           "state-diverges-single-oracle": 25, "visual": 40, "audio": 30, "audio-not-compared": 5, "unsupported": 5}
 
@@ -116,15 +126,33 @@ def image(path, emulator="mesen", size=(80, 56)):
     return np.asarray(small, dtype=np.float32) / 255.0
 
 
-def visual(a, b):
-    sa = {p.name: p for p in (a / "snaps").glob("*.png")} if (a / "snaps").exists() else {}
-    sb = {p.name: p for p in (b / "snaps").glob("*.png")} if (b / "snaps").exists() else {}
-    common = sorted(set(sa) & set(sb))
-    if not common:
+def visual(a, b, offsets=None):
+    """Snapshot difference per snapshot of a. With offsets (track's, per frame of a), a's snapshot
+    at frame f is compared with b's nearest snapshot to f + offset; b then needs denser snapshots
+    (the runner takes them every OFFSET_SNAP_EVERY frames for 32X oracles)."""
+    sa = {int(p.stem): p for p in (a / "snaps").glob("*.png")} if (a / "snaps").exists() else {}
+    sb = {int(p.stem): p for p in (b / "snaps").glob("*.png")} if (b / "snaps").exists() else {}
+    if not sa or not sb:
         return None
-    diffs = [float(np.abs(image(sa[n], a.name) - image(sb[n], b.name)).mean()) for n in common]
-    return {"median": round(float(np.median(diffs)), 3), "last": round(diffs[-1], 3), "per_snap": [round(d, 3) for d in diffs],
-            "frames": [int(n.split(".")[0]) for n in common]}
+    pairs = []
+    if offsets is None:
+        pairs = [(f, f) for f in sorted(set(sa) & set(sb))]
+    else:
+        fb = np.array(sorted(sb))
+        for f in sorted(sa):
+            if 1 <= f <= len(offsets):
+                target = f + int(offsets[f - 1])
+                g = int(fb[np.abs(fb - target).argmin()])
+                if abs(g - target) <= OFFSET_SNAP_EVERY // 2:
+                    pairs.append((f, g))
+    if not pairs:
+        return None
+    diffs = [float(np.abs(image(sa[f], a.name) - image(sb[g], b.name)).mean()) for f, g in pairs]
+    out = {"median": round(float(np.median(diffs)), 3), "last": round(diffs[-1], 3), "per_snap": [round(d, 3) for d in diffs],
+           "frames": [f for f, _ in pairs]}
+    if offsets is not None:
+        out["oracle_frames"] = [g for _, g in pairs]
+    return out
 
 
 def track(A, B, max_step=4, wide=60):
@@ -159,10 +187,11 @@ def track(A, B, max_step=4, wide=60):
     return offsets, agree
 
 
-def state_pair(A, B):
+def state_pair(A, B, wide=60, with_offsets=False):
+    """with_offsets: also return track's per-frame offsets (for visual)."""
     if A is None or B is None:
-        return None
-    offsets, agree = track(A, B)
+        return (None, None) if with_offsets else None
+    offsets, agree = track(A, B, wide=wide)
     n = len(A)
     valid = np.array([0 <= f + offsets[f] < len(B) for f in range(n)])
     diff = np.zeros((n, 256), dtype=bool)
@@ -181,11 +210,12 @@ def state_pair(A, B):
             diverged = int(f) + 1
             break
     changes = int((np.diff(offsets) != 0).sum())
-    return {"agreement_median": round(float(np.median(clean)), 3), "agreement_p10": round(float(np.percentile(clean, 10)), 3),
+    result = {"agreement_median": round(float(np.median(clean)), 3), "agreement_p10": round(float(np.percentile(clean, 10)), 3),
             "lockstep": round(float((clean >= 0.999).mean()), 3), "diverged_at": diverged,
             "offset_final": int(offsets[-1]), "offset_changes": changes, "offset_max": int(np.abs(offsets).max()),
             "noisy_blocks": ["%06x" % (0xFF0000 + b * 256) for b in np.where(noisy)[0]],
             "rolling_2s": [round(float(x), 2) for x in rolling[::60]]}
+    return (result, offsets) if with_offsets else result
 
 
 _AUDIO = {}
@@ -249,9 +279,11 @@ def compare_session(sdir, keep_audio, previous=None):
            "mesen_build": json.loads((sdir / "mesen" / "run.json").read_text()).get("build"),
            "health": {e: health(sdir / e, logs[e], e == "mesen") for e in emus}, "state": {}, "visual": {}}
     oracles = [e for e in emus if e != "mesen"]
+    wide = WIDE_OFFSET.get(entry["system"], 60)
     for o in oracles:
-        out["state"]["mesen~" + o] = state_pair(blocks["mesen"], blocks[o])
-        out["visual"]["mesen~" + o] = visual(sdir / "mesen", sdir / o)
+        out["state"]["mesen~" + o], offsets = state_pair(blocks["mesen"], blocks[o], wide=wide, with_offsets=True)
+        dense = entry["system"] in OFFSET_SNAP_SYSTEMS and offsets is not None
+        out["visual"]["mesen~" + o] = visual(sdir / "mesen", sdir / o, offsets if dense else None)
     if len(oracles) >= 2:
         out["state"]["%s~%s" % (oracles[0], oracles[1])] = state_pair(blocks[oracles[0]], blocks[oracles[1]])
         out["visual"]["%s~%s" % (oracles[0], oracles[1])] = visual(sdir / oracles[0], sdir / oracles[1])

@@ -8,9 +8,9 @@ Figures are from [`md-verification-findings.md`](../research/md-verification-fin
 sections C1-C4, as of commit `10379284` (2026-11-22).
 
 **Before posting:**
-- **Links:** this work is on the `sega-cd` branch, not `master`. Link
-  `github.com/bgyss/MesenCE/tree/sega-cd` until it's merged, then the repository root. The
-  findings log is at `docs/research/md-verification-findings.md` on the same branch.
+- **Links:** the work is merged into `master` (PR #15), so link the repository root,
+  `github.com/bgyss/MesenCE`. The findings log is
+  `github.com/bgyss/MesenCE/blob/master/docs/research/md-verification-findings.md`.
 - **Novelty claim:** word it as "I couldn't find anyone doing this", never "first". The prior-work
   search was a web search, not a literature review. Credit TASVideos/TASBot console verification
   and TiKevin83's Game Boy TAS suite in any post that makes the claim; people will name them in

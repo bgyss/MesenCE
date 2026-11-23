@@ -437,6 +437,79 @@ fbw:   .long 0x24000200
     return _case("m32x_frame_buffer", ops, master, frames=4)
 
 
+def _fb_write_timing():
+    """SH-2 frame buffer write timing (manual 4.4, p. 77): writes go through a 4-word FIFO, 1 wait
+    (3 clocks) while it has room, the SH-2 waits when it is full ("5 Clock is required if FIFO is
+    FULL and 3 Clock is required if FIFO is not FULL"). VDP register reads cost 5 waits (p. 78).
+
+    The master takes the VDP (FM = 1) and times three loops of 100 iterations with the FRT at
+    phi/8 (FRC read high byte, then low): four back-to-back frame buffer writes per iteration
+    (the FIFO fills), one write followed by four NOPs (it never fills), and VDP status reads. It reports the tick
+    counts in comm5, comm6 and comm7. Expected values are MesenCE's with the manual's figures
+    (findings C5); the old ares figures (4 waits per write, 1 per VDP register access) gave
+    different counts.
+    """
+    def timed(body, label):
+        return """
+    mov.b @(2,r8),r0
+    extu.b r0,r3
+    shll8 r3
+    mov.b @(3,r8),r0
+    extu.b r0,r0
+    or r0,r3                ; start
+    mov #100,r4
+    mov.l fbw,r1
+%s:
+%s
+    dt r4
+    bf/s %s
+    add #2,r1
+    mov.b @(2,r8),r0
+    extu.b r0,r5
+    shll8 r5
+    mov.b @(3,r8),r0
+    extu.b r0,r0
+    or r0,r5
+    sub r3,r5
+    extu.w r5,r5
+""" % (label, body, label)
+    master = """
+    mov.w fm,r0
+    mov.w r0,@(0,gbr)       ; FM = 1
+    mov.l frt,r8
+    mov #0,r0
+    mov.b r0,@(6,r8)        ; TCR: FRT counts phi/8
+    mov.l fbreg,r9
+fen:
+    mov.w @(10,r9),r0
+    tst #2,r0
+    bf fen
+    mov.w fdata,r0
+    mov r0,r6
+""" + timed("    mov.w r6,@r1\n    mov.w r6,@r1\n    mov.w r6,@r1\n    mov.w r6,@r1", "back") + """
+    mov r5,r0
+    mov.w r0,@(0x2A,gbr)    ; comm5: back-to-back writes
+""" + timed("    mov.w r6,@r1\n    nop\n    nop\n    nop\n    nop", "spaced") + """
+    mov r5,r0
+    mov.w r0,@(0x2C,gbr)    ; comm6: spaced writes
+""" + timed("    mov.w @(10,r9),r0", "vdpreg") + """
+    mov r5,r0
+    mov.w r0,@(0x2E,gbr)    ; comm7: VDP register reads
+""" + IDLE + """
+fm:    .word 0x8000
+fdata: .word 0x1234
+ .align 4
+frt:   .long 0xFFFFFE10
+fbw:   .long 0x24000200
+"""
+    ops = _wait_boot() + [_poll_comm(7, FB_TIMING[2]), _read(_comm(6), FB_TIMING[1]), _read(_comm(5), FB_TIMING[0])]
+    return _case("m32x_fb_write_timing", ops, master, frames=4)
+
+
+#FRT ticks (phi/8) for 100 x 4 back-to-back frame buffer writes, 100 spaced writes, 100 VDP register reads
+FB_TIMING = (0xFC, 0x82, 0x80)
+
+
 def _fen_refresh():
     """FEN reads 1 while the frame buffer DRAM is refreshed, in a short window at the start of each
     HBlank (findings S5: Metal Head waits for FEN = 1 without a fill; BlastEm's window, ares reports
@@ -823,7 +896,7 @@ def _pixel_check(name):
 
 def all_cases():
     PIXEL_CHECKS["m32x_render"] = {(40, 100): (0, 255, 0), (280, 100): (0, 0, 255)}
-    found = [_boot(), _cmd_irq(), _vint_hint(), _hint_dma(), _sdram_shared(), _dreq_fifo(), _frame_buffer(), _vdp_68k(), _fen_refresh(), _cart_map(), _handover(),
+    found = [_boot(), _cmd_irq(), _vint_hint(), _hint_dma(), _sdram_shared(), _dreq_fifo(), _frame_buffer(), _fb_write_timing(), _vdp_68k(), _fen_refresh(), _cart_map(), _handover(),
              _pwm(), _pwm_stream(), _z80_window(), _render(), _priority_32x(), _priority_md(), _dot_shift()]
     for name in PIXEL_CHECKS:
         DERIVED_CHECKS[name] = _pixel_check(name)
