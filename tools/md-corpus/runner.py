@@ -419,7 +419,13 @@ def session_jobs(e, sdir, out, oracles, frames, input_path, snap_every, sysdir, 
         return []
     def inp(emu):  # input_path: one file, or {emulator or "*": file}
         return input_path.get(emu, input_path["*"]) if isinstance(input_path, dict) else input_path
-    return [(emu, e, rom, sdir / emu, frames, inp(emu), snap_every, sysdir, build)
+    import compare
+
+    def snaps(emu):  # oracles of offset-tracked systems: dense snapshots (compare.visual)
+        if emu != "mesen" and snap_every and e["system"] in compare.OFFSET_SNAP_SYSTEMS:
+            return min(snap_every, compare.OFFSET_SNAP_EVERY)
+        return snap_every
+    return [(emu, e, rom, sdir / emu, frames, inp(emu), snaps(emu), sysdir, build)
             for emu in ["mesen"] + [o for o in oracles if e["system"] in ORACLE_SYSTEMS[o]]]
 
 

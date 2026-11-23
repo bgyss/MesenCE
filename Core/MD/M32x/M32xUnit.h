@@ -141,6 +141,12 @@ private:
 	uint16_t _fillAddress = 0;
 	uint16_t _fillData = 0;
 	uint64_t _fillBusyUntil = 0; //SH-2 cycles
+	//SH-2 frame buffer write FIFO (32X Hardware Manual 4.4): 4 words, each written to the DRAM
+	//FbFifoWriteCycles after the previous one; the SH-2 cycle at which each entry is written
+	static constexpr uint32_t FbFifoWriteCycles = 5;
+	uint64_t _fbFifoDone[4] = {};
+	uint8_t _fbFifoIndex = 0;
+	uint32_t FrameBufferWriteWait(uint64_t sh2Cycle);
 	bool _fbSelect = false; //FS as written
 	bool _fbDisplay = false; //the buffer being displayed (FS swaps at VBlank)
 	bool _hblank = false;

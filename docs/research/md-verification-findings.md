@@ -1271,3 +1271,72 @@ MSVC C4458 (`McdM68k::BusRead`'s `access` parameter), C5051 (a C++20 `[[unlikely
 SH-2 register reads OR-ing a `bool` into an `int`), and clang's
 `-Wdelete-non-abstract-non-virtual-dtor` in the headless runner. macOS builds on forks now skip
 code signing when no certificate secret is set.
+
+## C5: 32X library pass after the merge (2026-11-22)
+
+The 40 preferred 32X titles ran again with the merged build (attract mode, 3,600 frames; PicoDrive
+is the only 32X oracle). Brutal and 36 Great Holes no longer go black and NBA Jam TE is clean
+(earlier fixes); eight titles carried a "visual" flag with snapshot differences of 0.12-0.25.
+
+### The comparison: boot offset (tooling, fixed)
+
+PicoDrive boots 32X games without Sega's boot ROMs; MesenCE runs them. In Virtua Racing Deluxe the
+first picture appears at frame 95 in MesenCE with Sega's boot ROMs, 45 with MesenCE's replacement
+boot ROMs and 30 in PicoDrive, and the runs then stay 60-70 frames apart (snapshot matching every
+10 frames). Not an emulation difference: the boot ROMs' checks take that long. Two consequences
+in `compare.py`:
+- `track` searched offsets up to 60 frames and pinned at the bound (Virtua Racing Deluxe:
+  `offset_final` -59, true offset about -65). 32X sessions now search 150 (`WIDE_OFFSET`). WWF Raw's
+  late state divergence (3,164) went away; Virtua Fighter's offset is -95.
+- Snapshots taken on the same frame showed different scenes. For 32X sessions the oracle now
+  snapshots every 10 frames (`OFFSET_SNAP_SYSTEMS`, `runner.session_jobs`), and `visual` compares
+  each MesenCE snapshot with the oracle's nearest snapshot at the tracked offset. Seven of the
+  eight visual flags cleared.
+
+### Kolibri: SH-2 frame buffer, palette and VDP register wait states (fixed)
+
+- **Symptom:** after the boot offset, Kolibri still left its title screen for the demo about 1,185
+  frames after reaching it, against about 540 in PicoDrive, and showed black frames while
+  PicoDrive played the demo.
+- **Cause:** in SDRAM, the VBlank counter at `$06000C52` advances once per frame, but the game's
+  logic counters (`$0C5A`, `$36CCA`, `$3D8A2`) advance only every other frame: the game loop ran
+  at 30 fps in MesenCE, so the title's timeout took twice as many frames. With an experimental knob
+  (not committed) scaling the SH-2 bus waits, halving the frame buffer and palette waits
+  (5→3, 4→2) gave 60 fps; halving SDRAM reads alone gave 93 of 100 steps; cartridge and 1-cycle
+  register waits made no difference.
+- **Source:** the 32X Hardware Manual, section 4.4 (pp. 77-78), "Access Timing of Each CPU to 32X
+  Block". One wait is the minimum bus cycle plus one clock. SH-2: frame buffer write 1 wait (min)
+  to 3 (max), with "A 4 word component of FIFO is held for frame buffer writing. Thus, 5 Clock is
+  required if FIFO is FULL and 3 Clock is required if FIFO is not FULL"; frame buffer read 5-12;
+  palette 5 (min) up to 64 µs; VDP registers 5 (const); system registers and boot ROM 1; cartridge
+  6-15; SDRAM "Read: 12 Clock / 8 Word, Write: 2 Clock / 1 Word", reads always as an 8-word burst.
+  MesenCE had ares' figures (`bus-internal.cpp`): frame buffer write 4, palette 4, VDP registers 1.
+- **Fix:** `M32xUnit` charges the manual's minimum waits: VDP registers 5 and palette 5 (reads and
+  writes). Frame buffer writes go through a 4-entry FIFO (`FrameBufferWriteWait`, saved in save
+  states): 1 wait while it has room; when full, the SH-2 also waits for the oldest entry. The DRAM
+  write rate of one word per 5 SH-2 clocks is inferred from the manual's 3- and 5-clock figures
+  (judgment call). The maximum waits (frame buffer read up to 12, palette up to a line while the
+  VDP reads it, cartridge up to 15) and the SDRAM burst timing are not modelled; SDRAM keeps 2 per
+  read and 1 per write (judgment call, recorded in the 32X findings).
+- **Regression:** `m32x_fb_write_timing` (`tests/MD/synthetic/m32x_cases.py`, in
+  `test:md-synthetic`). The master SH-2 times 100 iterations with the FRT at φ/8: four back-to-back
+  frame buffer writes per iteration (`$FC` ticks: 5.04 clocks per write, the manual's FIFO-full
+  figure), one write and four NOPs (`$82`), and VDP register reads (`$80`). The old waits fail it.
+- **Results:** Kolibri's logic now runs at 60 fps and it matches PicoDrive's screens. On the 32X
+  pass, Kolibri, Brutal (audio), Spider-Man: Web of Fire (state) and World Series Baseball (audio)
+  cleared; Tempo (PWM level against a near-silent PicoDrive window) and NBA Jam TE (spectrum,
+  1.7 dB) gained audio flags; 10 of 40 titles are flagged, was 16 before both changes.
+  `test:md-synthetic` (60/60 and every MesenCE case), `test:md-replay` (122), `test:sh2-cpu` and
+  `test:ci` pass.
+
+### Still open on the 32X
+
+- WWF WrestleMania: The Arcade Game, state divergence from PicoDrive at about frame 2,704, and 36
+  Great Holes at 3,390, both single-oracle.
+- Mars Sample Program: Gnu Sierra (a Sega sample program) differs only in the rotation phase of its
+  polygon, but scores 0.19; not investigated.
+- Audio flags on Blackthorne, Darxide, NBA Jam TE, Primal Rage, Tempo and Virtua Fighter, against
+  PicoDrive's PWM only.
+- The SDRAM timing (12-clock bursts) and the maximum waits are not modelled; they would slow games
+  that read SDRAM through the cache-through address.
+

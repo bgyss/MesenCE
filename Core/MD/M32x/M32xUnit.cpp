@@ -1040,10 +1040,28 @@ uint16_t M32xUnit::PeekMain(uint32_t addr)
 }
 
 // ---------------------------------------------------------------------------------------------
-// SH-2 bus (32X Hardware Manual figure 3.2). Wait states are ares' figures (bus-internal.cpp),
-// a judgment call until a hardware source is found; SDRAM costs 2 cycles per access (judgment
-// call: ares charges a 12-cycle burst per cache line fill instead)
+// SH-2 bus (32X Hardware Manual figure 3.2). Wait states from the manual's section 4.4 (p. 77-78),
+// charged as SH-2 cycles on top of the instruction's own: boot ROM and system registers 1, VDP
+// registers 5, palette 5 (the manual's minimum; up to a line when the VDP is using it), cartridge 6
+// (minimum), frame buffer read 5 (minimum), frame buffer write 1 while its 4-word FIFO has room
+// (FrameBufferWriteWait). SDRAM costs 2 cycles per read and 1 per write (judgment call, kept from
+// ares; the manual gives 12 clocks per 8-word burst read and 2 per word written)
 // ---------------------------------------------------------------------------------------------
+
+// 1 wait while the FIFO has room, so a write takes 3 clocks; with the FIFO full the SH-2 waits for
+// the oldest entry, and back-to-back writes then take 5 clocks each (manual 4.4: "5 Clock is
+// required if FIFO is FULL and 3 Clock is required if FIFO is not FULL"). The DRAM write rate of
+// one word per 5 clocks is inferred from those two figures (judgment call).
+uint32_t M32xUnit::FrameBufferWriteWait(uint64_t sh2Cycle)
+{
+	uint64_t& oldest = _fbFifoDone[_fbFifoIndex];
+	uint32_t wait = 1 + (oldest > sh2Cycle ? (uint32_t)(oldest - sh2Cycle) : 0);
+	uint64_t last = _fbFifoDone[(_fbFifoIndex + 3) & 3];
+	uint64_t start = sh2Cycle + wait;
+	oldest = std::max(start, last) + FbFifoWriteCycles;
+	_fbFifoIndex = (_fbFifoIndex + 1) & 3;
+	return wait;
+}
 
 uint16_t M32xUnit::ShRead16(int cpu, uint32_t addr)
 {
@@ -1060,7 +1078,7 @@ uint16_t M32xUnit::ShRead16(int cpu, uint32_t addr)
 				sh2.AddCycles(1);
 				return ReadSysReg(cpu, addr);
 			} else if(addr < 0x4200) {
-				sh2.AddCycles(1);
+				sh2.AddCycles(5);
 				if((addr & 0x0E) != 0x0A && !_fm) {
 					return 0;
 				}
@@ -1069,7 +1087,7 @@ uint16_t M32xUnit::ShRead16(int cpu, uint32_t addr)
 				if(!_fm) {
 					return 0;
 				}
-				sh2.AddCycles(4);
+				sh2.AddCycles(5);
 				return _palette[(addr >> 1) & 0xFF];
 			}
 			break;
@@ -1113,13 +1131,13 @@ void M32xUnit::ShWrite16(int cpu, uint32_t addr, bool upper, bool lower, uint16_
 				sh2.AddCycles(1);
 				WriteSysReg(cpu, addr, upper, lower, value);
 			} else if(addr >= 0x4100 && addr < 0x4200) {
-				sh2.AddCycles(1);
+				sh2.AddCycles(5);
 				if(_fm) {
 					WriteVdpReg(addr & 0x0E, upper, lower, value);
 				}
 			} else if(addr >= 0x4200 && addr < 0x4400) {
 				if(_fm) {
-					sh2.AddCycles(4);
+					sh2.AddCycles(5);
 					uint16_t& p = _palette[(addr >> 1) & 0xFF];
 					if(upper) {
 						p = (uint16_t)((p & 0x00FF) | (value & 0xFF00));
@@ -1134,7 +1152,7 @@ void M32xUnit::ShWrite16(int cpu, uint32_t addr, bool upper, bool lower, uint16_
 		case 0x04:
 		case 0x05:
 			if(_fm && !FrameBufferBusy(sh2.GetCycleCount())) {
-				sh2.AddCycles(4);
+				sh2.AddCycles(FrameBufferWriteWait(sh2.GetCycleCount()));
 				FrameBufferWrite(addr, upper, lower, value, (addr & 0x20000) != 0);
 			}
 			break;
@@ -1330,6 +1348,8 @@ void M32xUnit::Serialize(Serializer& s)
 	SV(_fillAddress);
 	SV(_fillData);
 	SV(_fillBusyUntil);
+	SVArray(_fbFifoDone, 4);
+	SV(_fbFifoIndex);
 	SV(_fbSelect);
 	SV(_fbDisplay);
 	SV(_hblank);
