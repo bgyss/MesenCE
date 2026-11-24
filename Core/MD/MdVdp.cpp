@@ -272,7 +272,9 @@ void MdVdp::ProcessLineStart()
 	}
 	if(line == 0) {
 		_vintRaisedThisFrame = false;
-		_frameWidth = IsH40() ? 320 : 256;
+		//Under a 32X picture the frame stays 320 wide in H32 too: the 32X's 320 dots keep the H40 dot
+		//rate (FinishLine)
+		_frameWidth = (IsH40() || (_m32x && _m32x->IsDisplayEnabled())) ? 320 : 256;
 		_frameHeight = GetActiveLines() * (GetInterlaceMode() == 3 ? 2 : 1);
 	}
 
@@ -808,7 +810,20 @@ void MdVdp::FinishLine()
 		RenderPixels(_lineWidth);
 		_lineActive = false;
 		if(_m32x && GetInterlaceMode() != 3) {
-			_m32x->CompositeLine(_currentBuffer + _state.Scanline * _frameWidth, _state.Scanline, _lineWidth);
+			uint16_t* row = _currentBuffer + _state.Scanline * _frameWidth;
+			uint32_t width = _lineWidth;
+			if(width == 256 && _frameWidth == 320) {
+				//H32 under a 32X picture (32X Hardware Manual table 3.1 asks for H40): the 32X's dot
+				//clock stays at the H40 rate, so its 320 dots span the width of the Mega Drive's 256
+				//(ares: 4 and 5 sub-pixels per dot; PicoDrive shows the same). The Mega Drive's dots
+				//are spread 5:4 under them. MesenCE showed the 32X's first 256 dots instead
+				//(Mars Sample Program: Gnu Sierra, findings C9)
+				for(int x = 319; x > 0; x--) {
+					row[x] = row[x * 4 / 5];
+				}
+				width = 320;
+			}
+			_m32x->CompositeLine(row, _state.Scanline, width);
 		}
 	}
 }

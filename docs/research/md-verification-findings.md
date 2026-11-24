@@ -1572,3 +1572,75 @@ code area `$06000400-$06003000` is byte-identical in both).
   flagged, was 8. `test:md-synthetic`, `test:md-replay` (125) and `test:ci` pass.
 - PicoDrive's repeated V interrupts (above) and whether SDRAM mirrors above `$0603FFFF` on
   hardware remain open; neither affects this game now.
+
+## C9: 32X H32 picture, audio after a divergence, Darxide's pace, Mega Drive DC blocker (2026-11-24)
+
+The open items after C8, in order.
+
+### Gnu Sierra: H32 under a 32X picture (fixed)
+
+- **Symptom:** Mars Sample Program: Gnu Sierra (Sega's sample program) scored 0.19 on every
+  snapshot against PicoDrive.
+- **Cause:** the program runs the Mega Drive in H32 (256 dots) under a 32X picture. MesenCE showed
+  the 32X's first 256 dots, one per H32 dot; PicoDrive shows all 320, and so does ares: its line
+  buffer has 4 sub-pixels per 32X dot and 5 per H32 dot (`md/vdp/main.cpp` mainH32,
+  `m32x/vdp.cpp`), so the 32X keeps its H40 dot rate. The manual asks for H40 whenever the 32X shows
+  a picture (table 3.1, p. 38), so this is outside the documented combinations; ares and PicoDrive
+  agree.
+- **Fix:** `MdVdp`: with a 32X picture on (`M32xUnit::IsDisplayEnabled`) the frame is 320 wide in H32
+  too; each H32 line is spread 5:4 over 320 dots before the 32X layer is composited.
+- **Regression:** `m32x_h32` (`tests/MD/synthetic/m32x_cases.py`): H32, direct colour, PRI = 1;
+  (40, 100) red, (270, 100) green (32X dots 256-287), (310, 100) the Mega Drive's blue (through bit).
+  Without the fix the frame is 256 wide.
+- **Result:** Gnu Sierra 0.19 to 0.08 (the polygon's rotation phase), not flagged.
+
+### WWF WrestleMania's mid-range: audio after a divergence (comparison, fixed)
+
+- Before the runs diverge (5-44 s) the spectra agree within 0.9 dB; the 400-1600 Hz deficit is all
+  after about 46 s, where the computer opponent's different moves (C7) play different sounds.
+- **Fix (md-corpus):** with a state divergence, audio is compared up to 300 frames before it (the
+  state check's 2-second rolling windows find a divergence a few seconds after the sound changes)
+  when that leaves at least 1,200 frames (`AUDIO_DIVERGE_MARGIN`, `AUDIO_MIN_FRAMES`;
+  `tools/audio-compare/compare.py` `limit_seconds`). WWF WrestleMania: 0.89 dB, not flagged.
+- **Regression:** `tas_selftest.py`, "audio limited to the matching part".
+
+### Darxide's intro pace (PicoDrive below the manual's minimum; reviewed)
+
+- MesenCE reaches the language screen about 700 frames later than PicoDrive. The audio clock is
+  right (the slave takes 213,574 PWM interrupts in 2,000 frames, 0.1% merged), and the 68000's
+  state is only about 38 frames behind: the SH-2-drawn intro is slower.
+- Reverting C5-C7's timing (SDRAM bursts, bus contention, frame buffer/register waits) does not
+  change it. The master runs much of the intro from cartridge ROM (`$0204B1F0` is its hottest
+  block), and with cartridge reads at 1 wait instead of 6 the run matches PicoDrive.
+- The manual (4.4, p. 77): "32X Mode and Cartridge ROM — SH2 (Read/Write): 6 wait (min) - 15 wait
+  (max)". MesenCE uses the minimum, so the hardware is at least as slow as MesenCE; PicoDrive is
+  faster than the documented minimum. Not changed.
+- **md-corpus `REVIEWED`:** sessions whose flags were investigated and are not MesenCE defects
+  (`tools/md-corpus/compare.py`): the listed flags move to `reviewed` and leave the score; any other
+  flag still counts. Entries: Ecco's CinePak demo (S5), Darxide (audio), WWF WrestleMania and WWF
+  Raw (single-oracle divergences: random attract choices). The report shows them in italics.
+- Draft reports for PicoDrive (this and C8's repeated V interrupts):
+  `docs/research/oracle-issue-drafts.md`, not sent.
+
+### Mega Drive output DC blocker (fixed)
+
+- GPGX's output has no DC (median |mean| 0 over 114 titles); MesenCE's had a median of 370.
+- Offline, on 114 Mega Drive titles against GPGX, a first-order high-pass on MesenCE's mix: at 16.6
+  Hz (C7's 32X corner) audio flags 9 to 6, but the 0-100 Hz band went from +0.2 to -0.2 dB and 25
+  titles' spectra got worse by more than 0.1 dB (17 better); at 8.3 Hz flags 9 to 6, 0-100 Hz at
+  0.0 dB, 18 better and 5 worse.
+- **Fix:** `MdApu::DcBlock` filters every Mega Drive output (not only with the 32X) at about 8.3 Hz
+  (`DcShift` 10). Judgment call on the corner (no documented value; ares filters the FM and PSG at
+  20 Hz). Saved in save states.
+- **Results:** the 120 sampled Mega Drive titles: 7 audio flags (9 before, offline). 32X pass: 1 of 40
+  flagged (NBA Jam TE, spectrum at the limit), 4 reviewed. The 32X PWM DC check
+  (`pwm_dc_check.py`) passes at the new corner.
+- `test:md-synthetic` (60/60 and every MesenCE case), `test:md-replay` (126), `test:sh2-cpu` and
+  `test:ci` pass.
+
+### Still open
+
+- NBA Jam TE: spectrum at the limit (1.5-1.7 dB) against PicoDrive only.
+- The full Mega Drive library has not been rerun with the DC blocker (120 titles were).
+- PicoDrive's repeated V interrupts (C8) and SH-2 cartridge timing: drafts not sent.
+- Whether SDRAM mirrors above `$0603FFFF` on hardware.

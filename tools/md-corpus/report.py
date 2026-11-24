@@ -118,6 +118,8 @@ def write_report(args):
                     "<th>state (work RAM)</th><th>visual</th><th>audio</th></tr>")
         for i, r in enumerate(rs, 1):
             flags = " ".join('<span class="flag" title="%s">%s</span>' % (html.escape(FLAG_HELP.get(f, "")), f) for f in r["flags"])
+            if r.get("reviewed"):
+                flags += ' <span class="reviewed" title="%s">reviewed: %s</span>' % (html.escape(r.get("reviewed_note", "")), ", ".join(r["reviewed"]))
             imgs = "".join('<figure><img src="%s" loading="lazy"><figcaption>%s</figcaption></figure>' % (html.escape(p), html.escape(l))
                            for p, l in snap_pair(out, session, r))
             body.append("<tr class='%s'><td>%d<br><small>%d</small></td><td><b>%s</b><br><small>%s · %s · %s</small></td>"
@@ -139,6 +141,7 @@ body { background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, sans-seri
 table { border-collapse:collapse; width:100%%; } td, th { border-bottom:1px solid var(--line); padding:6px; vertical-align:top; text-align:left; }
 tr.bad { background:var(--bad); } tr.warn { background:var(--warn); }
 .flag { color:var(--flag); font-weight:600; margin-right:6px; white-space:nowrap; cursor:help; }
+.reviewed { color:var(--muted, #777); font-style:italic; white-space:nowrap; cursor:help; }
 .snaps { white-space:nowrap; } figure { display:inline-block; margin:0 4px 0 0; } img { width:160px; image-rendering:pixelated; }
 figcaption, small { color:var(--muted); font-size:12px; }
 </style></head><body><h1>md-corpus report</h1>

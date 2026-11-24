@@ -111,7 +111,41 @@ def main():
     failed |= not ok
     print("%s tas input shift" % ("ok  " if ok else "FAIL"))
     failed |= not audio_base_check()
+    failed |= not audio_limit_check()
     return 1 if failed else 0
+
+
+def audio_limit_check():
+    """tools/audio-compare limit_seconds: the reference matches MesenCE for 8 s, then plays something
+    else (as after a state divergence, findings C9). Compared up to 7 s the spectrum matches; over
+    the whole run it is flagged."""
+    import tempfile
+    import wave
+    import numpy as np
+    import compare
+    audio_compare, run_library = compare.audio_modules()
+    rate, seconds = 8000, 14
+    rng = np.random.default_rng(2)
+    env = np.repeat(rng.uniform(0.2, 1.0, seconds * 4), rate // 4)
+    noise = rng.standard_normal(rate * seconds) * 4000 * env
+    t = np.arange(rate * seconds) / rate
+    other = np.sin(2 * np.pi * 600 * t) * 12000 * env
+    ref = np.where(t < 8, noise, other)
+    run = pathlib.Path(tempfile.mkdtemp())
+    stereo = lambda x: np.repeat(x.clip(-32768, 32767).astype("<i2"), 2).tobytes()
+    (run / "pwm.raw").write_bytes(stereo(noise))
+    (run / "manifest.json").write_text(json.dumps({"chip_audio": {"sample_rate": rate}}))
+    for name, data in (("audio.wav", noise), ("reference.wav", ref)):
+        with wave.open(str(run / name), "wb") as w:
+            w.setnchannels(2)
+            w.setsampwidth(2)
+            w.setframerate(rate)
+            w.writeframes(stereo(data))
+    cut = audio_compare.compare(run, run / "reference.wav", 1.0, 7.0)
+    whole = audio_compare.compare(run, run / "reference.wav", 1.0)
+    ok = "spectrum" not in run_library.flags(cut) and "spectrum" in run_library.flags(whole)
+    print("%s audio limited to the matching part: %.2f dB, whole run %.2f dB" % ("ok  " if ok else "FAIL", cut["spectral_distance_db"], whole["spectral_distance_db"]))
+    return ok
 
 
 def audio_base_check():

@@ -996,6 +996,21 @@ def _priority_md():
                       {(40, 100): (0, 0, 255), (280, 100): (0, 255, 0)}, "")
 
 
+def _h32_32x():
+    """H32 under a 32X picture (findings C9). The manual asks for H40 whenever the 32X shows a
+    picture (table 3.1, p. 38), but the Mars sample program Gnu Sierra runs H32. ares keeps the 32X's
+    dot clock at the H40 rate (4 sub-pixels per 32X dot, 5 per H32 dot), so the 32X's 320 dots span
+    the Mega Drive's 256; PicoDrive shows the same. MesenCE showed only the first 256 32X dots.
+
+    PRI = 1, direct colour: dots 0-255 red, 256-287 green, 288-319 green with the through bit (the
+    Mega Drive's blue shows). The frame is 320 wide: (40, 100) red, (270, 100) green, (310, 100) blue.
+    """
+    words = [0x001F] * 256 + [0x03E0] * 32 + [0x83E0] * 32
+    md = [Operation(WRITE, 2, 0xC00004, 0x8000 | (12 << 8) | 0x00) if op.addr == 0xC00004 and op.value == 0x8C81 else op
+          for op in _md_planes()]
+    return _draw_case("m32x_h32", 2, True, words, [], {(40, 100): (255, 0, 0), (270, 100): (0, 255, 0), (310, 100): (0, 0, 255)}, "", md=md)
+
+
 def _dot_shift():
     """Packed pixel with the screen shift bit (manual p. 25, packed pixel control): bytes cycle
     1, 2, 3 (red, green, blue); with SFT = 1 the line starts one dot later, so x = 0 shows byte 1
@@ -1064,7 +1079,7 @@ def _pixel_check(name):
 def all_cases():
     PIXEL_CHECKS["m32x_render"] = {(40, 100): (0, 255, 0), (280, 100): (0, 0, 255)}
     found = [_boot(), _cmd_irq(), _vint_hint(), _hint_dma(), _sdram_shared(), _dreq_fifo(), _frame_buffer(), _fb_write_timing(), _sdram_timing(), _bus_contention(), _vdp_68k(), _fen_refresh(), _cart_map(), _cart_sram(), _handover(),
-             _pwm(), _pwm_stream(), _z80_window(), _render(), _priority_32x(), _priority_md(), _dot_shift()]
+             _pwm(), _pwm_stream(), _z80_window(), _render(), _priority_32x(), _priority_md(), _dot_shift(), _h32_32x()]
     for name in PIXEL_CHECKS:
         DERIVED_CHECKS[name] = _pixel_check(name)
     return found
