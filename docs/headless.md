@@ -19,7 +19,7 @@ mesen-headless run --rom ROM --frames N --out NEW_DIR [--input INPUT.json] [--lu
                    [--trace bus] [--trace-limit EVENTS] [--chip-audio]     # Mega Drive only
                    [--md-model md1va3|md1va6] [--md-pads 6,6]              # Mega Drive only
                    [--md-input-latch frame|vblank]  # Mega Drive test hook: when the pads take each frame's input
-                   [--md-fm-core ymfm|nuked]                               # Mega Drive only
+                   [--md-fm-core nuked|ymfm]                               # Mega Drive only (default nuked)
                    [--md-eeprom CHIP,BOARD]   # Mega Drive test hook, e.g. X24C01,Sega
                    [--md-mcd]                 # Mega Drive test hook: attach the Sega CD unit (Mode 1)
                    [--md-mcd-disc FILE.cue]   # with --md-mcd: a disc in the drive (Mode 1)

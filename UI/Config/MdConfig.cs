@@ -35,7 +35,7 @@ public partial class MdConfig : BaseConfig<MdConfig>
 
 	[ObservableProperty][MinMax(0, 100)] public partial UInt32 FmVolume { get; set; } = 100;
 	[ObservableProperty][MinMax(0, 100)] public partial UInt32 PsgVolume { get; set; } = 100;
-	[ObservableProperty] public partial MdFmCore FmCore { get; set; } = MdFmCore.Ymfm;
+	[ObservableProperty] public partial MdFmCore FmCore { get; set; } = MdFmCore.Nuked;
 
 	public void ApplyConfig()
 	{

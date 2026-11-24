@@ -863,7 +863,8 @@ struct WsConfig
 	uint32_t Channel5Vol = 100;
 };
 
-//YM2612 implementation: ymfm (sample-level, fast) or Nuked-OPN2 (cycle-accurate die model)
+//YM2612 implementation: ymfm (sample-level, fast) or Nuked-OPN2 (cycle-accurate die model, the
+//default: findings C15)
 enum class MdFmCore : uint8_t
 {
 	Ymfm,
@@ -895,7 +896,7 @@ struct MdConfig
 	uint32_t FmVolume = 100;
 	uint32_t PsgVolume = 100;
 
-	MdFmCore FmCore = MdFmCore::Ymfm; //takes effect at power-on/reset
+	MdFmCore FmCore = MdFmCore::Nuked; //takes effect at power-on/reset
 
 	//Pads plugged into a Team Player on port 1 or 2
 	ControllerConfig Port1SubPorts[4];

@@ -2704,8 +2704,8 @@ E
 		</Enum>
 
 		<Enum ID="MdFmCore">
-			<Value ID="Ymfm">ymfm (fast, default)</Value>
-			<Value ID="Nuked">Nuked-OPN2 (cycle-accurate)</Value>
+			<Value ID="Ymfm">ymfm (fast)</Value>
+			<Value ID="Nuked">Nuked-OPN2 (cycle-accurate, default)</Value>
 		</Enum>
 
 		<Enum ID="SmsRevision">

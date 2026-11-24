@@ -1855,3 +1855,61 @@ alignment failing on different audio.
 - Mega Drive: 22 of 1,130 flagged after the review entries (23 before), 3 reviewed. Sega CD 3,
   32X 0.
 - `test:md-synthetic` (60/60 and every MesenCE case), `test:md-replay` (128) and `test:ci` pass.
+
+## C14: FM balance flags against a third emulator; ymfm's CSM mode (2026-11-24)
+
+### Three-way check (BlastEm and Nuked-OPN2)
+
+Each title's audio: MesenCE with ymfm and with Nuked-OPN2, PicoDrive and BlastEm (nativekit's pinned
+core) against GPGX, and MesenCE against BlastEm (spectral distance, dB):
+
+| Title | ymfm | Nuked | PicoDrive | BlastEm | MesenCE~BlastEm | Reading |
+|---|---|---|---|---|---|---|
+| Pigskin Footbrawl | 4.33 | 4.36 | 0.08 | 3.72 | 0.40 | BlastEm with MesenCE; oracle lineage (C13, reviewed) |
+| TaleSpin | 2.02 | 0.39 | 0.41 | 0.27 | 1.81 | ymfm only (CSM, below) |
+| Time Killers | 1.71 | 0.78 | 0.90 | (run failed) | | ymfm only |
+| Nobunaga no Yabou | 2.09 | 2.09 | 0.34 | 0.33 | 2.23 | MesenCE alone, not the FM core: open |
+| Super Volley Ball | 2.35 | 2.21 | 1.83 | 0.94 | 1.78 | MesenCE alone, not the FM core: open |
+| MegaPanel | 1.62 | 1.61 | 0.81 | 1.45 | 1.57 | no consensus |
+| Jammit | 1.20 | 1.21 | 0.36 | 0.86 | 0.59 | no consensus |
+| After Burner II | 1.60 | 1.52 | 1.03 | 3.46 | 1.93 | no consensus |
+| Gargoyles, Cliffhanger | 4.1, 1.9 | 4.1, 1.9 | 2.1, 1.4 | (run failed) | | not checked |
+
+### TaleSpin: ymfm's CSM mode
+
+- Nuked-OPN2 is 0.39 dB from GPGX, ymfm 2.02; their FM streams match except at 34-47 s, where ymfm
+  has about four times Nuked's energy at 800-1600 Hz.
+- There the driver writes `$27` = `$BF` (CSM mode, bits 7-6 = `10`) about 8,400 times, with Timer A
+  at `$3F9`-`$3FA` (an overflow every 6-7 samples): channel 3 retriggered at about 8 kHz, a sample
+  player built on CSM key-on.
+- ymfm keys channel 3 on at the next sample after a Timer A overflow and off a sample later
+  (`fm_engine_base::engine_timer_expired`, `fm_operator::prepare`). Nuked-OPN2 (a die-shot model)
+  keys on per internal cycle, also on a rising edge of the Timer A load bit, and ORs the TL into the
+  attenuation while a CSM key-on is active (`OPN2_DoTimerA`, `OPN2_KeyOn`, `eg_kon_csm`).
+- **Time Killers** doesn't use CSM (`$27` is `$00`/`$3F`): Timer A-paced DAC playback, with a
+  smaller ymfm-only difference (1.71 against Nuked's 0.78). Timer flags and register writes reach
+  ymfm at their own master clock (`MdApu::Run` before every Z80 and 68000 YM access), so the
+  difference is inside ymfm. Open.
+- **Options** (not taken here): port Nuked's CSM key-on into ymfm, or make Nuked-OPN2 the default FM
+  core. Cost of the second: TaleSpin, 3,600 frames headless, 6.49 s with ymfm against 8.74 s with
+  Nuked-OPN2 (about 555 and 412 frames per second, 35% slower; both far above real time).
+
+## C15: Nuked-OPN2 is the default FM core (2026-11-24)
+
+- **Decision (the user's, after C14):** the YM2612 defaults to Nuked-OPN2, the cycle-accurate model
+  of the chip die, instead of ymfm. ymfm stays available (Options → Mega Drive, FM core;
+  `mesen-headless --md-fm-core ymfm`).
+- **Why:** where the two cores differ, Nuked-OPN2 agrees with the references and ymfm doesn't:
+  TaleSpin's CSM-mode sample player and Time Killers' DAC playback (C14: Nuked within 0.4-0.8 dB of
+  GPGX, as PicoDrive and BlastEm are; ymfm 1.7-2.0 dB away).
+- **Cost:** about 35% of headless emulation speed on an FM-heavy game (TaleSpin: 555 to 412 frames
+  per second), still several times real time.
+- **Changes:** `MdConfig::FmCore` (core and UI) and `mesen-headless`'s `--md-fm-core` default to
+  Nuked; the UI labels say which is the default; README and `docs/headless.md`. Existing UI
+  configurations keep the core they saved. Save states carry their core (`MdApu::Serialize`).
+  `test:md-synthetic` and `test:md-replay` still run both cores.
+- **Full pass with the new default** (1,200 sessions, against the C13 pass): cleared TaleSpin, Time
+  Killers, After Burner II and Cliffhanger (audio) and Chavez II (state); newly flagged Liberty or
+  Death (spectral 2.17 dB against PicoDrive's 1.54, just over the 0.5 dB margin; BlastEm 0.77 from
+  GPGX and 0.96 from MesenCE: open). Mega Drive 18 of 1,130 flagged (9 audio), Sega CD 3, 32X 0.
+- `test:md-synthetic`, `test:md-replay` (128) and `test:ci` pass.

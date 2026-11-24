@@ -33,9 +33,9 @@ Cartridge games (`.md`, `.gen`, `.bin`, `.smd`, also in `.zip`/`.7z`). Sega CD, 
 not supported.
 
 - **Emulation:** 68000 (derived from ares), Z80, VDP (all display modes, shadow/highlight,
-  interlace, DMA and FIFO timing, mid-line palette/scroll/register changes), YM2612 (ymfm, or the
-  cycle-accurate Nuked-OPN2 core as an option) and PSG; NTSC, PAL and Japanese consoles, with or
-  without TMSS.
+  interlace, DMA and FIFO timing, mid-line palette/scroll/register changes), YM2612 (the
+  cycle-accurate Nuked-OPN2 core by default, or the faster ymfm) and PSG; NTSC, PAL and Japanese
+  consoles, with or without TMSS.
 - **Cartridges:** battery RAM, serial EEPROM saves (35 known ROMs), the Sega bank-switching mapper
   (Super Street Fighter II).
 - **Input:** 3- and 6-button pads, Sega Team Player (4 pads per port), Sega Mouse, Sega Menacer and
