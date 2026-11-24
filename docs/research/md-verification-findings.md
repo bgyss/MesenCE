@@ -1913,3 +1913,56 @@ core) against GPGX, and MesenCE against BlastEm (spectral distance, dB):
   Death (spectral 2.17 dB against PicoDrive's 1.54, just over the 0.5 dB margin; BlastEm 0.77 from
   GPGX and 0.96 from MesenCE: open). Mega Drive 18 of 1,130 flagged (9 audio), Sega CD 3, 32X 0.
 - `test:md-synthetic`, `test:md-replay` (128) and `test:ci` pass.
+
+## C16: Nobunaga no Yabou, Super Volley Ball, and the remaining state divergences (2026-11-24)
+
+### Nobunaga no Yabou - Bushou Fuuunroku: the PSG mix level
+
+- From 15 s on, every 5 s window is about 25% quieter than GPGX and 4-5 dB brighter above 3.2 kHz.
+- Per chip against BlastEm (nativekit's traced runner records each chip), 20-35 s: the FM matches
+  (level 1,385 against 1,372, the same band shares); the PSG has the same spectrum but is 3.5 times
+  louder in MesenCE's chip stream (818 against 232). After MesenCE's half-scale PSG mix, its PSG is
+  about 5 dB louder against FM than BlastEm's. The game leans on the PSG, so the mix moves.
+- This is the library-wide offset recorded in C4 (GPGX's PSG a median 2.8 dB below MesenCE's
+  against FM, `KNOWN_LEVEL_DB`); PicoDrive is 1.7 dB below on the 32X set. Three references now
+  agree on the direction. Not changed here: the PSG mix level is a judgment call ("about 6 dB below a
+  full-scale FM channel mix", `MdApu::FinishSample`) that would change every game.
+
+### Super Volley Ball: a race between the YM2612 timers
+
+- MesenCE is nearly silent at 45-50 s (level 129 against GPGX's 1,353); both FM cores alike.
+- YM2612 writes against BlastEm: identical for 1,591 register writes; then the driver's `$27`
+  writes differ (MesenCE `$1F`, BlastEm `$3F`): it acknowledges the timer whose flag it found set,
+  and when Timer A and Timer B overflow close together the two emulators see them in a different
+  order. Timer settings (`$24`/`$25` = `$8C`/`$01`, `$26` = `$DE`) and rates (A 115, B 98 per second)
+  are the same in both. The driver's activity drifts apart from about 33 s.
+- The order depends on the YM2612's clock phase against the Z80 (Timer B's free-running /16 prescaler
+  included). Which phase is right needs a hardware reference. Open.
+
+### State divergences
+
+Snapshots at the end of the run and the oracles' own divergence:
+
+- **F-15 Strike Eagle II:** screens identical in all three; the oracles diverge from each other at
+  frame 2,994 (MesenCE at 2,630). Reviewed.
+- **PGA European Tour:** a different shot in each emulator; the oracles diverge from each other at
+  1,892. Reviewed.
+- **FIFA Soccer 97:** the attract match plays out differently in each emulator, the oracles included.
+  Reviewed.
+- **WWF Raw:** each emulator's attract mode picks a different random match. Reviewed.
+- **World Heroes:** the demo picks different fighters in MesenCE from about frame 1,200 while both
+  oracles pick the same; the 60-frame offset is the tracker's best alignment, not a lag. The random
+  source (a frame count, or the VDP's H/V counter at the moment it is read) gives MesenCE a
+  different value. Open: the two oracles may share that code, as they share the YM2612's.
+
+### Results
+
+Mega Drive: 14 of 1,130 flagged, 6 reviewed.
+
+## C17: PSG mix level lowered 2.8 dB (2026-11-24)
+
+- `MdApu::FinishSample` mixes the PSG at `/ 276` (was `/ 200`): GPGX (median 2.8 dB over 217 titles), PicoDrive (1.7 dB, 32X set) and BlastEm (about 5 dB, Nobunaga no Yabou) all had it quieter against FM. Judgment call, no hardware measurement; `tools/audio-compare` weight and md-corpus known offset follow.
+- Full pass (1,200 sessions): Mega Drive PSG now a median 0.0 dB from GPGX over 228 titles; Nobunaga no Yabou and MegaPanel cleared, Eternal Champions newly flagged (audio). Mega Drive 13 of 1,130 flagged. `test:md-synthetic`, `test:md-replay` (128) and `test:ci` pass.
+- Eternal Champions' new flag is at the threshold: envelope correlation 0.651 against PicoDrive's 0.753 (margin 0.1), with both runs aligning poorly (lags -3.0 and -1.8 s); GPGX's PSG is 7.4 dB louder in this game. Not a new defect.
+- 32X: PicoDrive's PSG now a median 3.5 dB above MesenCE's, but over 4 titles only (the PSG plays little in 32X games). Not acted on.
+- UBSan (CI md-sanitizers, now that Nuked-OPN2 is the default): `ym3438.c` left-shifted a negative value in the envelope attack step (`(~level << eg_inc) >> 5`, two failing cartridges). Rewritten as a multiply, identical for every 16-bit level and shift count (checked exhaustively); `test:md-synthetic` and `test:md-replay` unchanged.

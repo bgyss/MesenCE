@@ -657,7 +657,9 @@ static void OPN2_EnvelopeADSR(ym3438_t *chip)
             }
             else if(chip->eg_inc && !chip->eg_ratemax && nkon)
             {
-                inc = (~level << chip->eg_inc) >> 5;
+                /* MesenCE: a multiply instead of `~level << eg_inc`, which left-shifts a negative value
+                   (undefined behaviour, caught by UBSan); same result */
+                inc = (~level * (1 << chip->eg_inc)) >> 5;
             }
             break;
         case eg_num_decay:

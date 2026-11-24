@@ -42,7 +42,7 @@ NO_INPUT_FRAMES = 1200
 # Known library-wide chip level differences against the main oracle, in dB (the reference's level
 # relative to MesenCE's, FM = 0), subtracted before flagging so that per-title outliers stand out.
 # Judgment calls with no hardware measurement behind either side; see the findings (C1).
-KNOWN_LEVEL_DB = {"mcd": {"pcm": 1.7}, "md": {"psg": -2.8}}
+KNOWN_LEVEL_DB = {"mcd": {"pcm": 1.7}}
 
 # Sessions reviewed by hand, by entry id: the flags listed were investigated and are not MesenCE
 # defects (findings). They move to "reviewed" and leave the score; any other flag still counts, so a
@@ -56,6 +56,14 @@ REVIEWED = {
                      "WWF WrestleMania: the computer opponent's random moves differ from about frame 2,700 (C7)"),
     "94b974f2f69f": ({"state-diverges-single-oracle"},
                      "WWF Raw: the attract mode picks a different random match (C6)"),
+    "2d91cb1c5058": ({"state-diverges"},
+                     "FIFA Soccer 97: the attract match plays out differently in each emulator, the oracles included (C16)"),
+    "d5f0d3d3b9cb": ({"state-diverges"},
+                     "F-15 Strike Eagle II: screens identical; the oracles diverge from each other too, at frame 2,994 (C16)"),
+    "640615be6891": ({"state-diverges"},
+                     "PGA European Tour: different shots in each emulator; the oracles diverge from each other at frame 1,892 (C16)"),
+    "94be19287c64": ({"state-diverges"},
+                     "WWF Raw: each emulator's attract mode picks a different random match (C16)"),
     "fbcd0e7cb8df": ({"audio"},
                      "Jerry Glanville's Pigskin Footbrawl: BlastEm agrees with MesenCE (0.40 dB) and both FM cores agree; GPGX and PicoDrive share MAME-derived YM2612 code (C13)"),
     "ff969ae53120": ({"visual", "audio"},
