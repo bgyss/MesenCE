@@ -144,6 +144,22 @@ def _z80_busack_reset():
     return Case("z80_busack_reset", ops, capture_frames=2)
 
 
+def _z80_area_open_bus():
+    """A 68000 read of the Z80 area without the Z80 bus (findings C10). Nothing drives the data bus:
+    the 68000 reads open bus, its prefetched instruction word (Genesis Plus GX: m68k_read_bus_8 is
+    mapped at $A0xxxx while the bus is not granted; PicoDrive returns a floating value). The
+    interpreter reads bytes with `move.b (a1),d1` followed by `bra next` ($60xx), so the YM2612
+    status at $A04000 reads $60. MesenCE returned $FF, and Mega Games 3, which polls the YM2612's
+    busy bit after its sound interrupt has released the bus, hung on a black screen.
+    """
+    ops = (
+        Operation(WRITE, 2, 0xA11200, 0x0100),                     # Z80 out of reset, running
+        Operation(WRITE, 2, 0xA11100, 0x0000),                     # no bus request
+        Operation(READ, 1, 0xA04000, 0x60, compare_mask=0xFF),     # open bus: the prefetch's high byte
+    )
+    return Case("z80_area_open_bus", ops, capture_frames=2)
+
+
 class _I2c:
     """Bit-banged I2C on one of the cartridge EEPROM boards, as READ/WRITE steps.
 
@@ -450,7 +466,7 @@ def write_assets(out_dir):
 
 
 def all_cases():
-    return ([_pad6_across_frame(), _bank_mapper(), _z80_busack_reset(),
+    return ([_pad6_across_frame(), _bank_mapper(), _z80_busack_reset(), _z80_area_open_bus(),
              _sk_lock_on("cart_sk_lock_on_empty", "SONIC & KNUCKLES", 0xFFFF),
              _sk_lock_on("cart_2m_mirror", "NATIVEKIT BUS TEST", 0x5345, 0x210100)] + _sram_cases() + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)] +
             _accessory_cases() + _mcd_cases() + _m32x_cases())

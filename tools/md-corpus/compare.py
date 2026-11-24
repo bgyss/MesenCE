@@ -56,6 +56,10 @@ REVIEWED = {
                      "WWF WrestleMania: the computer opponent's random moves differ from about frame 2,700 (C7)"),
     "94b974f2f69f": ({"state-diverges-single-oracle"},
                      "WWF Raw: the attract mode picks a different random match (C6)"),
+    "0a0ac6d37d28": ({"mesen-black"},
+                     "World Trophy Soccer: each emulator's demo match has random teams; the last snapshot catches a transition (PicoDrive is black at frame 3,300) (C10)"),
+    "c8af3e74c495": ({"audio"},
+                     "NBA Jam TE: the demonstration game picks different random teams; the audio agrees until its sounds differ (C10)"),
 }
 
 # PicoDrive boots 32X games without Sega's boot ROMs; MesenCE runs them, which takes 60-100 frames
