@@ -175,7 +175,37 @@ bool MdMemoryManager::IsZ80Held()
 
 void MdMemoryManager::SyncZ80()
 {
-	_z80->Run(_masterClock, IsZ80Held());
+	RunZ80(_masterClock);
+}
+
+// Runs the Z80 to `target` with the VDP's /INT pulse at its own times. The line used to be updated
+// only after each 68000 instruction: an instruction stretched by a DMA (the 68000 halted for lines
+// at the start of VBlank) let the Z80 run the whole stretch with /INT asserted, and a driver whose
+// main loop re-enables interrupts took it up to seven times a frame (Generations Lost's music ran
+// five times too fast; findings C13). The VDP is run first, so the pulse is known when it starts.
+void MdMemoryManager::RunZ80(uint64_t target)
+{
+	bool held = IsZ80Held();
+	uint64_t end = _vdp->GetZ80IntEndClock();
+	uint64_t start = end > MdVdp::Z80IntPulseClocks ? end - MdVdp::Z80IntPulseClocks : 0;
+	uint64_t now = _z80->GetMasterClock();
+	auto setLine = [this](bool asserted) {
+		if(asserted) {
+			_z80->SetIrqSource(SmsIrqSource::Vdp);
+		} else {
+			_z80->ClearIrqSource(SmsIrqSource::Vdp);
+		}
+	};
+	if(end > now && start < target) {
+		if(start > now) {
+			setLine(false);
+			_z80->Run(start, held);
+		}
+		setLine(true);
+		_z80->Run(std::min(target, end), held);
+	}
+	setLine(target >= start && target < end && end != 0);
+	_z80->Run(target, held);
 }
 
 void MdMemoryManager::AddZ80AreaLatency()
@@ -240,7 +270,7 @@ void MdMemoryManager::SyncAfterM68kInstruction()
 {
 	ApplyRefresh();
 	_vdp->Run(_masterClock);
-	_z80->Run(_masterClock, IsZ80Held());
+	RunZ80(_masterClock);
 	_m68kAccessCount = 0;
 	if(_mcd) {
 		_mcd->Run(_masterClock);
@@ -249,11 +279,6 @@ void MdMemoryManager::SyncAfterM68kInstruction()
 		_m32x->Run(_masterClock);
 	}
 	_m68k->SetInterruptLevel(_vdp->GetM68kInterruptLevel(_masterClock));
-	if(_vdp->IsZ80InterruptActive()) {
-		_z80->SetIrqSource(SmsIrqSource::Vdp);
-	} else {
-		_z80->ClearIrqSource(SmsIrqSource::Vdp);
-	}
 }
 
 void MdMemoryManager::AcknowledgeM68kInterrupt(uint8_t level)

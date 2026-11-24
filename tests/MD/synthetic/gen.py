@@ -168,7 +168,8 @@ def direct_program(operations):
 
 
 def z80_assemble(lines):
-    """The Z80 subset used by the fixtures: ld a,n / ld (nn),a / ld a,(nn) / xor a / jr label."""
+    """The Z80 subset used by the fixtures: ld a,n / ld (nn),a / ld a,(nn) / xor a / jr label, and
+    db for raw bytes."""
     out, labels, fixups = bytearray(), {}, []
     for line in lines:
         text = line.strip()
@@ -189,6 +190,8 @@ def z80_assemble(lines):
             out += bytes((0x32,)) + struct.pack("<H", num(args[1:-3]))
         elif mnemonic == "xor" and args == "a":
             out += b"\xAF"
+        elif mnemonic == "db":
+            out += bytes(num(v) & 0xFF for v in args.split(","))
         elif mnemonic == "jr":
             fixups.append((len(out), args))
             out += b"\x18\x00"

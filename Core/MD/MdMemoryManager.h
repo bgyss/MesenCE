@@ -132,6 +132,7 @@ private:
 	MdMemoryManagerState _state = {};
 
 	void SyncZ80();
+	void RunZ80(uint64_t target);
 	bool IsZ80Held();
 	bool M68kOwnsZ80Bus() { return _state.Z80BusRequested; }
 
