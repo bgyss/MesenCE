@@ -39,8 +39,9 @@ def pcm_stream(ram, channels, count):
             value = (data & 0x7F) if data & 0x80 else -(data & 0x7F)
             left += (value * ch["env"] * (ch["pan"] & 0x0F)) >> 5
             right += (value * ch["env"] * (ch["pan"] >> 4)) >> 5
-        left = (max(-32768, min(32767, left)) >> 2) & ~15
-        right = (max(-32768, min(32767, right)) >> 2) & ~15
+        # The top 10 bits at half scale (McdPcm, findings C12; was >> 2 & ~15, ares)
+        left = (max(-32768, min(32767, left)) >> 1) & ~31
+        right = (max(-32768, min(32767, right)) >> 1) & ~31
         out.append((left, right))
     return out
 

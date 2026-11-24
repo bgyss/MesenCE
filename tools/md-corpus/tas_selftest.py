@@ -129,8 +129,13 @@ def audio_pair_check():
     within = compare.audio_flags(dict(base, oracle_pair=pair(1.8, 1.6)), "md")
     beyond = compare.audio_flags(dict(base, oracle_pair=pair(1.8, 0.4)), "md")
     alone = compare.audio_flags(dict(base), "md")
-    ok = within == [] and beyond == ["spectrum"] and alone == ["spectrum"]
-    print("%s audio flag checked against the other oracle: %s / %s / %s" % ("ok  " if ok else "FAIL", within, beyond, alone))
+    # A PSG level outlier from the per-chip fit, with mixes that match: dropped (C12)
+    chip = dict(base, spectral_distance_db=0.3, chip_level_db_vs_mesen={"ym2612": 0.0, "psg": -117.0},
+                mesen_energy_share={"ym2612": 0.88, "psg": 0.12})
+    chip_dropped = compare.audio_flags(dict(chip, oracle_pair=pair(0.3, 0.3)), "md")
+    chip_kept = compare.audio_flags(dict(chip, oracle_pair=pair(1.8, 0.4)), "md")
+    ok = within == [] and beyond == ["spectrum"] and alone == ["spectrum"] and chip_dropped == [] and chip_kept == ["psg-level"]
+    print("%s audio flag checked against the other oracle: %s / %s / %s; chip level %s / %s" % ("ok  " if ok else "FAIL", within, beyond, alone, chip_dropped, chip_kept))
     return ok
 
 
