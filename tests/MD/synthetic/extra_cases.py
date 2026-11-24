@@ -160,6 +160,67 @@ def _z80_area_open_bus():
     return Case("z80_area_open_bus", ops, capture_frames=2)
 
 
+def _z80_vint_during_dma():
+    """The Z80's /INT pulse keeps its own timing while the 68000 is halted by a DMA (findings C13).
+
+    The Z80 runs IM 1 with a handler at $0038 that counts entries at $1000 and then waits about 350
+    Z80 cycles (longer than the 171.5-cycle pulse, BlastEm's measured width); its main loop is
+    `ei` / `jr` back. In active display the 68000 clears the counter, waits for VBlank and at once
+    starts a VRAM DMA of $400 words, which halts it for several lines, then reads the counter in the
+    next active display: one entry. MesenCE used to update the Z80's /INT only after each 68000
+    instruction, so the Z80 ran the whole DMA with /INT asserted and re-entered the handler (seven
+    times here; up to seven times a frame in Generations Lost).
+    """
+    program = (
+        "        db $F3",                     # di
+        "        db $ED,$56",                 # im 1
+        "        db $31,$00,$1F",             # ld sp,$1F00
+        "        db $C3,$50,$00",             # jp $0050
+        "        db " + ",".join(["0"] * (0x38 - 9)),
+        "        db $F5",                     # $0038: push af
+        "        db $3A,$00,$10",             # ld a,($1000)
+        "        db $3C",                     # inc a
+        "        db $32,$00,$10",             # ld ($1000),a
+        "        db $C5",                     # push bc
+        "        db $06,$18",                 # ld b,24
+        "        db $10,$FE",                 # djnz $ (24 x 13 cycles)
+        "        db $C1",                     # pop bc
+        "        db $F1",                     # pop af
+        "        db $ED,$4D",                 # reti
+        "        db " + ",".join(["0"] * (0x50 - 0x4A)),
+        "        db $FB",                     # $0050: ei
+        "        db $18,$FD",                 # jr $0050
+    )
+    vblank = 0x0008
+    dma_regs = [Operation(WRITE, 2, 0xC00004, v) for v in (0x8154, 0x8F02, 0x9300, 0x9404, 0x9500, 0x9600, 0x9700)]
+    def one_frame():
+        return [
+            Operation(POLL, 2, 0xC00004, 0x0000, compare_mask=vblank),   # active display
+            Operation(WRITE, 2, 0xA11100, 0x0100),
+            Operation(POLL, 2, 0xA11100, 0x0000, compare_mask=0x0100),
+            Operation(WRITE, 1, 0xA01000, 0x00),                          # counter = 0
+            Operation(WRITE, 2, 0xA11100, 0x0000),
+            *dma_regs,
+            Operation(POLL, 2, 0xC00004, vblank, compare_mask=vblank),   # VBlank: /INT pulse
+            Operation(WRITE, 4, 0xC00004, 0x40000080),                    # VRAM DMA, $400 words
+            Operation(POLL, 2, 0xC00004, 0x0000, compare_mask=vblank),   # next active display
+            Operation(WRITE, 2, 0xA11100, 0x0100),
+            Operation(POLL, 2, 0xA11100, 0x0000, compare_mask=0x0100),
+            Operation(READ, 1, 0xA01000, 0x01, compare_mask=0xFF),        # one handler entry
+            Operation(WRITE, 2, 0xA11100, 0x0000),
+        ]
+    operations = [
+        Operation(WRITE, 2, 0xA11200, 0x0000),
+        Operation(WRITE, 2, 0xA11100, 0x0100),
+        Operation(WRITE, 2, 0xA11200, 0x0100),
+        Operation(POLL, 2, 0xA11100, 0x0000, compare_mask=0x0100),
+        Operation(WRITE, 2, 0xA11100, 0x0000),
+        Operation(WRITE, 2, 0xC00004, 0x8154),                            # display and DMA on
+    ] + one_frame() + one_frame()
+    return Case("z80_vint_during_dma", tuple(operations), z80_fixture_id=4, z80_entry=0,
+                z80_program=program, z80_load_index=4, capture_frames=20)
+
+
 class _I2c:
     """Bit-banged I2C on one of the cartridge EEPROM boards, as READ/WRITE steps.
 
@@ -466,7 +527,7 @@ def write_assets(out_dir):
 
 
 def all_cases():
-    return ([_pad6_across_frame(), _bank_mapper(), _z80_busack_reset(), _z80_area_open_bus(),
+    return ([_pad6_across_frame(), _bank_mapper(), _z80_busack_reset(), _z80_area_open_bus(), _z80_vint_during_dma(),
              _sk_lock_on("cart_sk_lock_on_empty", "SONIC & KNUCKLES", 0xFFFF),
              _sk_lock_on("cart_2m_mirror", "NATIVEKIT BUS TEST", 0x5345, 0x210100)] + _sram_cases() + _eeprom_cases() + [_midline_cram(False), _midline_cram(True)] +
             _accessory_cases() + _mcd_cases() + _m32x_cases())

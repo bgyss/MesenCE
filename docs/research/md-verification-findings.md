@@ -1801,3 +1801,57 @@ than PicoDrive. Triage:
 - Sega CD: 3 of 30 with audio flags (19). 32X: 40 of 40 not flagged.
 - `test:md-synthetic` (60/60 and every MesenCE case), `test:md-replay` and the corpus self-tests
   pass.
+
+## C13: the Z80's /INT during a DMA (fixed); FM balance flags and oracle independence (2026-11-24)
+
+### "Timing drift" retracted
+
+C12 put six audio flags down to attract sequences drifting (lags near the 5 s search limit). That
+was wrong: in all six the game state agrees with both oracles (agreement 1.000, no offset, matching
+snapshots), so the games run in lockstep and the audio itself differs. The large lags were the
+alignment failing on different audio.
+
+### Generations Lost: the Z80's /INT line during a DMA (fixed)
+
+- **Symptom:** MesenCE's FM faded out from about 6 s (and again as the attract loop restarted)
+  where GPGX and PicoDrive play on, and dropped briefly every 3.5 s.
+- **Method:** the YM2612 port writes in MesenCE's bus trace (`--trace bus --trace-limit`, device 4)
+  against BlastEm's (nativekit's traced runner, device 4): identical for the first 1,282 register
+  writes, after which MesenCE's frequency sweep ran about five times faster (952 writes in one second
+  against 188) and ended early.
+- **Cause:** the driver ticks in its Z80 interrupt handler (`$0038`: `ld (nn),sp` / `reti`; the main
+  loop re-enables interrupts). MesenCE took the interrupt up to seven times a frame (six in most
+  frames); BlastEm takes it once. MesenCE updated the Z80's /INT only after each 68000 instruction.
+  A 68000 instruction stretched by a DMA (the 68000 halted for lines at the start of VBlank) let the
+  Z80 run the whole stretch with /INT asserted, re-entering whenever the main loop re-enabled
+  interrupts.
+- **Fix:** `MdMemoryManager::RunZ80` runs the Z80 in pieces at the pulse's start and end, so the
+  line follows its own timing whatever the 68000 is doing. The pulse is 2,573 master clocks, BlastEm's
+  measured value (`genesis.c` `Z80_INT_PULSE_MCLKS`, "measured value is ~171.5 Z80 clocks"; GPGX
+  clears it at the end of the line); it was a full line (3,420).
+- **Regression:** `z80_vint_during_dma` (`tests/MD/synthetic/extra_cases.py`): a handler longer than
+  the pulse, a main loop of `ei` / `jr`, and a 68000 VRAM DMA started at VBlank. One entry per frame;
+  seven before. `gen.py`'s Z80 assembler gained `db`.
+- **Result:** Generations Lost matches GPGX (spectral 0.14 dB, envelope 0.963; PicoDrive 0.21,
+  0.945). The full pass (1,200 sessions) also cleared X-Men, Eternal Champions, Barney's Hide &
+  Seek, Krusty's Super Fun House and Last Battle. Newly flagged: TaleSpin and Time Killers (audio),
+  and the Mega Drive WWF Raw (state, an attract mode that has flipped between passes before).
+
+### FM balance flags: the oracles share their YM2612 (Pigskin reviewed, TaleSpin open)
+
+- **Pigskin Footbrawl** (MesenCE 4.3 dB from GPGX, PicoDrive 0.1): BlastEm, run through nativekit,
+  sides with MesenCE (0.40 dB from MesenCE, 3.7 dB from GPGX), and both of MesenCE's FM cores give the
+  same result (ymfm, and Nuked-OPN2, a die-shot model). GPGX and PicoDrive both use MAME-derived
+  YM2612 code, so on FM synthesis their agreement is not independent evidence (C11's pair check
+  assumes it is). Reviewed.
+- **TaleSpin** (2.0 dB): its YM2612 write stream matches BlastEm's (25,722 writes against 25,724),
+  and with `--md-fm-core nuked` MesenCE is 0.39 dB from GPGX; BlastEm is 0.27 dB. Only ymfm differs,
+  in a game that streams DAC samples (`$2A`) paced by Timer A. Open: ymfm's DAC output path.
+- The other balance flags (Gargoyles, Nobunaga no Yabou, MegaPanel, Cliffhanger, Jammit, After
+  Burner II, Time Killers, Super Volley Ball) need the same three-way check (BlastEm, and Nuked).
+
+### Results
+
+- Mega Drive: 22 of 1,130 flagged after the review entries (23 before), 3 reviewed. Sega CD 3,
+  32X 0.
+- `test:md-synthetic` (60/60 and every MesenCE case), `test:md-replay` (128) and `test:ci` pass.

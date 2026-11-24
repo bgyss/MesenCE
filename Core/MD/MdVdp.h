@@ -175,6 +175,11 @@ public:
 	void TriggerExternalInterrupt(uint64_t clock);
 	void AcknowledgeInterrupt(uint8_t level);
 	bool IsZ80InterruptActive() { return _state.Z80IntActive; }
+	//The Z80's /INT pulse at the vertical interrupt, in master clocks (BlastEm genesis.c,
+	//Z80_INT_PULSE_MCLKS, "measured value is ~171.5 Z80 clocks")
+	static constexpr uint32_t Z80IntPulseClocks = 2573;
+	//End of the latest (or current) Z80 /INT pulse; 0 before the first one
+	uint64_t GetZ80IntEndClock() { return _z80IntEndClock; }
 
 	uint32_t GetFrameCount() { return _state.FrameCount; }
 	uint16_t GetScanline() { return _state.Scanline; }

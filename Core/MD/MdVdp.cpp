@@ -211,7 +211,11 @@ void MdVdp::Run(uint64_t masterClock)
 				_vintRaisedThisFrame = true;
 				_state.VIntPending = true;
 				_state.Z80IntActive = true;
-				_z80IntEndClock = _lineStartClock + delay + MdTiming::ClocksPerLine;
+				//The Z80's /INT pulse is 2,573 master clocks (about 171.5 Z80 cycles), BlastEm's
+				//measured value (genesis.c Z80_INT_PULSE_MCLKS); GPGX clears it at the end of the line.
+				//A full line (3,420) let short handlers that re-enable interrupts run up to six times
+				//a frame: Generations Lost's music ran five times too fast (findings C13)
+				_z80IntEndClock = _lineStartClock + delay + MdVdp::Z80IntPulseClocks;
 			}
 		}
 

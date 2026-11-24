@@ -56,6 +56,8 @@ REVIEWED = {
                      "WWF WrestleMania: the computer opponent's random moves differ from about frame 2,700 (C7)"),
     "94b974f2f69f": ({"state-diverges-single-oracle"},
                      "WWF Raw: the attract mode picks a different random match (C6)"),
+    "fbcd0e7cb8df": ({"audio"},
+                     "Jerry Glanville's Pigskin Footbrawl: BlastEm agrees with MesenCE (0.40 dB) and both FM cores agree; GPGX and PicoDrive share MAME-derived YM2612 code (C13)"),
     "ff969ae53120": ({"visual", "audio"},
                      "Virtua Racing: the SVP chip is not emulated (out of scope since the feasibility study); both oracles emulate it (C12)"),
     "0a0ac6d37d28": ({"mesen-black"},
