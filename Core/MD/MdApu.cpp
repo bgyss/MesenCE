@@ -161,7 +161,8 @@ void MdApu::FinishSample(int32_t ymLeft, int32_t ymRight)
 // overshot (-0.2 dB, 25 worse).
 int32_t MdApu::DcBlock(int ch, int32_t x)
 {
-	_dcAcc[ch] += ((int64_t)(x - _dcIn[ch]) << 16) - (_dcAcc[ch] >> DcShift);
+	//(The difference is often negative: scaled by multiplying, a left shift of it is undefined)
+	_dcAcc[ch] += (int64_t)(x - _dcIn[ch]) * 65536 - (_dcAcc[ch] >> DcShift);
 	_dcIn[ch] = x;
 	return (int32_t)(_dcAcc[ch] >> 16);
 }
