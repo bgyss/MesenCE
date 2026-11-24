@@ -42,9 +42,9 @@ except ImportError:
     sys.exit("compare.py needs numpy (python3 -m pip install numpy)")
 
 WINDOW = 0.05
-# MesenCE's mix weights (MdApu::FinishSample at the default volumes): FM 1, PSG 1/2, PWM 1, and the
+# MesenCE's mix weights (MdApu::FinishSample at the default volumes): FM 1, PSG 100/276 (C17), PWM 1, and the
 # Sega CD's PCM and CD audio unscaled
-MESEN_WEIGHTS = {"ym2612": 1.0, "psg": 0.5, "pwm": 1.0, "pcm": 1.0, "cdda": 1.0}
+MESEN_WEIGHTS = {"ym2612": 1.0, "psg": 100 / 276, "pwm": 1.0, "pcm": 1.0, "cdda": 1.0}
 
 
 def read_wav(path):

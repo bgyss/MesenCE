@@ -124,9 +124,12 @@ void MdApu::FinishSample(int32_t ymLeft, int32_t ymRight)
 	}
 
 	MdConfig& cfg = _emu->GetSettings()->GetMdConfig();
-	//The PSG sits about 6 dB below a full-scale FM channel mix (approximate, not hardware-qualified)
-	int32_t left = ymLeft * (int32_t)cfg.FmVolume / 100 + psgLeft * (int32_t)cfg.PsgVolume / 200;
-	int32_t right = ymRight * (int32_t)cfg.FmVolume / 100 + psgRight * (int32_t)cfg.PsgVolume / 200;
+	//The PSG at 0.362 of its stream (/ 276, about 8.8 dB down) against the FM. Judgment call, no
+	//hardware measurement: it was / 200 (6 dB down), and GPGX's PSG then sat a median 2.8 dB lower
+	//against FM over 217 titles, PicoDrive's 1.7 dB and BlastEm's about 5 dB (Nobunaga no Yabou), all
+	//three in the same direction; / 276 is GPGX's median (findings C17)
+	int32_t left = ymLeft * (int32_t)cfg.FmVolume / 100 + psgLeft * (int32_t)cfg.PsgVolume / 276;
+	int32_t right = ymRight * (int32_t)cfg.FmVolume / 100 + psgRight * (int32_t)cfg.PsgVolume / 276;
 	if(_mcd) {
 		//Sega CD PCM (DAC level) and CD audio (fader, half scale), unscaled (judgment call: no
 		//hardware mix levels measured yet)
