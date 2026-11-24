@@ -500,7 +500,7 @@ static int Run(const vector<string>& args, const string& commandLine)
 	string loadStatePath;
 	bool chipAudio = false;
 	string mdPads = "6,6";
-	string mdFmCore = "ymfm";
+	string mdFmCore = "nuked"; //the MdConfig default (findings C15)
 	string mdEeprom;
 	uint32_t frames = 0;
 	uint32_t snapEvery = 0;

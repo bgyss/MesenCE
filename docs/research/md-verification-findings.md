@@ -1893,3 +1893,23 @@ core) against GPGX, and MesenCE against BlastEm (spectral distance, dB):
 - **Options** (not taken here): port Nuked's CSM key-on into ymfm, or make Nuked-OPN2 the default FM
   core. Cost of the second: TaleSpin, 3,600 frames headless, 6.49 s with ymfm against 8.74 s with
   Nuked-OPN2 (about 555 and 412 frames per second, 35% slower; both far above real time).
+
+## C15: Nuked-OPN2 is the default FM core (2026-11-24)
+
+- **Decision (the user's, after C14):** the YM2612 defaults to Nuked-OPN2, the cycle-accurate model
+  of the chip die, instead of ymfm. ymfm stays available (Options → Mega Drive, FM core;
+  `mesen-headless --md-fm-core ymfm`).
+- **Why:** where the two cores differ, Nuked-OPN2 agrees with the references and ymfm doesn't:
+  TaleSpin's CSM-mode sample player and Time Killers' DAC playback (C14: Nuked within 0.4-0.8 dB of
+  GPGX, as PicoDrive and BlastEm are; ymfm 1.7-2.0 dB away).
+- **Cost:** about 35% of headless emulation speed on an FM-heavy game (TaleSpin: 555 to 412 frames
+  per second), still several times real time.
+- **Changes:** `MdConfig::FmCore` (core and UI) and `mesen-headless`'s `--md-fm-core` default to
+  Nuked; the UI labels say which is the default; README and `docs/headless.md`. Existing UI
+  configurations keep the core they saved. Save states carry their core (`MdApu::Serialize`).
+  `test:md-synthetic` and `test:md-replay` still run both cores.
+- **Full pass with the new default** (1,200 sessions, against the C13 pass): cleared TaleSpin, Time
+  Killers, After Burner II and Cliffhanger (audio) and Chavez II (state); newly flagged Liberty or
+  Death (spectral 2.17 dB against PicoDrive's 1.54, just over the 0.5 dB margin; BlastEm 0.77 from
+  GPGX and 0.96 from MesenCE: open). Mega Drive 18 of 1,130 flagged (9 audio), Sega CD 3, 32X 0.
+- `test:md-synthetic`, `test:md-replay` (128) and `test:ci` pass.
