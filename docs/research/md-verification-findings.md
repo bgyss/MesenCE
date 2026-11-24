@@ -1963,3 +1963,5 @@ Mega Drive: 14 of 1,130 flagged, 6 reviewed.
 
 - `MdApu::FinishSample` mixes the PSG at `/ 276` (was `/ 200`): GPGX (median 2.8 dB over 217 titles), PicoDrive (1.7 dB, 32X set) and BlastEm (about 5 dB, Nobunaga no Yabou) all had it quieter against FM. Judgment call, no hardware measurement; `tools/audio-compare` weight and md-corpus known offset follow.
 - Full pass (1,200 sessions): Mega Drive PSG now a median 0.0 dB from GPGX over 228 titles; Nobunaga no Yabou and MegaPanel cleared, Eternal Champions newly flagged (audio). Mega Drive 13 of 1,130 flagged. `test:md-synthetic`, `test:md-replay` (128) and `test:ci` pass.
+- Eternal Champions' new flag is at the threshold: envelope correlation 0.651 against PicoDrive's 0.753 (margin 0.1), with both runs aligning poorly (lags -3.0 and -1.8 s); GPGX's PSG is 7.4 dB louder in this game. Not a new defect.
+- 32X: PicoDrive's PSG now a median 3.5 dB above MesenCE's, but over 4 titles only (the PSG plays little in 32X games). Not acted on.
