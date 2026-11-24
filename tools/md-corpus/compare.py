@@ -44,6 +44,20 @@ NO_INPUT_FRAMES = 1200
 # Judgment calls with no hardware measurement behind either side; see the findings (C1).
 KNOWN_LEVEL_DB = {"mcd": {"pcm": 7.2}, "md": {"psg": -2.8}}
 
+# Sessions reviewed by hand, by entry id: the flags listed were investigated and are not MesenCE
+# defects (findings). They move to "reviewed" and leave the score; any other flag still counts, so a
+# regression in a reviewed title still shows.
+REVIEWED = {
+    "10409f2245b0": ({"mesen-frozen", "mesen-black", "visual"},
+                     "Ecco the Dolphin CinePak demo: Sega's boot ROM rejects it (32X findings S5)"),
+    "108b4ffed864": ({"audio"},
+                     "Darxide: PicoDrive runs the intro faster than the manual's minimum SH-2 cartridge wait (6) allows (C9)"),
+    "551eedc963cb": ({"state-diverges-single-oracle"},
+                     "WWF WrestleMania: the computer opponent's random moves differ from about frame 2,700 (C7)"),
+    "94b974f2f69f": ({"state-diverges-single-oracle"},
+                     "WWF Raw: the attract mode picks a different random match (C6)"),
+}
+
 # PicoDrive boots 32X games without Sega's boot ROMs; MesenCE runs them, which takes 60-100 frames
 # longer (Virtua Racing Deluxe: first picture at frame 95 against PicoDrive's 30; MesenCE's own
 # replacement boot ROMs 45). The offset between the runs is then larger than the 60 frames track
@@ -239,7 +253,15 @@ def audio_modules():
     return _AUDIO["audio_compare"], _AUDIO["audio_run_library"]
 
 
-def audio(mesen, oracle):
+# Audio after the runs' states diverge is not comparable (the games play different content: WWF
+# WrestleMania's moves from about frame 2,700, findings C9). With a divergence, audio is compared up
+# to AUDIO_DIVERGE_MARGIN frames before it (the state check's rolling windows find a divergence a
+# few seconds after the sound changes), when that leaves at least AUDIO_MIN_FRAMES.
+AUDIO_DIVERGE_MARGIN = 300
+AUDIO_MIN_FRAMES = 1200
+
+
+def audio(mesen, oracle, limit_seconds=None):
     audio_compare, run_library = audio_modules()
     wav = oracle / "audio.wav"
     if not (mesen / "audio.wav").exists() or not wav.exists():
@@ -247,7 +269,7 @@ def audio(mesen, oracle):
         # re-run too (move the whole session directory aside)
         return {"error": "audio missing (%s)" % ", ".join(str(p) for p in (mesen / "audio.wav", wav) if not p.exists())}
     try:
-        r = audio_compare.compare(mesen, wav, 5.0)
+        r = audio_compare.compare(mesen, wav, 5.0, limit_seconds)
     except Exception as ex:  # unreadable or too short
         return {"error": str(ex)}
     for k in ("run", "reference", "missing_windows", "extra_windows"):
@@ -288,7 +310,13 @@ def compare_session(sdir, keep_audio, previous=None):
         out["state"]["%s~%s" % (oracles[0], oracles[1])] = state_pair(blocks[oracles[0]], blocks[oracles[1]])
         out["visual"]["%s~%s" % (oracles[0], oracles[1])] = visual(sdir / oracles[0], sdir / oracles[1])
     main = MAIN_ORACLE[entry["system"]] if MAIN_ORACLE[entry["system"]] in oracles else (oracles[0] if oracles else None)
-    out["audio"] = audio(sdir / "mesen", sdir / main) if main else None
+    limit = None
+    diverged = (out["state"].get("mesen~" + main) or {}).get("diverged_at") if main else None
+    if diverged is not None and diverged - AUDIO_DIVERGE_MARGIN >= AUDIO_MIN_FRAMES:
+        limit = (diverged - AUDIO_DIVERGE_MARGIN) / (50.0 if entry["region"] == "pal" else 60.0)
+    out["audio"] = audio(sdir / "mesen", sdir / main, limit) if main else None
+    if out["audio"] and limit is not None and not out["audio"].get("error"):
+        out["audio"]["limited_to_seconds"] = round(limit, 1)
     if out["audio"] and out["audio"].get("error") and previous and previous.get("audio") and not previous["audio"].get("error"):
         # The audio went after the earlier comparison; its metrics still hold for the same runs
         out["audio"] = previous["audio"]
@@ -296,6 +324,11 @@ def compare_session(sdir, keep_audio, previous=None):
         out["audio"]["flags"] = audio_flags(out["audio"], entry["system"])
     out["main_oracle"] = main
     out["flags"] = verdict(out, oracles, main)
+    reviewed = REVIEWED.get(entry["id"])
+    if reviewed:
+        out["reviewed"] = sorted(f for f in out["flags"] if f in reviewed[0])
+        out["reviewed_note"] = reviewed[1]
+        out["flags"] = [f for f in out["flags"] if f not in reviewed[0]]
     out["score"] = score(out)
     if not keep_audio:
         for e in emus:

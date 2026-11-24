@@ -132,22 +132,30 @@ def segments(mask, min_windows=4):
     return out
 
 
-def compare(run, ref_path, max_lag_seconds):
+def compare(run, ref_path, max_lag_seconds, limit_seconds=None):
+    """limit_seconds: compare only MesenCE's first limit_seconds (and the reference's first
+    limit_seconds + max_lag_seconds), e.g. up to the frame where the runs' states diverge: after
+    that the games play different content and the audio is no longer comparable."""
     run = pathlib.Path(run)
     manifest = json.loads((run / "manifest.json").read_text())
     chip_rate = manifest["chip_audio"]["sample_rate"]
     chips = {}
+    def cut(signal, rate, extra=0.0):
+        return signal if limit_seconds is None else signal[:int((limit_seconds + extra) * rate)]
+
     for name in ("ym2612", "psg", "pwm"):
         if (run / (name + ".raw")).exists():
-            chips[name] = envelope(read_raw(run / (name + ".raw")), chip_rate)
+            chips[name] = envelope(cut(read_raw(run / (name + ".raw")), chip_rate), chip_rate)
     # Sega CD streams run at their own rates (manifest chip_audio.pcm / .cdda)
     for name in ("pcm", "cdda"):
         info = manifest["chip_audio"].get(name)
         if info and (run / info["file"]).exists():
-            chips[name] = envelope(read_raw(run / info["file"]), info["sample_rate_hz"])
+            chips[name] = envelope(cut(read_raw(run / info["file"]), info["sample_rate_hz"]), info["sample_rate_hz"])
     mesen_mix, mesen_rate = read_wav(run / "audio.wav")
+    mesen_mix = cut(mesen_mix, mesen_rate)
     mix = envelope(mesen_mix, mesen_rate)
     ref_signal, ref_rate = read_wav(ref_path)
+    ref_signal = cut(ref_signal, ref_rate, max_lag_seconds)
     ref = envelope(ref_signal, ref_rate)
 
     n = min(len(mix), *(len(c) for c in chips.values()))

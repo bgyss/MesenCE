@@ -273,6 +273,8 @@ public:
 
 	M32xSh2& GetSh2(int i) { return _sh2[i]; }
 	uint8_t* GetSdram() { return _sdram; }
+	//The 32X picture is on (bitmap mode M != 0)
+	bool IsDisplayEnabled() const { return _vdpMode != 0; }
 
 	//The two SH-2s share one external bus (manual p. 15, "mounted to a common bus"). Every access
 	//occupies it for its waits plus the 2-clock bus cycle. An SDRAM read burst (arbitrate = true)
