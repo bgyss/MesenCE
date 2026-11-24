@@ -112,7 +112,26 @@ def main():
     print("%s tas input shift" % ("ok  " if ok else "FAIL"))
     failed |= not audio_base_check()
     failed |= not audio_limit_check()
+    failed |= not audio_pair_check()
     return 1 if failed else 0
+
+
+def audio_pair_check():
+    """md-corpus audio_flags with both oracles' audio (findings C11): a spectrum flag is dropped
+    when the other oracle is as far from the main oracle as MesenCE is, and kept when MesenCE is
+    clearly further."""
+    import compare
+    base = {"spectral_distance_db": 1.8, "envelope_correlation": 0.95, "missing_seconds": 0.0, "seconds_compared": 50.0,
+            "chip_level_db_vs_mesen": {"ym2612": 0.0}, "mesen_energy_share": {"ym2612": 1.0}}
+    def pair(mesen_db, oracle_db):
+        side = lambda db: {"spectral_distance_db": db, "envelope_correlation": 0.95, "missing_seconds": 0.0, "seconds_compared": 50.0}
+        return {"mesen": side(mesen_db), "oracle": side(oracle_db), "other": "picodrive"}
+    within = compare.audio_flags(dict(base, oracle_pair=pair(1.8, 1.6)), "md")
+    beyond = compare.audio_flags(dict(base, oracle_pair=pair(1.8, 0.4)), "md")
+    alone = compare.audio_flags(dict(base), "md")
+    ok = within == [] and beyond == ["spectrum"] and alone == ["spectrum"]
+    print("%s audio flag checked against the other oracle: %s / %s / %s" % ("ok  " if ok else "FAIL", within, beyond, alone))
+    return ok
 
 
 def audio_limit_check():

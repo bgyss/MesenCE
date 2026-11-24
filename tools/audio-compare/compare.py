@@ -132,6 +132,46 @@ def segments(mask, min_windows=4):
     return out
 
 
+def compare_wavs(path, ref_path, max_lag_seconds, limit_seconds=None):
+    """Mix-only comparison of two WAVs (no per-chip streams), so that two oracles can be compared
+    with each other the same way MesenCE is compared with one: aligned envelope correlation,
+    spectrum (as in compare), and sound missing from `path` where `ref_path` is loud (after
+    matching their overall loudness). md-corpus uses it for MesenCE against the main oracle and for
+    the other oracle against the main oracle, and keeps an audio flag only when MesenCE is further
+    from the main oracle than the other oracle is (findings C11)."""
+    sig, rate = read_wav(path)
+    ref_signal, ref_rate = read_wav(ref_path)
+    if limit_seconds is not None:
+        sig = sig[:int(limit_seconds * rate)]
+        ref_signal = ref_signal[:int((limit_seconds + max_lag_seconds) * ref_rate)]
+    env, ref = envelope(sig, rate), envelope(ref_signal, ref_rate)
+    if np.percentile(ref, 99) < 8 and np.percentile(env, 99) < 8:
+        return {"silent": True}
+    lag, corr = best_lag(ref, env, int(max_lag_seconds / WINDOW))
+    if lag >= 0:
+        ref = ref[lag:]
+    else:
+        env = env[-lag:]
+    n = min(len(ref), len(env))
+    ref, env = ref[:n], env[:n]
+    ref_start, start = (lag, 0) if lag >= 0 else (0, -lag)
+    rb = band_energy(ref_signal, ref_rate, ref_start, n)
+    sb = band_energy(sig, rate, start, n)
+    rs, ss = rb / max(rb.sum(), 1e-12), sb / max(sb.sum(), 1e-12)
+    held = [10 * np.log10(max(ss[b], 1e-9) / max(rs[b], 1e-9)) for b in range(len(BANDS) - 1) if rs[b] > 0.02 or ss[b] > 0.02]
+    gain = np.sqrt((ref ** 2).sum() / max((env ** 2).sum(), 1e-12))
+    scaled = env * gain
+    loud = max(np.percentile(ref, 95), 1.0)
+    missing = (ref > 0.15 * loud) & (scaled < 0.3 * ref)
+    return {
+        "lag_seconds": round(lag * WINDOW, 2),
+        "envelope_correlation": round(corr, 3),
+        "spectral_distance_db": round(float(np.sqrt(np.mean(np.square(held)))) if held else 0.0, 2),
+        "missing_seconds": round(float(missing.sum() * WINDOW), 2),
+        "seconds_compared": round(n * WINDOW, 1),
+    }
+
+
 def compare(run, ref_path, max_lag_seconds, limit_seconds=None):
     """limit_seconds: compare only MesenCE's first limit_seconds (and the reference's first
     limit_seconds + max_lag_seconds), e.g. up to the frame where the runs' states diverge: after

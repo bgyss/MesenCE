@@ -95,9 +95,15 @@ def fmt_audio(r):
     if a.get("silent"):
         return "both silent"
     chips = ", ".join("%s %+.1f dB" % (k, v) for k, v in (a.get("chip_level_db_vs_mesen") or {}).items() if k != "ym2612")
-    return "spectral %.2f dB, envelope %.2f%s%s" % (a["spectral_distance_db"], a["envelope_correlation"],
-                                                    "<br>" + chips if chips else "",
-                                                    "<br><b>" + ", ".join(a["flags"]) + "</b>" if a.get("flags") else "")
+    pair = a.get("oracle_pair") or {}
+    pair_text = ""
+    if pair and not pair.get("error") and "spectral_distance_db" in pair.get("oracle", {}):
+        pair_text = "<br><small>%s vs main: spectral %.2f dB, envelope %.2f%s</small>" % (
+            pair["other"], pair["oracle"]["spectral_distance_db"], pair["oracle"]["envelope_correlation"],
+            ("; within the oracles' own difference: " + ", ".join(a["pair_dropped"])) if a.get("pair_dropped") else "")
+    return "spectral %.2f dB, envelope %.2f%s%s%s" % (a["spectral_distance_db"], a["envelope_correlation"],
+                                                      "<br>" + chips if chips else "",
+                                                      "<br><b>" + ", ".join(a["flags"]) + "</b>" if a.get("flags") else "", pair_text)
 
 
 def write_report(args):
