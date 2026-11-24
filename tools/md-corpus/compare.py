@@ -42,7 +42,7 @@ NO_INPUT_FRAMES = 1200
 # Known library-wide chip level differences against the main oracle, in dB (the reference's level
 # relative to MesenCE's, FM = 0), subtracted before flagging so that per-title outliers stand out.
 # Judgment calls with no hardware measurement behind either side; see the findings (C1).
-KNOWN_LEVEL_DB = {"mcd": {"pcm": 7.2}, "md": {"psg": -2.8}}
+KNOWN_LEVEL_DB = {"mcd": {"pcm": 1.7}, "md": {"psg": -2.8}}
 
 # Sessions reviewed by hand, by entry id: the flags listed were investigated and are not MesenCE
 # defects (findings). They move to "reviewed" and leave the score; any other flag still counts, so a
@@ -56,6 +56,8 @@ REVIEWED = {
                      "WWF WrestleMania: the computer opponent's random moves differ from about frame 2,700 (C7)"),
     "94b974f2f69f": ({"state-diverges-single-oracle"},
                      "WWF Raw: the attract mode picks a different random match (C6)"),
+    "ff969ae53120": ({"visual", "audio"},
+                     "Virtua Racing: the SVP chip is not emulated (out of scope since the feasibility study); both oracles emulate it (C12)"),
     "0a0ac6d37d28": ({"mesen-black"},
                      "World Trophy Soccer: each emulator's demo match has random teams; the last snapshot catches a transition (PicoDrive is black at frame 3,300) (C10)"),
     "c8af3e74c495": ({"audio"},
@@ -308,8 +310,9 @@ def audio_pair(sdir, main, other, limit_seconds=None):
 def audio_flags(a, system):
     """tools/audio-compare's flags, after removing the known level differences. With both oracles'
     audio (a["oracle_pair"]), a spectrum, envelope or missing-sound flag stands only when MesenCE is
-    further from the main oracle than the other oracle is; the flags dropped are listed in
-    a["pair_dropped"]. Chip level flags stay: only MesenCE records per-chip audio."""
+    further from the main oracle than the other oracle is; a chip level flag (only MesenCE records
+    per-chip audio) stands only when the mix's spectrum or envelope is. The flags dropped are
+    listed in a["pair_dropped"]."""
     if not a or a.get("error") or a.get("silent"):
         return []
     _, run_library = audio_modules()
@@ -327,7 +330,11 @@ def audio_flags(a, system):
         "envelope": m["envelope_correlation"] < o["envelope_correlation"] - PAIR_ENVELOPE,
         "missing": m["missing_seconds"] - o["missing_seconds"] > PAIR_MISSING_FRACTION * seconds,
     }
-    dropped = [f for f in flags if f in worse and not worse[f]]
+    # A chip level flag (from MesenCE's per-chip fit) needs the mix itself to be further from the
+    # main oracle than the other oracle is: when the fit can't separate two chips playing in step,
+    # it puts one at about -117 dB while the mixes match (Ranger X, Crude Buster; findings C12)
+    mix_worse = worse["spectrum"] or worse["envelope"]
+    dropped = [f for f in flags if (f in worse and not worse[f]) or (f.endswith("-level") and not mix_worse)]
     a["pair_dropped"] = dropped
     return [f for f in flags if f not in dropped]
 

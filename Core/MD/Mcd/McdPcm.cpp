@@ -88,9 +88,13 @@ void McdPcm::Clock(uint64_t clock)
 			right += (data * ch.Envelope * (ch.Pan >> 4)) >> 5;
 		}
 	}
-	//16-bit clamp, then the 10-bit DAC's resolution
-	left = (std::clamp(left, -32768, 32767) >> 2) & ~15;
-	right = (std::clamp(right, -32768, 32767) >> 2) & ~15;
+	//16-bit clamp, then the 10-bit DAC's resolution (the top 10 bits), at half scale like the CD
+	//audio (McdCd). GPGX and MAME mix the PCM and the CD audio at the same level (both unity, the
+	//PCM unshifted); ares quarters the PCM (>> 2), which left it a median 7.7 dB below GPGX against
+	//FM over 30 discs, with PicoDrive agreeing with GPGX (findings C12; judgment call, no hardware
+	//measurement)
+	left = (std::clamp(left, -32768, 32767) >> 1) & ~31;
+	right = (std::clamp(right, -32768, 32767) >> 1) & ~31;
 	const Sample& last = _pending.empty() ? _current : _pending.back();
 	if(left != last.Left || right != last.Right || _soundOn) {
 		//(Silence while the chip is off and already silent changes nothing for the mixer)

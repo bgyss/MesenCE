@@ -1749,3 +1749,55 @@ oracles themselves disagree.
 
 - The Sega CD PCM mix level (above).
 - The 15 Mega Drive audio flags that stand against both oracles, and the PSG level outliers.
+
+## C12: Sega CD PCM level, audio flags against both oracles, PSG level outliers (2026-11-24)
+
+### Sega CD PCM level (changed)
+
+- **Evidence:** over 30 discs, GPGX's PCM was a median 7.7 dB louder than MesenCE's relative to FM,
+  and MesenCE's spectrum 3 dB low at 400-800 Hz; PicoDrive agreed with GPGX (C11).
+- **Sources:** the Mega-CD Hardware Manual gives no mixing levels. GPGX (`cd_hw/pcm.c`) mixes the
+  RF5C164's 16-bit clamped sum at `config.pcm_volume` = 100 and the CD audio at
+  `config.cdda_volume` = 100: the same level. MAME (`rf5c68.cpp`) outputs the RF5C164 unshifted
+  ("output is only 10 bits for RF5C68, 16 bits for RF5C164"). ares, which MesenCE followed, quarters
+  it (`sclamp<16>(x) >> 2 & ~15`).
+- **Change:** `McdPcm` keeps the top 10 bits at half scale (`>> 1 & ~31`), the scale MesenCE already
+  uses for the CD audio, which matches GPGX against FM (median +0.2 dB). Judgment call: no hardware
+  measurement. `tests/MD/synthetic/mcd_models.py` follows.
+- **Result (30 discs rerun):** PCM a median 1.7 dB from GPGX (was 7.7), the spectrum within
+  +/-0.9 dB per band (was -3 dB at 400-800 Hz). md-corpus's known PCM offset is now 1.7 dB (was
+  7.2). Sega CD audio flags 19 to 3.
+
+### Mega Drive audio flags that stood against both oracles (triaged)
+
+After C11, 15 spectrum, envelope or missing-sound flags stood with MesenCE clearly further from GPGX
+than PicoDrive. Triage:
+
+- **Virtua Racing:** the SVP chip is not emulated (out of scope since the feasibility study); both
+  oracles run it. Reviewed.
+- **Timing drift** (lag near the 5 s search limit, envelope or missing-sound flags): Wrestle War,
+  X-Men, Super Volley Ball, Eternal Champions, Generations Lost, Krusty's Super Fun House. Likely
+  attract sequences out of step rather than sound; not confirmed.
+- **Balance** (spectrum flags with matching envelopes): Pigskin Footbrawl, Gargoyles, Cliffhanger,
+  Jammit, MegaPanel, Nobunaga no Yabou, Barney's Hide & Seek, After Burner II (plus ATP Tour and
+  American Gladiators, with no PicoDrive comparison). Pigskin, the largest (4.3 dB against
+  PicoDrive's 0.1): MesenCE's share above 300 Hz is 4-7 dB higher, with both FM cores alike (4.33
+  and 4.36 dB), so not the FM core; a balance between parts of the music (a channel's level, the
+  DAC, or writes that don't land). Open.
+
+### PSG level outliers (comparison, fixed)
+
+- Seven titles (Ranger X and Ex-Ranza, Crude Buster and Two Crude Dudes, Patlabor, Superman, New 3D
+  Golf) had the PSG at about -117 dB in the per-chip fit while MesenCE's mix matched GPGX's (spectral
+  0.2-0.9 dB): the fit can't separate chips that play in step, and gives one no weight.
+- **Fix (md-corpus):** with both oracles' audio, a chip level flag stands only when the mix's
+  spectrum or envelope is also further from the main oracle than the other oracle is (C11's rule).
+  Only Eternal Champions keeps its PSG flag (its envelope is also worse). Regression:
+  `tas_selftest.py`, "chip level".
+
+### Results
+
+- Mega Drive: 27 of 1,130 flagged (64 after C10), 17 with audio flags (56), 2 reviewed.
+- Sega CD: 3 of 30 with audio flags (19). 32X: 40 of 40 not flagged.
+- `test:md-synthetic` (60/60 and every MesenCE case), `test:md-replay` and the corpus self-tests
+  pass.
