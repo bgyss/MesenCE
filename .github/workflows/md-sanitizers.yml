@@ -9,6 +9,8 @@ on:
   push:
     paths:
       - 'Core/MD/**'
+      - 'Utilities/Audio/NukedOpn2/**' # vendored FM cores the console runs (the Nuked UBSan
+      - 'Utilities/Audio/ymfm/**'      # failure went unseen when it became the default, C17)
       - 'tests/MD/**'
       - 'tools/m68k-cpu-singlestep/**'
       - '.github/workflows/md-sanitizers.yml'
