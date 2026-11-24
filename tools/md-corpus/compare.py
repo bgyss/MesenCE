@@ -281,15 +281,55 @@ def audio(mesen, oracle, limit_seconds=None):
     return r
 
 
+# Margins by which MesenCE must be further from the main oracle than the other oracle is, for an
+# audio flag to stand when both oracles' audio is available (judgment calls, findings C11)
+PAIR_SPECTRUM_DB = 0.5
+PAIR_ENVELOPE = 0.1
+PAIR_MISSING_FRACTION = 0.05
+
+
+def audio_pair(sdir, main, other, limit_seconds=None):
+    """Mix-only comparisons with the main oracle: MesenCE's and the other oracle's, measured the
+    same way (tools/audio-compare compare_wavs), so an audio flag can be checked against how much
+    the two oracles differ from each other."""
+    audio_compare, _ = audio_modules()
+    paths = {"mesen": sdir / "mesen" / "audio.wav", "oracle": sdir / other / "audio.wav"}
+    ref = sdir / main / "audio.wav"
+    if not ref.exists() or not all(p.exists() for p in paths.values()):
+        return {"error": "audio missing"}
+    try:
+        out = {k: audio_compare.compare_wavs(v, ref, 5.0, limit_seconds) for k, v in paths.items()}
+    except Exception as ex:
+        return {"error": str(ex)}
+    out["other"] = other
+    return out
+
+
 def audio_flags(a, system):
-    """tools/audio-compare's flags, after removing the known level differences."""
+    """tools/audio-compare's flags, after removing the known level differences. With both oracles'
+    audio (a["oracle_pair"]), a spectrum, envelope or missing-sound flag stands only when MesenCE is
+    further from the main oracle than the other oracle is; the flags dropped are listed in
+    a["pair_dropped"]. Chip level flags stay: only MesenCE records per-chip audio."""
     if not a or a.get("error") or a.get("silent"):
         return []
     _, run_library = audio_modules()
     adjusted = dict(a)
     known = KNOWN_LEVEL_DB.get(system, {})
     adjusted["chip_level_db_vs_mesen"] = {k: v - known.get(k, 0.0) for k, v in a["chip_level_db_vs_mesen"].items()}
-    return run_library.flags(adjusted)
+    flags = run_library.flags(adjusted)
+    pair = a.get("oracle_pair")
+    if not pair or pair.get("error") or pair["mesen"].get("silent") or pair["oracle"].get("silent"):
+        return flags
+    m, o = pair["mesen"], pair["oracle"]
+    seconds = max(m["seconds_compared"], 1.0)
+    worse = {
+        "spectrum": m["spectral_distance_db"] > o["spectral_distance_db"] + PAIR_SPECTRUM_DB,
+        "envelope": m["envelope_correlation"] < o["envelope_correlation"] - PAIR_ENVELOPE,
+        "missing": m["missing_seconds"] - o["missing_seconds"] > PAIR_MISSING_FRACTION * seconds,
+    }
+    dropped = [f for f in flags if f in worse and not worse[f]]
+    a["pair_dropped"] = dropped
+    return [f for f in flags if f not in dropped]
 
 
 def compare_session(sdir, keep_audio, previous=None):
@@ -321,6 +361,9 @@ def compare_session(sdir, keep_audio, previous=None):
     out["audio"] = audio(sdir / "mesen", sdir / main, limit) if main else None
     if out["audio"] and limit is not None and not out["audio"].get("error"):
         out["audio"]["limited_to_seconds"] = round(limit, 1)
+    others = [o for o in oracles if o != main]
+    if out["audio"] and not out["audio"].get("error") and not out["audio"].get("silent") and others:
+        out["audio"]["oracle_pair"] = audio_pair(sdir, main, others[0], limit)
     if out["audio"] and out["audio"].get("error") and previous and previous.get("audio") and not previous["audio"].get("error"):
         # The audio went after the earlier comparison; its metrics still hold for the same runs
         out["audio"] = previous["audio"]

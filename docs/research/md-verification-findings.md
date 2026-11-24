@@ -1709,3 +1709,43 @@ Busytown's PSG at -26.8 dB). FIFA Soccer 97 and F-15 Strike Eagle II diverge lat
 
 - The Sega CD sessions were not rerun after the DC blocker (it filters their mix too).
 - The 56 Mega Drive audio flags, mostly spectra near the limit and single-chip level fits.
+
+## C11: audio flags checked against the second oracle (2026-11-24)
+
+**Question:** md-corpus's state and visual flags already need MesenCE to differ from both oracles by
+more than the oracles differ from each other. Audio was compared with the main oracle only (GPGX for
+Mega Drive and Sega CD, PicoDrive for 32X), so an audio flag could come from a title on which the
+oracles themselves disagree.
+
+### Method (tooling)
+
+- `tools/audio-compare` `compare_wavs`: a mix-only comparison of two WAVs (alignment, envelope
+  correlation, spectrum, sound missing after matching loudness), with no per-chip streams, so that
+  an oracle can be measured the same way as MesenCE.
+- md-corpus, with two oracles: `audio.oracle_pair` holds MesenCE against the main oracle and the
+  other oracle against the main oracle, both by `compare_wavs`. A spectrum, envelope or
+  missing-sound flag stands only when MesenCE is further from the main oracle than the other oracle
+  is: by more than 0.5 dB of spectral distance, 0.1 of envelope correlation, or 5% of the time
+  compared (judgment calls). The flags dropped are listed in `audio.pair_dropped` and in the
+  report. Chip level flags are not checked this way: only MesenCE records per-chip audio.
+- **Regression:** `tas_selftest.py`, "audio flag checked against the other oracle".
+- The 32X has one oracle (GPGX doesn't emulate it), so its audio flags are not changed.
+
+### Results (the 74 Mega Drive and Sega CD sessions with an audio flag, rerun)
+
+- **Mega Drive: 23 of 55 cleared:** PicoDrive differs from GPGX as much as MesenCE does. Of the 32
+  left, 15 are chip level flags (mostly PSG, beyond the known -2.8 dB offset), 2 had no PicoDrive
+  comparison (ATP Tour, American Gladiators), and 15 are spectrum, envelope or missing-sound flags
+  where MesenCE is clearly further from GPGX than PicoDrive is (Virtua Racing: spectral 3.7 dB and
+  envelope 0.48 against PicoDrive's 1.7 dB and 0.96; Jerry Glanville's Pigskin Footbrawl: 4.3 dB
+  against 0.1).
+- **Sega CD: 18 of 19 stand.** PicoDrive is typically within 0.2-1.0 dB of GPGX's spectrum where
+  MesenCE is 1.5-4 dB away. Over the 30 Sega CD titles, GPGX's PCM is a median 7.7 dB louder than
+  MesenCE's relative to FM (MesenCE mixes the PCM unscaled, a C4 judgment call recorded as a known
+  level offset), and MesenCE's spectrum is 3 dB low at 400-800 Hz. With the second oracle agreeing
+  with GPGX, the PCM mix level is now the main lead for the Sega CD; not changed here.
+
+### Still open
+
+- The Sega CD PCM mix level (above).
+- The 15 Mega Drive audio flags that stand against both oracles, and the PSG level outliers.
