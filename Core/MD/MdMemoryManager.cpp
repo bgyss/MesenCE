@@ -721,8 +721,13 @@ uint8_t MdMemoryManager::ReadZ80Area68k(uint32_t addr)
 {
 	SyncZ80();
 	if(!M68kOwnsZ80Bus()) {
-		//The Z80 owns its bus; the 68000 reads nothing driven
-		return 0xFF;
+		//The Z80 owns its bus: nothing drives the 68000's data bus, which reads open bus, the
+		//prefetched instruction word (Genesis Plus GX maps m68k_read_bus_8 here; PicoDrive returns
+		//a floating value; neither reads the YM2612). Mega Games 3 polls the YM2612's busy bit
+		//after its sound interrupt handler has released the bus; $FF kept bit 7 set and it hung on
+		//a black screen (findings C10)
+		uint16_t openBus = _m68k->GetRegisters().Irc;
+		return (addr & 1) ? (uint8_t)openBus : (uint8_t)(openBus >> 8);
 	}
 	AddZ80AreaLatency();
 	uint16_t z80Addr = addr & 0x7FFF;

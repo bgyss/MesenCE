@@ -1644,3 +1644,68 @@ The open items after C8, in order.
 - The full Mega Drive library has not been rerun with the DC blocker (120 titles were).
 - PicoDrive's repeated V interrupts (C8) and SH-2 cartridge timing: drafts not sent.
 - Whether SDRAM mirrors above `$0603FFFF` on hardware.
+
+## C10: full Mega Drive pass with the DC blocker; Z80-area open bus (Mega Games 3); NBA Jam TE (2026-11-24)
+
+### The full pass
+
+All 1,130 Mega Drive titles against GPGX and PicoDrive (attract, 3,600 frames; 3,390 runs, the one
+non-zero exit is Phantasy Star Fukkokuban, unsupported since C4), after C9's DC blocker. Against
+each title's previous result (the C4 pass, so every change since C4 counts):
+
+| | Previous | Now |
+|---|---|---|
+| Titles flagged | 79 | 64 |
+| Audio flags | 66 | 56 |
+| State divergences | 12 | 5 |
+| Visual | 5 | 5 |
+| Black or frozen | 2 | 1 (reviewed) |
+
+29 sessions cleared and 12 were newly flagged. The new audio flags are spectra just over the limit
+(1.53-1.97 dB) or level fits where one chip barely plays (Koutetsu Teikoku's FM at -132 dB,
+Busytown's PSG at -26.8 dB). FIFA Soccer 97 and F-15 Strike Eagle II diverge late (about frame
+2,630), as other sports attract modes do (C4). The two black screens are below.
+
+### Mega Games 3: 68000 reads of the Z80 area without the bus (fixed)
+
+- **Symptom:** Mega Games 3 (Europe, Asia) stayed black in PAL from the first frames. GPGX and
+  PicoDrive show its game-select menu, and so does MesenCE in NTSC. The C4-era build is black too:
+  the earlier clean results did not come from a PAL run of this code.
+- **Cause:** the start-up code requests the Z80 bus (`$1A0CE4`), then polls the YM2612's busy bit
+  (`lea $A04000,a0` / `btst #7,(a0)` / `bne`, `$1A0C96`). In PAL its sound interrupt handler lands
+  inside that wait. The handler requests the bus and releases it unconditionally (`$1805F2`,
+  `$180606`). Back in the loop the 68000 reads `$A04000` without the bus. MesenCE returned `$FF`
+  for such reads, so bit 7 stayed set and the game hung.
+- **Sources:** Genesis Plus GX maps `m68k_read_bus_8/16` at `$A0xxxx` while the bus is not granted
+  (`genesis.c` `gen_zbusreq_w`): the prefetched instruction word, "open bus". PicoDrive returns a
+  floating value (`PicoRead8_z80`, "68k z80 read with no bus!"). Neither reads the YM2612. No
+  hardware measurement here.
+- **Fix:** `MdMemoryManager::ReadZ80Area68k` returns the 68000's prefetch register (`Irc`), the
+  byte of the address's lane, as MesenCE already does for other open-bus reads. In the loop that is
+  the `bne` (`$66FA`): bit 7 clear.
+- **Regression:** `z80_area_open_bus` (`tests/MD/synthetic/extra_cases.py`): with the Z80 running
+  and no bus request, a byte read of `$A04000` returns `$60`, the high byte of the interpreter's
+  `bra` after `move.b (a1),d1`. It read `$FF` before.
+- **Result:** Mega Games 3 shows its menu in PAL and is not flagged.
+
+### World Trophy Soccer and NBA Jam TE (reviewed)
+
+- **World Trophy Soccer:** each emulator's demo match has different random teams, and the last
+  snapshot catches a transition in MesenCE (PicoDrive is black at frame 3,300 itself). Reviewed
+  (`mesen-black`).
+- **NBA Jam TE (32X):** the demonstration game picks different teams (Portland against Portland in
+  MesenCE, Golden State in PicoDrive). Before its sounds differ the spectra agree (0.11 and 0.75 dB
+  over 22-42 s); afterwards they drift (1.6-3.1 dB). The state comparison doesn't see it (work RAM
+  agrees at 0.99). The PWM level against FM (+6.8 dB) is within the library's spread for one cycle
+  value (games at cycle 1047 range from -5.2 to +3.3 dB), so it is not a mixing level. Reviewed
+  (`audio`).
+
+### Results
+
+- 32X: 40 of 40 not flagged, 5 reviewed. Mega Drive: 64 of 1,130 flagged, 1 reviewed.
+- `test:md-synthetic` (60/60 and every MesenCE case), `test:md-replay` (127) and `test:ci` pass.
+
+### Still open
+
+- The Sega CD sessions were not rerun after the DC blocker (it filters their mix too).
+- The 56 Mega Drive audio flags, mostly spectra near the limit and single-chip level fits.
