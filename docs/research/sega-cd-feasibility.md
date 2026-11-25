@@ -2,7 +2,7 @@
 
 Snapshot: branch `md-support` at `a8453071`, 2026-11-18. Status: proposal; nothing implemented.
 
-**Status (2026-11-18): S3 done** (CD drive and controller, CD audio, disc boot with the BIOS:
+**Status (2026-11-19): S0-S5 done** (31 US discs reach their title screen, gameplay or FMV; findings S5; S4 and S5 below). Earlier: **S3 done** (CD drive and controller, CD audio, disc boot with the BIOS:
 7/7 BIOS versions found locally boot and reach their CD player; the RAM cartridge is left out for
 lack of a usable source; findings S3). **S2 done** (graphics chip, PCM, backup RAM, dot image, font registers,
 VDP DMA from word RAM; findings S2). **S1 done, except comparing against ares** (no ares capture

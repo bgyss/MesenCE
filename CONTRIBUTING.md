@@ -29,7 +29,8 @@ typed the code. A change to emulation behaviour should come with whichever of th
   - `mise run tla` when the modelled code (DMA scheduler, GB interrupt logic) changes. Update the
     matching spec too.
 - **An entry in the findings log**: [docs/research/nes-verification-findings.md](docs/research/nes-verification-findings.md),
-  [docs/research/gb-verification-findings.md](docs/research/gb-verification-findings.md), or a new
+  [docs/research/gb-verification-findings.md](docs/research/gb-verification-findings.md), the
+  Mega Drive, Sega CD and 32X logs (`md-`, `mcd-` and `32x-verification-findings.md`), or a new
   log for another system. Record it even when the result is "not a bug" or "retracted".
 
 Claims should be checked, not asserted: run the tool, cite the source, and label judgment calls

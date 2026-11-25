@@ -1966,3 +1966,32 @@ Mega Drive: 14 of 1,130 flagged, 6 reviewed.
 - Eternal Champions' new flag is at the threshold: envelope correlation 0.651 against PicoDrive's 0.753 (margin 0.1), with both runs aligning poorly (lags -3.0 and -1.8 s); GPGX's PSG is 7.4 dB louder in this game. Not a new defect.
 - 32X: PicoDrive's PSG now a median 3.5 dB above MesenCE's, but over 4 titles only (the PSG plays little in 32X games). Not acted on.
 - UBSan (CI md-sanitizers, now that Nuked-OPN2 is the default): `ym3438.c` left-shifted a negative value in the envelope attack step (`(~level << eg_inc) >> 5`, two failing cartridges). Rewritten as a multiply, identical for every 16-bit level and shift count (checked exhaustively); `test:md-synthetic` and `test:md-replay` unchanged.
+
+## C18: Super Volley Ball and World Heroes are timing-dependent random choices (2026-11-24)
+
+### Super Volley Ball (corrects C16)
+
+- C16 put the divergence down to the YM2612 timers. It isn't: starting the chip up to a full sample
+  period (1,000 master clocks) later leaves MesenCE's near-silence at 45-50 s unchanged.
+- The 68000's sound commands to the Z80 driver are identical to BlastEm's for 2,767 writes; at frame
+  2,034 MesenCE queues an extra `$31`. The cause is upstream of that, in game logic:
+  - At frame 1,555 the random-number routine (`$C39C`) mixes in a frame counter (`$FF8052`,
+    incremented by the vertical-blank handler at N + 0.907). Both emulators write the same counter
+    values at the same times, but MesenCE's main loop reads it at 1,555.789, before the increment
+    (`$F6`), and BlastEm's at 1,555.959, after it (`$F7`).
+  - The frame's work ends within about 1% of the vertical blank. Between vertical blanks BlastEm's
+    68000 falls behind MesenCE's by 2-10 cycle steps (about 1.1% on this code). Not the refresh
+    model (MesenCE's is BlastEm's; every BlastEm build in nativekit has the same constants) and not
+    MULU timing (both time it by the operand's bits).
+- So the outcome depends on the 68000's speed to about 1%; which side real hardware lands on needs
+  a hardware run. Reviewed (`REVIEWED`).
+
+### World Heroes (C16)
+
+- At frame 1,500 BlastEm's demo shows a third match, different from both MesenCE's and the one
+  GPGX and PicoDrive agree on. The demo's pick is a timing-dependent random choice; the oracles
+  agreeing reflects their similar timing. Reviewed.
+
+### Results
+
+Mega Drive: 11 of 1,130 flagged, 8 reviewed. Sega CD 3 of 30, 32X 0 of 40.

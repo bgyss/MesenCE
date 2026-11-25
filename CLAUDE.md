@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-MesenCE is a community fork of Mesen2: a multi-system emulator (NES, SNES, GB/SGB/GBC, GBA, PC Engine, SMS/Game Gear, WonderSwan, and in this fork Mega Drive/Genesis) with a C++17 emulation core and a C#/.NET 10 Avalonia UI.
+MesenCE is a community fork of Mesen2: a multi-system emulator (NES, SNES, GB/SGB/GBC, GBA, PC Engine, SMS/Game Gear, WonderSwan, and in this fork Mega Drive/Genesis with the Sega CD and 32X add-ons) with a C++17 emulation core and a C#/.NET 10 Avalonia UI.
 
 **This repository is an independent fork of MesenCE.** It's run as its own project, as an example of LLM-assisted development backed by testing and formal verification. Fixes are applied here directly. Upstream branches are prepared only when the user asks (the Mega Drive core: `docs/upstream/`); upstream requires MIT-compatible code and currently prohibits AI-generated code, so such branches are proposals that disclose how they were made.
 
