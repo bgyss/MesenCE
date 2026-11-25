@@ -360,6 +360,13 @@ directory.
 
 ## Implementation milestones
 
+**Status (2026-11-25):** M0-M5 are merged. M6's compatibility qualification became the
+library-wide comparison against Genesis Plus GX, PicoDrive and BlastEm (`mise run md-corpus`,
+[`md-oracle-testing-strategy.md`](md-oracle-testing-strategy.md); 1,130 cartridges, 11 flagged,
+findings C1-C18); its nativekit-side migration is outside this repository. The Sega CD and 32X
+add-ons followed ([`sega-cd-feasibility.md`](sega-cd-feasibility.md),
+[`32x-feasibility.md`](32x-feasibility.md)). The paragraph below is the 2026-11-16 snapshot.
+
 **Status (2026-11-16): M0-M5 implemented on branch `md-support`; M6 not started.** Evidence,
 approximations and reference disagreements are in
 [`md-verification-findings.md`](md-verification-findings.md). Checks: `test:m68k-cpu`,

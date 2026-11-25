@@ -1,7 +1,10 @@
 # Mega Drive / Genesis: feature parity with other emulators
 
-Scope: cartridge games on the Mega Drive / Genesis. Sega CD (Mega-CD), 32X, Pico, and Master System
-mode through the Power Base Converter are separate systems and out of scope here. Evidence for
+Scope: cartridge games on the Mega Drive / Genesis. The Sega CD (Mega-CD) and 32X add-ons are
+supported too, but are covered by their own plans and findings
+([`sega-cd-feasibility.md`](sega-cd-feasibility.md), [`32x-feasibility.md`](32x-feasibility.md));
+Sega CD 32X, Pico, and Master System mode through the Power Base Converter are not supported and
+are out of scope here. Evidence for
 each implemented item is in [`md-verification-findings.md`](md-verification-findings.md).
 
 The comparison columns are what those emulators are generally known to offer (Genesis Plus GX,
