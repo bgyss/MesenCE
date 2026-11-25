@@ -4,7 +4,7 @@ Changes in this fork (bgyss/MesenCE) since upstream MesenCE 2.2.1. Each entry li
 findings log that holds its evidence: the reproduction, the source for the intended behaviour, and
 the test that keeps it fixed.
 
-## 2.2.1-fork.1 (2026-11-25)
+## 2.2.1-fork.1 (2026-11-24)
 
 The first release of this fork. Compared with upstream MesenCE 2.2.1 it adds three systems and
 fixes emulation bugs found by differential tests, sanitizers and formal models.

@@ -1967,7 +1967,7 @@ Mega Drive: 14 of 1,130 flagged, 6 reviewed.
 - 32X: PicoDrive's PSG now a median 3.5 dB above MesenCE's, but over 4 titles only (the PSG plays little in 32X games). Not acted on.
 - UBSan (CI md-sanitizers, now that Nuked-OPN2 is the default): `ym3438.c` left-shifted a negative value in the envelope attack step (`(~level << eg_inc) >> 5`, two failing cartridges). Rewritten as a multiply, identical for every 16-bit level and shift count (checked exhaustively); `test:md-synthetic` and `test:md-replay` unchanged.
 
-## C18: Super Volley Ball and World Heroes are timing-dependent random choices (2026-11-25)
+## C18: Super Volley Ball and World Heroes are timing-dependent random choices (2026-11-24)
 
 ### Super Volley Ball (corrects C16)
 

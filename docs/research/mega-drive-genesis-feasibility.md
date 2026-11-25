@@ -360,7 +360,7 @@ directory.
 
 ## Implementation milestones
 
-**Status (2026-11-25):** M0-M5 are merged. M6's compatibility qualification became the
+**Status (2026-11-24):** M0-M5 are merged. M6's compatibility qualification became the
 library-wide comparison against Genesis Plus GX, PicoDrive and BlastEm (`mise run md-corpus`,
 [`md-oracle-testing-strategy.md`](md-oracle-testing-strategy.md); 1,130 cartridges, 11 flagged,
 findings C1-C18); its nativekit-side migration is outside this repository. The Sega CD and 32X
